@@ -9,6 +9,23 @@ Hooks.once("ready", () => {
 
     D20Roll.buildConfigure = async function(config, dialog, message) {
       console.log("Not Dice | D20 buildConfigure intercepted", config);
+      
+      if (config.isNickAttack) {
+          console.log("Not Dice | >>> ATAQUE MELLAR DETECTADO <<<");
+          const actor = config.subject?.actor;
+          const hasTwoWeaponStyle = actor?.items?.some(i => 
+              i.system?.identifier === "two-weapon-fighting" || 
+              i.name === "Two-Weapon Fighting" || 
+              (i.name.toLowerCase().includes("combate con dos armas") && i.type === "feat")
+          );
+
+          if (hasTwoWeaponStyle) {
+              console.log("Not Dice | Estilo de Combate Two-Weapon Fighting: DETECTADO");
+          } else {
+              console.log("Not Dice | Estilo de Combate Two-Weapon Fighting: NO DETECTADO");
+          }
+      }
+
       const isAttack = config.subject && 
                        (config.subject.type === "attack" || 
                         config.subject.constructor.name === "AttackActivity");
@@ -40,7 +57,10 @@ Hooks.once("ready", () => {
           setTimeout(() => {
              if (rollConfig.subject && rollConfig.subject.rollDamage) {
                  console.log("Not Dice | Triggering Auto-Damage Roll");
-                 rollConfig.subject.rollDamage({event: rollConfig.event});
+                 rollConfig.subject.rollDamage({
+                    event: rollConfig.event,
+                    isNickAttack: rollConfig.isNickAttack
+                 });
              }
           }, 250);
         }
@@ -65,9 +85,39 @@ Hooks.once("ready", () => {
     DamageRoll.buildEvaluate = async function(rolls, rollConfig, messageConfig) {
         console.log("Not Dice | Damage buildEvaluate intercepted", rolls);
         
+        // --- Nick Attack Logic ---
+        const isNickAttack = rollConfig.isNickAttack;
+        const actor = rollConfig.subject?.actor || rollConfig.subject?.item?.actor;
+        const hasTwoWeaponStyle = actor?.items?.some(i => 
+              i.system?.identifier === "two-weapon-fighting" || 
+              i.name === "Two-Weapon Fighting" || 
+              (i.name.toLowerCase().includes("combate con dos armas") && i.type === "feat")
+        );
+        const isOffhandWithoutStyle = isNickAttack && !hasTwoWeaponStyle;
+        if (isOffhandWithoutStyle) console.log("Not Dice | Offhand Attack without Style - Removing Ability Mod from formula.");
+        
         for (const roll of rolls) {
-            const originalFormula = roll.formula;
+            let originalFormula = roll.formula;
+            
+            if (isOffhandWithoutStyle) {
+                 // Remove + @mod or + number from end
+                 originalFormula = originalFormula.replace(/\s*\+\s*(@mod|\d+)(\s*\[.*?\])?$/, "");
+            }
+
             const item = rollConfig.subject.item;
+
+            // Function to calculate versatile damage scaling (d6->d8, d8->d10)
+            const scaleVersatile = (formula) => {
+                if (formula.includes("d6")) return formula.replace("d6", "d8");
+                if (formula.includes("d8")) return formula.replace("d8", "d10");
+                return null;
+            };
+            let versatileFormula = null;
+            
+            if (!versatileFormula && item?.system?.properties?.has("ver")) {
+                versatileFormula = scaleVersatile(originalFormula);
+            }
+
             const damageTypeKey = roll.options.type;
             const damageTypeLabel = damageTypeKey ? (CONFIG.DND5E.damageTypes[damageTypeKey]?.label || damageTypeKey) : "None";
 
@@ -114,6 +164,10 @@ Hooks.once("ready", () => {
 
             // --- Gather Attack Info ---
             let attackHtml = "";
+            let isNickActive = false; // Flag for Mellar
+            let nickWeaponName = "";
+            let nickWeaponItem = null;
+
             if (rollConfig.subject.type === "attack") {
                  const toHit = item.labels?.toHit || "";
                  // Check proficiency (usually 1 for proficient, 0 for not, or true/false)
@@ -127,9 +181,25 @@ Hooks.once("ready", () => {
                  const masteryProperty = item.system.mastery;
                  
                  let masteryBadge = "";
+
                  if (hasMastery && masteryProperty) {
                      const masteryLabel = CONFIG.DND5E.weaponMasteries?.[masteryProperty]?.label || masteryProperty;
                      masteryBadge = `<div style="margin-top: 2px; font-size: 0.6em; color: #5a005a; text-transform: uppercase; letter-spacing: 1px; font-weight: bold;"><i class="fas fa-crown" style="color: purple;"></i> Maestria: ${masteryLabel}</div>`;
+                     
+                     // Check for Mellar (Nick) activation
+                     if (masteryProperty === "nick" && !isNickAttack) {
+                         const otherLightWeapon = item.actor?.itemTypes?.weapon?.find(w => 
+                             w.id !== item.id && 
+                             w.system.equipped && 
+                             w.system.properties?.has("lgt")
+                         );
+                         if (otherLightWeapon) {
+                             isNickActive = true;
+                             nickWeaponName = otherLightWeapon.name;
+                             // Store weapon definition to trigger roll later
+                             nickWeaponItem = otherLightWeapon;
+                         }
+                     }
                  }
 
                  attackHtml = `<div style="margin-bottom: 8px; font-size: 1.5em; color: #222; text-align: center; border: 1px solid #7a7971; background: rgba(0,0,0,0.05); border-radius: 4px; padding: 5px;">
@@ -138,6 +208,27 @@ Hooks.once("ready", () => {
                     ${masteryBadge}
                  </div>`;
             }
+
+            const confirmMellar = async (weaponName) => {
+                return new Promise(resolve => {
+                    new Dialog({
+                        title: "Maestria: Mellar",
+                        content: `<p>¿Atacar con Mellar: <strong>${weaponName}</strong>?</p>`,
+                        buttons: {
+                            yes: {
+                                label: "Si",
+                                callback: () => resolve(true)
+                            },
+                            no: {
+                                label: "No",
+                                callback: () => resolve(false)
+                            }
+                        },
+                        default: "yes",
+                        close: () => resolve(false)
+                    }).render(true);
+                });
+            };
 
             const userInput = await new Promise(resolve => {
               new Dialog({
@@ -153,8 +244,10 @@ Hooks.once("ready", () => {
                     </div>
                     <div class="form-group">
                       <label>Formula (Dado + Mod.):</label>
-                      <input type="text" value="${originalFormula}" disabled style="margin-bottom: 10px; width: 100%;"/>
+                      <input type="text" value="${originalFormula}" disabled style="margin-bottom: 10px; width: 100%; ${isOffhandWithoutStyle ? 'border: 2px solid #e00; background-color: #ffeeee;' : ''}"/>
+                      ${isOffhandWithoutStyle ? '<div style="font-size: 0.8em; color: #a00; margin-top: -8px; margin-bottom: 10px;">* Sin modificador (No Style)</div>' : ''}
                     </div>
+                    ${versatileFormula ? `<div class="form-group"><label>Formula Versatil (2 Manos):</label><input type="text" value="${versatileFormula}" disabled style="margin-bottom: 10px; width: 100%;"/></div>` : ""}
                     <div class="form-group">
                       <label>Da&ntilde;o Total:</label>
                       <input type="number" name="total" value="5" autofocus class="damage-total-display" style="margin-bottom: 10px; width: 100%;${isImmune ? ' background-color: #ff4444 !important; color: #fff !important;' : (isVulnerable ? ' background-color: #66ff66 !important; color: #000 !important;' : (isResistant ? ' background-color: #ffeb3b !important; color: #000 !important;' : ''))}"/>     
@@ -166,6 +259,21 @@ Hooks.once("ready", () => {
                     label: "DA&Ntilde;AR",
                     icon: "<i class='fas fa-skull'></i>",
                     callback: async html => {
+                      if (isNickActive) {
+                          const confirmed = await confirmMellar(nickWeaponName);
+                          if (confirmed) {
+                              console.log("Mellar activado");
+                              if (nickWeaponItem) {
+                                  const attackActivity = nickWeaponItem.system.activities?.find(a => a.type === "attack");
+                                  if (attackActivity) {
+                                      // Pass isNickAttack flag
+                                      setTimeout(() => attackActivity.rollAttack({event, isNickAttack: true}), 500);
+                                  } else {
+                                      console.warn("Not Dice | No attack activity found for:", nickWeaponItem.name);
+                                  }
+                              }
+                          }
+                      }
                       const total = parseInt(html.find("[name='total']").val());
                       const finalTotal = isNaN(total) ? 0 : total;
                       
@@ -183,7 +291,22 @@ Hooks.once("ready", () => {
                   ok: {
                     label: "Confirmar",
                     icon: "<i class='fas fa-check'></i>",
-                    callback: html => {
+                    callback: async html => {
+                      if (isNickActive) {
+                          const confirmed = await confirmMellar(nickWeaponName);
+                          if (confirmed) {
+                              console.log("Mellar activado");
+                              if (nickWeaponItem) {
+                                  const attackActivity = nickWeaponItem.system.activities?.find(a => a.type === "attack");
+                                  if (attackActivity) {
+                                      // Pass isNickAttack flag
+                                      setTimeout(() => attackActivity.rollAttack({event, isNickAttack: true}), 500);
+                                  } else {
+                                      console.warn("Not Dice | No attack activity found for:", nickWeaponItem.name);
+                                  }
+                              }
+                          }
+                      }
                       const total = parseInt(html.find("[name='total']").val());
                       resolve({ total: isNaN(total) ? 0 : total });
                     }
