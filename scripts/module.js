@@ -202,10 +202,62 @@ Hooks.once("ready", () => {
                      }
                  }
 
+                 // --- Simultaneous Attack Roll ---
+                 let attackRollHtml = "";
+                 try {
+                     let mod = 0;
+                     if (toHit) {
+                         const clean = toHit.replace(/[^\d-]/g, "");
+                         if (clean) mod = parseInt(clean);
+                     }
+
+                     const isAdvantage = rollConfig.event && rollConfig.event.shiftKey;
+                     const isDisadvantage = rollConfig.event && rollConfig.event.ctrlKey;
+                     
+                     let formula = `1d20 + ${mod}`;
+                     if (isAdvantage) formula = `2d20kh + ${mod}`;
+                     else if (isDisadvantage) formula = `2d20kl + ${mod}`;
+                     
+                     const r = await new Roll(formula).evaluate();
+                     
+                     if (game.dice3d) {
+                         game.dice3d.showForRoll(r, game.user, true);
+                     } else {
+                         AudioHelper.play({src: "sounds/dice.wav"}); 
+                     }
+
+                     const d20 = r.terms[0].total; 
+                     const total = r.total;
+                     
+                     let color = "#333";
+                     // For 2d20kh, the total of terms[0] is the result of keeping highest. 
+                     // But terms[0] structure might be different for a pool term or keeping term.
+                     // A standard KeepHighest roll `2d20kh` usually results in a Die term.
+                     // Using r.dice[0].total should be safer for the d20 result.
+                     
+                     // Check natural 20 or 1 on the *kept* die
+                     // If 2d20kh, r.terms[0] is the Die term.
+                     // The total for the Die term is the kept value.
+                     
+                     if (d20 === 20) color = "green";
+                     if (d20 === 1) color = "red";
+                     
+                     let advLabel = "";
+                     if (isAdvantage) advLabel = "<span style='color:blue; font-size:0.8em;'>(Ventaja)</span> ";
+                     else if (isDisadvantage) advLabel = "<span style='color:red; font-size:0.8em;'>(Desventaja)</span> ";
+
+                     attackRollHtml = `<div style="margin-top: 8px; font-size: 0.9em; border-top: 1px dashed #ccc; padding-top: 5px;">
+                        ${advLabel}Tirada: <span style="color:${color}; font-weight:bold;">${d20}</span> (d20) + ${mod} = <span style="font-size: 1.2em; font-weight:bold;">${total}</span>
+                     </div>`;
+                 } catch (err) {
+                     console.error("Not Dice | Failed simultaneous roll", err);
+                 }
+
                  attackHtml = `<div style="margin-bottom: 8px; font-size: 1.5em; color: #222; text-align: center; border: 1px solid #7a7971; background: rgba(0,0,0,0.05); border-radius: 4px; padding: 5px;">
                     <strong>Bono de Ataque:</strong> <span style="font-weight: 800; font-size: 1.2em;">${toHit}</span>
                     ${profBadge}
                     ${masteryBadge}
+                    ${attackRollHtml}
                  </div>`;
             }
 
@@ -250,7 +302,10 @@ Hooks.once("ready", () => {
                     ${versatileFormula ? `<div class="form-group"><label>Formula Versatil (2 Manos):</label><input type="text" value="${versatileFormula}" disabled style="margin-bottom: 10px; width: 100%;"/></div>` : ""}
                     <div class="form-group">
                       <label>Da&ntilde;o Total:</label>
-                      <input type="number" name="total" value="5" autofocus class="damage-total-display" style="margin-bottom: 10px; width: 100%;${isImmune ? ' background-color: #ff4444 !important; color: #fff !important;' : (isVulnerable ? ' background-color: #66ff66 !important; color: #000 !important;' : (isResistant ? ' background-color: #ffeb3b !important; color: #000 !important;' : ''))}"/>     
+                      <div style="display: flex; align-items: center; gap: 5px; margin-bottom: 10px;">
+                        <input type="number" name="total" value="0" autofocus class="damage-total-display" style="width: 100%; margin-bottom: 0; ${isImmune ? ' background-color: #ff4444 !important; color: #fff !important;' : (isVulnerable ? ' background-color: #66ff66 !important; color: #000 !important;' : (isResistant ? ' background-color: #ffeb3b !important; color: #000 !important;' : ''))}"/>
+                        <button type="button" class="roll-damage-btn" style="flex: 0 0 40px; height: 32px; border: 1px solid #7a7971; border-radius: 4px; background: #ddd; cursor: pointer; display:flex; align-items:center; justify-content:center;" title="Tirar Daño"><i class="fas fa-dice"></i></button>
+                      </div>
                     </div>
                   </form>
                 `,
@@ -314,7 +369,24 @@ Hooks.once("ready", () => {
                 },
                 default: "damage",
                 render: (html) => {
-                    html.find("button").addClass("damage-button");
+                    html.find("button").not(".roll-damage-btn").addClass("damage-button");
+
+                    html.find(".roll-damage-btn").click(async (ev) => {
+                        ev.preventDefault();
+                        try {
+                             const r = await new Roll(originalFormula).evaluate();
+                             
+                             if (game.dice3d) {
+                                 game.dice3d.showForRoll(r, game.user, true);
+                             } else {
+                                 AudioHelper.play({src: "sounds/dice.wav"});
+                             }
+                             
+                             html.find("[name='total']").val(r.total);
+                        } catch (err) {
+                             console.error("Not Dice | Error rolling damage manually", err);
+                        }
+                    });
                 },
                 close: () => resolve({ total: 0 })
               }, { classes: ["manual-damage-dialog", "dialog"] }).render(true);
