@@ -381,10 +381,33 @@ Hooks.once("ready", () => {
         };
 
         // --- Build Logic For Multiple Damage Parts ---
+        const multiplierOptions = [
+            { val: -1, label: "Curar (-1)" },
+            { val: 0, label: "x0" },
+            { val: 0.25, label: "x1/4" },
+            { val: 0.5, label: "x1/2" },
+            { val: 1, label: "x1 (Normal)" },
+            { val: 2, label: "x2" }
+        ];
+
         let damageInputsHtml = "";
         for (const part of damageParts) {
             let labelHtml = part.label;
             
+            // --- Auto-Detect Multiplier for this part ---
+            let detectedMultiplier = 1;
+            const dt = part.type; 
+            if (dt && targets.length > 0) {
+                 for (const t of targets) {
+                    const traits = t.actor?.system?.traits;
+                    if (!traits) continue;
+                    
+                    if (traits.di?.value?.has(dt)) { detectedMultiplier = 0; break; }
+                    if (traits.dv?.value?.has(dt)) detectedMultiplier = 2;
+                    else if (traits.dr?.value?.has(dt) && detectedMultiplier !== 2) detectedMultiplier = 0.5;
+                 }
+            }
+
             if (part.availableTypes && part.availableTypes.length > 1) {
                 let optionsHtml = part.availableTypes.map(t => {
                     const c = CONFIG.DND5E.damageTypes[t];
@@ -413,24 +436,14 @@ Hooks.once("ready", () => {
                     <button type="button" class="roll-damage-btn" data-index="${part.index}" data-formula="${part.formula}" style="flex: 0 0 40px; height: 32px; border: 1px solid #7a7971; border-radius: 4px; background: #ddd; cursor: pointer; display:flex; align-items:center; justify-content:center;" title="Tirar"><i class="fas fa-dice"></i></button>
                     </div>
                 </div>
+                <div class="form-group" style="margin-top: 5px;">
+                    <label>Multiplicador:</label>
+                    <select name="multiplier-${part.index}" style="width: 100%;">
+                        ${multiplierOptions.map(o => `<option value="${o.val}" ${o.val === detectedMultiplier ? "selected" : ""}>${o.label}</option>`).join("")}
+                    </select>
+                </div>
             </div>`;
         }
-
-        const multiplierOptions = [
-            { val: -1, label: "Curar (-1)" },
-            { val: 0, label: "x0" },
-            { val: 0.25, label: "x1/4" },
-            { val: 0.5, label: "x1/2" },
-            { val: 1, label: "x1 (Normal)" },
-            { val: 2, label: "x2" }
-        ];
-
-        let multiplierHtml = `<div style="margin-bottom: 15px; padding: 5px; border-top: 1px solid #ccc;">
-            <label style="font-weight: bold;">Multiplicador:</label>
-            <select name="damage-multiplier" style="width: 100%; margin-top: 5px;">
-                ${multiplierOptions.map(o => `<option value="${o.val}" ${o.val === defaultMultiplier ? "selected" : ""}>${o.label}</option>`).join("")}
-            </select>
-        </div>`;
 
         const dialogContent = `
             <form>
@@ -443,7 +456,6 @@ Hooks.once("ready", () => {
                 <div style="max-height: 400px; overflow-y: auto; padding-right: 5px;">
                     ${damageInputsHtml}
                 </div>
-                ${multiplierHtml}
             </form>
         `;
 
@@ -494,6 +506,16 @@ Hooks.once("ready", () => {
                 let val = parseInt(inputVal);
                 if (isNaN(val)) val = 0;
 
+                // Get Multiplier Per Part
+                const partMultiplierRaw = html.find(`[name='multiplier-${part.index}']`).val();
+                let partMultiplier = parseFloat(partMultiplierRaw);
+                if (isNaN(partMultiplier)) partMultiplier = 1;
+
+                // Apply Multiplier (Manual Mode)
+                if (isDamage) {
+                    val = Math.floor(val * partMultiplier);
+                }
+
                 // Get Type
                 let selectedType = html.find(`[name='type-${part.index}']`).val();
                 if (!selectedType) selectedType = part.type; // Fallback
@@ -515,11 +537,6 @@ Hooks.once("ready", () => {
             // Apply Damage
             if (isDamage) {
                 const targets = Array.from(game.user.targets);
-
-                // Get Multiplier
-                const multiplierRaw = html.find('[name="damage-multiplier"]').val();
-                let multiplier = parseFloat(multiplierRaw);
-                if (isNaN(multiplier)) multiplier = 1;
 
                 // Apply Mastery Effect
                 if (activeMastery && activeMastery.id !== "nick") {
@@ -566,10 +583,10 @@ Hooks.once("ready", () => {
 
                 for (const t of targets) {
                     if (t.actor) {
-                        // Apply all damage parts together with multiplier
+                        // Apply all damage parts together
                         // ignore: true ensures we bypass system traits calculation (DI/DR/DV)
-                        // so only our manual multiplier applies.
-                        await t.actor.applyDamage(totalValues, { multiplier: multiplier, ignore: true });
+                        // because we already applied multipliers manually above.
+                        await t.actor.applyDamage(totalValues, { ignore: true });
                     }
                 }
             }
