@@ -390,9 +390,28 @@ Hooks.once("ready", () => {
             { val: 2, label: "x2" }
         ];
 
+        const damageStyle = {
+             acid: { color: "#56a700", icon: "🧪" },
+             bludgeoning: { color: "#666", icon: "🔨" },
+             cold: { color: "#3b82f6", icon: "❄️" },
+             fire: { color: "#ef4444", icon: "🔥" },
+             force: { color: "#a855f7", icon: "✨" }, 
+             lightning: { color: "#eab308", icon: "⚡" },
+             necrotic: { color: "#1f2937", icon: "💀" },
+             piercing: { color: "#666", icon: "🏹" },
+             poison: { color: "#10b981", icon: "🤢" },
+             psychic: { color: "#ec4899", icon: "🧠" },
+             radiant: { color: "#f59e0b", icon: "☀️" },
+             slashing: { color: "#666", icon: "⚔️" },
+             thunder: { color: "#6366f1", icon: "🔊" },
+             healing: { color: "#10b981", icon: "💚" },
+             temphp: { color: "#666", icon: "🛡️" }
+        };
+
         let damageInputsHtml = "";
         for (const part of damageParts) {
             let labelHtml = part.label;
+            let currentDamageType = part.type;
             
             // --- Auto-Detect Multiplier for this part ---
             let detectedMultiplier = 1;
@@ -413,11 +432,25 @@ Hooks.once("ready", () => {
                     const c = CONFIG.DND5E.damageTypes[t];
                     const l = c ? (c.label || t) : t;
                     const selected = t === part.type ? "selected" : "";
-                    return `<option value="${t}" ${selected}>${l}</option>`;
+                    const style = damageStyle[t] || { color: "#000", icon: "" };
+                    return `<option value="${t}" style="color: ${style.color}; font-weight: bold;" ${selected}>${style.icon} ${l}</option>`;
                 }).join("");
-                labelHtml = `<select name="type-${part.index}" style="width: 100%; border: none; font-weight: bold; background: transparent;">${optionsHtml}</select>`;
+                
+                const initialStyle = damageStyle[currentDamageType] || { color: "#000" };
+                labelHtml = `<select name="type-${part.index}" style="width: 100%; border: none; font-weight: bold; background: transparent; color: ${initialStyle.color};">${optionsHtml}</select>`;
             } else {
-                 if (part.type) labelHtml += `<input type="hidden" name="type-${part.index}" value="${part.type}">`; 
+                 if (part.type) {
+                     const style = damageStyle[part.type] || { color: "#000", icon: "" };
+                     const hiddenInput = `<input type="hidden" name="type-${part.index}" value="${part.type}">`; 
+                     
+                     let content = part.label;
+                     // If there's no system icon (img tag), prepend our emoji icon
+                     if (!content.includes("<img") && style.icon) {
+                         content = `${style.icon} ${content}`;
+                     }
+                     
+                     labelHtml = `<span style="color: ${style.color}; font-weight: bold;">${content}</span>${hiddenInput}`;
+                 }
             }
 
             damageInputsHtml += `
@@ -619,6 +652,48 @@ Hooks.once("ready", () => {
                 render: (html) => {
                     html.find("button").not(".roll-damage-btn").addClass("damage-button");
                     
+                    // --- Dynamic Multiplier Update on Type Change ---
+                    html.find("select[name^='type-']").change((ev) => {
+                        const select = $(ev.currentTarget);
+                        const newType = select.val();
+                        const index = select.attr("name").split("-")[1];
+                        const multiplierSelect = html.find(`select[name='multiplier-${index}']`);
+                        
+                        let detectedMultiplier = 1;
+                        if (targets.length > 0) {
+                             for (const t of targets) {
+                                const traits = t.actor?.system?.traits;
+                                if (!traits) continue;
+                                
+                                if (traits.di?.value?.has(newType)) { detectedMultiplier = 0; break; }
+                                if (traits.dv?.value?.has(newType)) detectedMultiplier = 2;
+                                else if (traits.dr?.value?.has(newType) && detectedMultiplier !== 2) detectedMultiplier = 0.5;
+                             }
+                        }
+                        multiplierSelect.val(detectedMultiplier);
+                        
+                        // Update color of select element itself
+                        const damageStyle = {
+                             acid: { color: "#56a700" },
+                             bludgeoning: { color: "#666" },
+                             cold: { color: "#3b82f6" },
+                             fire: { color: "#ef4444" },
+                             force: { color: "#a855f7" },
+                             lightning: { color: "#eab308" },
+                             necrotic: { color: "#1f2937" },
+                             piercing: { color: "#666" },
+                             poison: { color: "#10b981" },
+                             psychic: { color: "#ec4899" },
+                             radiant: { color: "#f59e0b" },
+                             slashing: { color: "#666" },
+                             thunder: { color: "#6366f1" },
+                             healing: { color: "#10b981" },
+                             temphp: { color: "#888" }
+                        };
+                        const style = damageStyle[newType] || { color: "#000" };
+                        select.css("color", style.color);
+                    });
+
                     html.find(".roll-damage-btn").click(async (ev) => {
                         ev.preventDefault();
                         const btn = $(ev.currentTarget);
