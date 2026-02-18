@@ -728,6 +728,92 @@ Hooks.once("ready", () => {
             }
         }
         return rolls;
+
     };
   }
+
+  /* ------------------------------------------------------------------ */
+  /*             Concentration Check on Damage Logic (Update)           */
+  /* ------------------------------------------------------------------ */
+  
+  Hooks.on("preUpdateActor", (actor, updateData, options, userId) => {
+    // Solo el GM o el dueño del actor debería ejecutar esto para evitar duplicados
+    if (!game.user.isGM && !actor.isOwner) return;
+
+    // Check if HP is being modified
+    const hpUpdate = updateData.system?.attributes?.hp;
+    
+    // Si no hay cambio de vida, ignorar
+    if (!hpUpdate) return;
+    
+    // Calculate damage taken
+    const oldHP = actor.system.attributes.hp.value;
+    const oldTemp = actor.system.attributes.hp.temp || 0;
+    
+    // Determine new values (from updateData, or fallback to current if not changing)
+    const newHP = (hpUpdate.value !== undefined) ? hpUpdate.value : oldHP;
+    const newTemp = (hpUpdate.temp !== undefined) ? hpUpdate.temp : oldTemp;
+
+    const totalOld = oldHP + oldTemp;
+    const totalNew = newHP + newTemp;
+    
+    const damage = totalOld - totalNew;
+    
+    // Solo proceder si es daño real (> 0)
+    if (damage > 0) {
+        // Check for Concentration
+        // Modern dnd5e check
+        const isConcentrating = actor.statuses?.has("concentrating") || 
+                                actor.effects.some(e => e.getFlag("core", "statusId") === "concentrating" || e.name === "Concentrating");
+
+        if (isConcentrating) {
+            const dc = Math.max(10, Math.floor(damage / 2));
+            
+            // Intentar obtener el bono de salvación de constitución
+            let bonus = 0;
+            
+            // Check if system data structure aligns with dnd5e
+            const con = actor.system?.abilities?.con;
+            if (con) {
+                if (typeof con.save === "number") {
+                    bonus = con.save;
+                } else if (typeof con.mod === "number") {
+                     // Fallback: Mod + Proficiency if applicable
+                     bonus = con.mod;
+                     if (con.proficient) {
+                         bonus += (actor.system.attributes?.prof || 0);
+                     }
+                }
+            }
+
+            const operator = bonus >= 0 ? "+" : "";
+
+            // Use formatted HTML for the dialog
+             const content = `
+                <div style="text-align: center;">
+                    <p><strong>${actor.name}</strong> ha recibido <span style="color:red; font-weight:bold;">${damage}</span> puntos de daño.</p>
+                    <p>Está concentrado en un hechizo.</p>
+                    <hr>
+                    <p>Debe superar una <strong>Salvación de Constitución</strong> (CD <span style="font-size:1.2em; font-weight:bold;">${dc}</span>)</p>
+                    <p>Bonificador de CON: <strong>${operator}${bonus}</strong></p>
+                </div>
+            `;
+
+            new Dialog({
+                title: "Concentración: Chequeo Requerido",
+                content: content,
+                buttons: {
+                    ok: {
+                        label: "Entendido",
+                        callback: () => {}
+                    }
+                },
+                default: "ok"
+            }).render(true);
+        }
+    }
+  });
+
+
 });
+
