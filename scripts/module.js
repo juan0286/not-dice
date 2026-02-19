@@ -29,6 +29,46 @@ Hooks.once("init", () => {
 });
 
 Hooks.once("ready", () => {
+  // Escucha de socket para que un jugador envíe el popup de ataque al/los GM.
+  if (!globalThis._notDiceSocketReady) {
+      globalThis._notDiceSocketReady = true;
+      game.socket.on("module.not-dice", async (data) => {
+          if (!data || data.type !== "not-dice.show-attack-dialog") return;
+          if (!game.user.isGM) return;
+
+          try {
+              const item = data.itemUuid ? await fromUuid(data.itemUuid) : null;
+              const actor = item?.actor ?? null;
+              if (!item || !actor) {
+                  ui.notifications?.warn("No se pudo recuperar el objeto del ataque para mostrar el popup.");
+                  return;
+              }
+
+              const reconstructedRolls = await Promise.all((data.rolls || []).map(r => Roll.fromData(r)));
+
+              const subject = {
+                  item,
+                  actor,
+                  type: "attack",
+                  damage: { parts: item.system?.damage?.parts || [] }
+              };
+
+              const rollConfig = {
+                  subject,
+                  isNickAttack: data.isNickAttack ?? false,
+                  event: null
+              };
+
+              const messageConfig = data.messageConfig || {};
+
+              await CONFIG.Dice.DamageRoll.buildEvaluate(reconstructedRolls, rollConfig, messageConfig);
+              ui.notifications?.info(`Popup de ataque recibido de ${data.senderName || "jugador"}.`);
+          } catch (err) {
+              console.error("Not Dice | Error al manejar popup de ataque via socket", err);
+          }
+      });
+  }
+
   if (!game.settings.get("not-dice", "enableModule")) return;
 
   console.log("Not Dice | Module Ready");
@@ -86,15 +126,18 @@ Hooks.once("ready", () => {
           roll._total = total;
           roll._evaluated = true;
           
-          setTimeout(() => {
-             if (rollConfig.subject && rollConfig.subject.rollDamage) {
-                 console.log("Not Dice | Triggering Auto-Damage Roll");
-                 rollConfig.subject.rollDamage({
-                    event: rollConfig.event,
-                    isNickAttack: rollConfig.isNickAttack
-                 });
+             // Solo el GM debe disparar el daño automático y mostrar popup.
+             if (game.user.isGM) {
+                setTimeout(() => {
+                    if (rollConfig.subject && rollConfig.subject.rollDamage) {
+                         console.log("Not Dice | Triggering Auto-Damage Roll (GM)");
+                         rollConfig.subject.rollDamage({
+                             event: rollConfig.event,
+                             isNickAttack: rollConfig.isNickAttack
+                         });
+                    }
+                }, 250);
              }
-          }, 250);
         }
         return rolls;
       }
@@ -626,6 +669,30 @@ Hooks.once("ready", () => {
             return { total: totalValues.reduce((acc, curr) => acc + curr.value, 0) }; // return mostly irrelevant now as we modded the rolls
         };
 
+        // Si el usuario no es GM, enviar al GM activo para que muestre el popup y salir.
+        if (!game.user.isGM) {
+            const gmOnline = game.users.some(u => u.isGM && u.active);
+            if (gmOnline && game.socket) {
+                try {
+                    const payload = {
+                        type: "not-dice.show-attack-dialog",
+                        rolls: rolls.map(r => r.toJSON()),
+                        itemUuid: item?.uuid,
+                        isNickAttack,
+                        messageConfig,
+                        senderName: game.user.name
+                    };
+                    game.socket.emit("module.not-dice", payload);
+                    ui.notifications?.info("Enviado al GM para resolución del ataque.");
+                } catch (err) {
+                    console.error("Not Dice | Error enviando popup de ataque al GM", err);
+                }
+            } else {
+                ui.notifications?.warn("No hay GM activo para recibir el popup de ataque.");
+            }
+            return rolls;
+        }
+
         const result = await new Promise(resolve => {
             new Dialog({
                 title: `Ataque Manual: ${item.name}`,
@@ -737,8 +804,8 @@ Hooks.once("ready", () => {
   /* ------------------------------------------------------------------ */
   
   Hooks.on("preUpdateActor", (actor, updateData, options, userId) => {
-    // Solo el GM o el dueño del actor debería ejecutar esto para evitar duplicados
-    if (!game.user.isGM && !actor.isOwner) return;
+    // Permitir al usuario que inició la actualización (el atacante) ver el popup, incluso si no es dueño
+    if (game.user.id !== userId && !game.user.isGM && !actor.isOwner) return;
 
     // Check if HP is being modified
     const hpUpdate = updateData.system?.attributes?.hp;
