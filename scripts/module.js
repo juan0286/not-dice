@@ -28,43 +28,73 @@ Hooks.once("init", () => {
   });
 });
 
+
+// Hooks.once("ready", () => {
+//     // 1. RECEPTOR (Cualquiera)
+//     game.socket.on("module.not-dice", (data) => {
+//         console.log("%c SOCKET RECIBIDO: ", "background: lime; color: black; font-size:15px;", data);
+//         ui.notifications.info("Socket Test: Recibido!");
+//     });
+
+//     function handleEvent({ targetUserId, payload }) {
+//   if (!!targetUserId && game.userId !== targetUserId) return;
+
+//   // do something
+//   console.log(payload);
+// }
+
+// game.socket.on('module.not-dice', handleEvent);
+
+//     // 2. BOTÓN DE TEST (Solo para probar)
+//     // Escribe esto en la consola del JUGADOR para disparar el evento manualmente:
+//     // game.socket.emit("module.not-dice", { test: "funciona" });
+//     console.log("Not Dice | Socket Listener Activo. Prueba disparar manualmente desde otro cliente.");
+// });
+
+
 Hooks.once("ready", () => {
-  // Escucha de socket para que un jugador envíe el popup de ataque al/los GM.
   if (!globalThis._notDiceSocketReady) {
+
       globalThis._notDiceSocketReady = true;
+      
       game.socket.on("module.not-dice", async (data) => {
-          if (!data || data.type !== "not-dice.show-attack-dialog") return;
-          if (!game.user.isGM) return;
+          if (!data || !game.user.isGM) return;
+           debugger;
+
+          // Respeta destinatario específico si viene indicado
+          if (data.targetUserId && data.targetUserId !== game.user.id) return;
+
+          // Solo log sencillo cuando un jugador inicia ataque
+          if (data.type === "not-dice.attack-log") {
+              console.log(`Not Dice | Ataque de ${data.userName || "Jugador"}: ${data.attacker} con ${data.itemName} -> Objetivos: ${data.targets}`);
+              return;
+          }
+
+          if (data.type !== "not-dice.show-attack-dialog") return;
 
           try {
+              console.log("Not Dice | GM recv show-attack-dialog", data);
               const item = data.itemUuid ? await fromUuid(data.itemUuid) : null;
-              const actor = item?.actor ?? null;
-              if (!item || !actor) {
-                  ui.notifications?.warn("No se pudo recuperar el objeto del ataque para mostrar el popup.");
-                  return;
-              }
+              const activity = data.activityId ? item?.system?.activities?.get(data.activityId) : item?.system?.activities?.find(a => a.type === "damage" || a.type === "attack");
+              if (!item || !activity) return ui.notifications?.warn("No se pudo recuperar la actividad del ataque.");
 
-              const reconstructedRolls = await Promise.all((data.rolls || []).map(r => Roll.fromData(r)));
+              // Reconstruir DamageRolls puros desde las fórmulas recibidas
+              const reconstructedRolls = (data.rollFormulas || []).map(rf => {
+                  const r = new CONFIG.Dice.DamageRoll(rf.formula);
+                  r.options.type = rf.type;
+                  return r;
+              });
 
-              const subject = {
-                  item,
-                  actor,
-                  type: "attack",
-                  damage: { parts: item.system?.damage?.parts || [] }
+              const fakeRollConfig = {
+                  subject: activity,
+                  isNickAttack: data.isNickAttack,
+                  event: { targetIds: data.targetIds }
               };
 
-              const rollConfig = {
-                  subject,
-                  isNickAttack: data.isNickAttack ?? false,
-                  event: null
-              };
-
-              const messageConfig = data.messageConfig || {};
-
-              await CONFIG.Dice.DamageRoll.buildEvaluate(reconstructedRolls, rollConfig, messageConfig);
-              ui.notifications?.info(`Popup de ataque recibido de ${data.senderName || "jugador"}.`);
+              await CONFIG.Dice.DamageRoll.buildEvaluate(reconstructedRolls, fakeRollConfig, {});
+              ui.notifications?.info(`Resolviendo daño enviado por ${data.senderName || "jugador"}.`);
           } catch (err) {
-              console.error("Not Dice | Error al manejar popup de ataque via socket", err);
+              console.error("Not Dice | Error inyectando popup directo", err);
           }
       });
   }
@@ -112,9 +142,84 @@ Hooks.once("ready", () => {
 
     D20Roll.buildEvaluate = async function(rolls, rollConfig, messageConfig) {
       console.log("Not Dice | D20 buildEvaluate intercepted", rolls);
-      const isAttack = rollConfig.subject && 
-                       (rollConfig.subject.type === "attack" || 
-                        rollConfig.subject.constructor.name === "AttackActivity");
+            const isAttack = rollConfig.subject && 
+                                             (rollConfig.subject.type === "attack" || 
+                                                rollConfig.subject.constructor.name === "AttackActivity");
+
+            // Notificar a los GM cuando un jugador inicia un ataque
+            if (isAttack && !game.user.isGM && game.socket) {
+             try {
+                    const attacker = rollConfig.subject?.actor?.name || "(sin actor)";
+                    const itemName = rollConfig.subject?.item?.name || "(sin item)";
+                    const targets = Array.from(game.user.targets ?? []).map(t => t.name).join(", ") || "(sin objetivo)";
+                    const gmUsers = game.users.filter(u => u.isGM && u.active);
+                    const targetUserId = gmUsers[0]?.id;
+
+                    game.socket.emit("module.not-dice", {
+                        targetUserId,
+                        type: "not-dice.attack-log",
+                        attacker,
+                        itemName,
+                        targets,
+                        userName: game.user.name                        
+                    });
+                } catch (err) { console.error("Not Dice | Error enviando log", err); }
+
+                // 2. Enviar la SOLICITUD DE POPUP al GM
+                try {
+                    const gmUsers = game.users.filter(u => u.isGM && u.active);
+                    const targetUserId = gmUsers[0]?.id;
+
+                    if (!targetUserId) {
+                        ui.notifications?.warn("No hay GM activo para recibir el daño.");
+                        // Si no hay GM, permitimos que el código siga y lo muestre al jugador localmente
+                    } else {
+                        const itemUuid = rollConfig.subject?.item?.uuid;
+                        const activityId = rollConfig.subject?.id;
+                        const targetIds = Array.from(game.user.targets ?? []).map(t => t.id);
+
+                        // IMPORTANTE: Extraer las fórmulas de daño reales del item
+                        const deriveDamageFormulas = (item) => {
+                            const parts = item?.system?.damage?.parts ?? [];
+                            return parts
+                                .map(p => {
+                                    if (Array.isArray(p)) {
+                                        return { formula: p[0], type: p[1] ?? null };
+                                    }
+                                    const type = p?.type ?? (p?.types ? Array.from(p.types)[0] : null);
+                                    return { formula: p?.formula ?? "", type };
+                                })
+                                .filter(p => p.formula);
+                        };
+
+                        let rollFormulas = deriveDamageFormulas(rollConfig.subject?.item);
+                        if (rollFormulas.length === 0) {
+                            // Fallback: usa las fórmulas que ya vienen en los rolls (d20) si no se pudo derivar daño
+                            rollFormulas = rolls.map(r => ({ formula: r.formula, type: r.options.type }));
+                        }
+
+                        const payload = {
+                            type: "not-dice.show-attack-dialog",
+                            itemUuid,
+                            activityId,
+                            targetIds,
+                            rollFormulas, // <--- ESTO FALTABA
+                            isNickAttack: rollConfig.isNickAttack,
+                            senderName: game.user.name,
+                            targetUserId
+                        };
+
+                        game.socket.emit("module.not-dice", payload);
+                        ui.notifications?.info("Ataque enviado al GM para resolución.");
+                        
+                        // IMPORTANTE: Abortamos la ejecución local para el jugador
+                        // Devolvemos un array vacío para que Foundry deje de procesar en este cliente.
+                        return []; 
+                    }
+                } catch (err) {
+                    console.error("Not Dice | Error crítico enviando socket", err);
+                }
+            }
 
       if (isAttack) {
         console.log("Not Dice | Auto-resolving Attack Roll (Silent).");
@@ -247,8 +352,17 @@ Hooks.once("ready", () => {
             });
         }
             
-        // --- Gather Target Info (Combined) ---
-        const targets = Array.from(game.user.targets);
+        // Helper to resolve targets: prioriza IDs inyectados por el socket
+        const resolveTargets = () => {
+            const inyectedIds = rollConfig?.event?.targetIds;
+            if (inyectedIds && Array.isArray(inyectedIds) && inyectedIds.length > 0) {
+                const mappedTokens = inyectedIds.map(id => canvas.tokens.get(id)).filter(Boolean);
+                if (mappedTokens.length > 0) return mappedTokens;
+            }
+            return Array.from(game.user.targets ?? []);
+        };
+
+        const targets = resolveTargets();
         let targetHtml = "";
         
         if (targets.length > 0) {
@@ -547,8 +661,8 @@ Hooks.once("ready", () => {
             }
 
             // 2. Vex (Targets)
-            const currentTargets = Array.from(game.user.targets);
-            if (currentTargets.length > 0) {
+                const currentTargets = resolveTargets();
+                if (currentTargets.length > 0) {
                  const attackerName = item.actor.name;
                  for (const t of currentTargets) {
                     if (!t.actor) continue;
@@ -612,7 +726,7 @@ Hooks.once("ready", () => {
 
             // Apply Damage
             if (isDamage) {
-                const targets = Array.from(game.user.targets);
+                const targets = resolveTargets();
 
                 // Apply Mastery Effect
                 if (activeMastery && activeMastery.id !== "nick") {
@@ -671,26 +785,30 @@ Hooks.once("ready", () => {
 
         // Si el usuario no es GM, enviar al GM activo para que muestre el popup y salir.
         if (!game.user.isGM) {
-            const gmOnline = game.users.some(u => u.isGM && u.active);
-            if (gmOnline && game.socket) {
+            const gmUsers = game.users.filter(u => u.isGM && u.active);
+            const targetUserId = gmUsers[0]?.id;
+
+            if (targetUserId && game.socket) {
                 try {
                     const payload = {
                         type: "not-dice.show-attack-dialog",
-                        rolls: rolls.map(r => r.toJSON()),
                         itemUuid: item?.uuid,
-                        isNickAttack,
-                        messageConfig,
-                        senderName: game.user.name
+                        activityId: rollConfig.subject?.id,
+                        targetIds: Array.from(game.user.targets ?? []).map(t => t.id),
+                        rollFormulas: rolls.map(r => ({ formula: r.formula, type: r.options.type })),
+                        isNickAttack: rollConfig.isNickAttack,
+                        senderName: game.user.name,
+                        targetUserId
                     };
                     game.socket.emit("module.not-dice", payload);
-                    ui.notifications?.info("Enviado al GM para resolución del ataque.");
+                    ui.notifications?.info("Enviado al GM para resolución del daño.");
                 } catch (err) {
                     console.error("Not Dice | Error enviando popup de ataque al GM", err);
                 }
             } else {
-                ui.notifications?.warn("No hay GM activo para recibir el popup de ataque.");
+                ui.notifications?.warn("No hay GM activo para recibir el daño.");
             }
-            return rolls;
+            return [];
         }
 
         const result = await new Promise(resolve => {
