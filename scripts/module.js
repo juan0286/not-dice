@@ -199,6 +199,19 @@ Hooks.once("ready", () => {
         const isOffhandWithoutStyle = isNickAttack && !hasTwoWeaponStyle;
         if (isOffhandWithoutStyle) console.log("Not Dice | Offhand Attack without Style - Removing Ability Mod from formula.");
 
+        const hasDivineFavor = actor?.effects?.some(e => {
+            const name = (e.name || "").toLowerCase();
+            return name.includes("divine favor") || name.includes("favor divino");
+        });
+
+        if (hasDivineFavor) {
+            const divineFavorRoll = new DamageRoll("1d4", {}, { type: "radiant" });
+            divineFavorRoll.options = divineFavorRoll.options || {};
+            divineFavorRoll.options.type = "radiant";
+            divineFavorRoll.options.notDiceLabel = "Favor Divino";
+            rolls.push(divineFavorRoll);
+        }
+
         const item = rollConfig.subject.item;
 
         // --- Detect Mastery ---
@@ -257,6 +270,8 @@ Hooks.once("ready", () => {
 
             const damageConfig = damageTypeKey ? CONFIG.DND5E.damageTypes[damageTypeKey] : null;
             let damageTypeLabel = damageConfig?.label || damageTypeKey || "None";
+            const customLabel = roll.options?.notDiceLabel;
+            if (customLabel) damageTypeLabel = `${customLabel} (${damageTypeLabel})`;
             
             // Add icon if available
             if (damageConfig?.icon) {
