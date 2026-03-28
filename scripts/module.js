@@ -475,7 +475,7 @@ Hooks.once("ready", () => {
                         if (isAdvantage) advLabel = "<span style='color:blue; font-size:0.8em;'>(Ventaja)</span> ";
                         else if (isDisadvantage) advLabel = "<span style='color:red; font-size:0.8em;'>(Desventaja)</span> ";
 
-                        attackRollHtml = `<div style="margin-top: 8px; font-size: 0.9em; border-top: 1px dashed #ccc; padding-top: 5px;">
+                        attackRollHtml = `<div style="font-size: 0.9em;">
                             ${advLabel}Tirada: <span style="color:${color}; font-weight:bold;">${d20}</span> (d20) + ${mod} = <span style="font-size: 1.2em; font-weight:bold;">${total}</span>
                         </div>`;
                     } catch (err) {
@@ -490,8 +490,12 @@ Hooks.once("ready", () => {
                     ${sapBadge}
                     ${vexBadge}
                     ${guidingBoltBadge}
-                    ${attackRollHtml}
                 </div>`;
+                if (attackRollHtml) {
+                    attackHtml += `<div style="margin-bottom: 8px; font-size: 1.5em; color: #222; text-align: center; border: 1px solid #7a7971; background: rgba(0,0,0,0.05); border-radius: 4px; padding: 5px;">
+                        ${attackRollHtml}
+                    </div>`;
+                }
         }
 
         const confirmMellar = async (weaponName) => {
@@ -787,9 +791,10 @@ Hooks.once("ready", () => {
             return { total: totalValues.reduce((acc, curr) => acc + curr.value, 0) }; // return mostly irrelevant now as we modded the rolls
         };
 
+        const notDiceVersion = game.modules.get("not-dice")?.version || "";
         const result = await new Promise(resolve => {
             new Dialog({
-                title: `Ataque Manual: ${item.name}`,
+                title: `Ataque Manual: ${item.name} (v${notDiceVersion})`,
                 content: dialogContent,
                 buttons: {
                     damage: {
