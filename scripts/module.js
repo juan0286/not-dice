@@ -86,10 +86,10 @@ const notDiceHandleAttackSocket = async (data) => {
         });
         ui.notifications?.info(`Resolviendo daño enviado por ${data.senderName || "jugador"}.`);
     } catch (err) {
-        console.error("Not Dice | Error inyectando popup directo  ", err);
+        console.error("Not Dice | Error inyectando popup directo", err);
     }
 };
-
+// test 1
 
 Hooks.once("ready", () => {
   if (!globalThis._notDiceSocketReady) {
