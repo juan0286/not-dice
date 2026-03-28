@@ -618,6 +618,7 @@ Hooks.once("ready", () => {
                     <div style="display: flex; align-items: center; gap: 5px;">
                     <input type="number" name="total-${part.index}" value="0" class="damage-total-display" style="width: 100%; margin-bottom: 0;"/>
                     <button type="button" class="roll-damage-btn" data-index="${part.index}" data-formula="${part.formula}" style="flex: 0 0 40px; height: 32px; border: 1px solid #7a7971; border-radius: 4px; background: #ddd; cursor: pointer; display:flex; align-items:center; justify-content:center;" title="Tirar"><i class="fas fa-dice"></i></button>
+                    <button type="button" class="roll-damage-crit-btn" data-index="${part.index}" data-formula="${part.formula}" style="flex: 0 0 40px; height: 32px; border: 1px solid #b71c1c; border-radius: 4px; background: #ffcdd2; cursor: pointer; display:flex; align-items:center; justify-content:center; color: #b71c1c;" title="Crítico (x2 dados)"><i class="fas fa-dice-d20"></i></button>
                     </div>
                 </div>
                 <div class="form-group" style="margin-top: 5px;">
@@ -835,7 +836,7 @@ Hooks.once("ready", () => {
                 },
                 default: "damage",
                 render: (html) => {
-                    html.find("button").not(".roll-damage-btn").addClass("damage-button");
+                    html.find("button").not(".roll-damage-btn").not(".roll-damage-crit-btn").addClass("damage-button");
                     
                     // --- Dynamic Multiplier Update on Type Change ---
                     html.find("select[name^='type-']").change((ev) => {
@@ -878,6 +879,13 @@ Hooks.once("ready", () => {
                         select.css("color", style.color);
                     });
 
+                    // Helper: double dice in a formula (e.g. "2d6 + 3" -> "4d6 + 3")
+                    const doubleDice = (formula) => {
+                        return formula.replace(/(\d+)d(\d+)/g, (match, num, sides) => {
+                            return `${parseInt(num) * 2}d${sides}`;
+                        });
+                    };
+
                     html.find(".roll-damage-btn").click(async (ev) => {
                         ev.preventDefault();
                         const btn = $(ev.currentTarget);
@@ -895,6 +903,28 @@ Hooks.once("ready", () => {
                                 html.find(`[name='total-${idx}']`).val(r.total);
                             } catch (err) {
                                 console.error("Not Dice | Error rolling damage manually", err);
+                            }
+                        }
+                    });
+
+                    html.find(".roll-damage-crit-btn").click(async (ev) => {
+                        ev.preventDefault();
+                        const btn = $(ev.currentTarget);
+                        const idx = btn.data("index");
+                        const formula = damageParts.find(p => p.index === idx)?.formula;
+                        
+                        if (formula) {
+                            try {
+                                const critFormula = doubleDice(formula);
+                                const r = await new Roll(critFormula).evaluate();
+                                if (game.dice3d) {
+                                    game.dice3d.showForRoll(r, game.user, true);
+                                } else if (game.settings.get("not-dice", "enableSound")) {
+                                    AudioHelper.play({src: "sounds/dice.wav"});
+                                }
+                                html.find(`[name='total-${idx}']`).val(r.total);
+                            } catch (err) {
+                                console.error("Not Dice | Error rolling critical damage", err);
                             }
                         }
                     });
