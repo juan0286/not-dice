@@ -427,6 +427,7 @@ Hooks.once("ready", () => {
 
                 // --- Simultaneous Attack Roll ---
                 let attackRollHtml = "";
+                let attackRollBoxStyle = "";
                 if (game.settings.get("not-dice", "enableSimultaneousRoll")) {
                     try {
                         let mod = 0;
@@ -466,18 +467,36 @@ Hooks.once("ready", () => {
 
                         const d20 = r.terms[0].total; 
                         const total = r.total;
-                        
-                        let color = "#333";
-                        if (d20 === 20) color = "green";
-                        if (d20 === 1) color = "red";
+
+                        // Determine box color based on d20 result and hit/miss
+                        const targetAC = targets.length > 0 ? (targets[0].actor?.system?.attributes?.ac?.value ?? null) : null;
+                        let rollBoxBg, rollBoxBorder;
+                        if (d20 === 1) {
+                            // Natural 1 — strong red
+                            rollBoxBg = "#d32f2f"; rollBoxBorder = "#b71c1c";
+                        } else if (d20 === 20) {
+                            // Natural 20 — vivid green
+                            rollBoxBg = "#2e7d32"; rollBoxBorder = "#1b5e20";
+                        } else if (targetAC !== null && total >= targetAC) {
+                            // Hit — soft green
+                            rollBoxBg = "#a5d6a7"; rollBoxBorder = "#66bb6a";
+                        } else if (targetAC !== null && total < targetAC) {
+                            // Miss — soft red
+                            rollBoxBg = "#ef9a9a"; rollBoxBorder = "#ef5350";
+                        } else {
+                            // No target — neutral
+                            rollBoxBg = "rgba(0,0,0,0.05)"; rollBoxBorder = "#7a7971";
+                        }
+                        const rollTextColor = (d20 === 1 || d20 === 20) ? "#fff" : "#222";
                         
                         let advLabel = "";
                         if (isAdvantage) advLabel = "<span style='color:blue; font-size:0.8em;'>(Ventaja)</span> ";
                         else if (isDisadvantage) advLabel = "<span style='color:red; font-size:0.8em;'>(Desventaja)</span> ";
 
                         attackRollHtml = `<div style="font-size: 0.9em;">
-                            ${advLabel}Tirada: <span style="color:${color}; font-weight:bold;">${d20}</span> (d20) + ${mod} = <span style="font-size: 1.2em; font-weight:bold;">${total}</span>
+                            ${advLabel}Tirada: <span style="font-weight:bold;">${d20}</span> (d20) + ${mod} = <span style="font-size: 1.2em; font-weight:bold;">${total}</span>
                         </div>`;
+                        attackRollBoxStyle = `margin-bottom: 8px; font-size: 1.5em; color: ${rollTextColor}; text-align: center; border: 2px solid ${rollBoxBorder}; background: ${rollBoxBg}; border-radius: 4px; padding: 5px;`;
                     } catch (err) {
                         console.error("Not Dice | Failed simultaneous roll", err);
                     }
@@ -492,7 +511,7 @@ Hooks.once("ready", () => {
                     ${guidingBoltBadge}
                 </div>`;
                 if (attackRollHtml) {
-                    attackHtml += `<div style="margin-bottom: 8px; font-size: 1.5em; color: #222; text-align: center; border: 1px solid #7a7971; background: rgba(0,0,0,0.05); border-radius: 4px; padding: 5px;">
+                    attackHtml += `<div style="${attackRollBoxStyle}">
                         ${attackRollHtml}
                     </div>`;
                 }
