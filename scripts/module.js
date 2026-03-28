@@ -89,7 +89,7 @@ const notDiceHandleAttackSocket = async (data) => {
         console.error("Not Dice | Error inyectando popup directo", err);
     }
 };
-// test 1
+// test 2:fix
 
 Hooks.once("ready", () => {
   if (!globalThis._notDiceSocketReady) {
