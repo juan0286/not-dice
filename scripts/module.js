@@ -227,6 +227,15 @@ Hooks.once("ready", () => {
              }
         }
 
+        // --- Detect Guiding Bolt / Saeta Guía ---
+        let isGuidingBolt = false;
+        if (item) {
+            const spellName = (item.name || "").toLowerCase();
+            if (spellName.includes("guiding bolt") || spellName.includes("saeta guía") || spellName.includes("saeta guia")) {
+                isGuidingBolt = true;
+            }
+        }
+
         // Function to calculate versatile damage scaling (d6->d8, d8->d10)
         const scaleVersatile = (formula) => {
             if (formula.includes("d6")) return formula.replace("d6", "d8");
@@ -403,6 +412,19 @@ Hooks.once("ready", () => {
                      vexBadge = `<div style="margin-top: 5px; font-size: 1.2em; color: #007a00; font-weight: 900; border: 2px solid #007a00; padding: 2px; border-radius: 4px; background-color: #eaffea; text-transform: uppercase;">¡Ventaja! (Molestar)</div>`;
                 }
 
+                // Check for "Guiding Bolt" / "Saeta Guía" effect on ANY target (any attacker benefits)
+                const hasGuidingBoltAdvantage = targetsLocal.some(t =>
+                    t.actor?.effects?.some(e => {
+                        const eName = (e.name || "").toLowerCase();
+                        return eName.includes("saeta guía") || eName.includes("saeta guia") || eName.includes("guiding bolt");
+                    })
+                );
+
+                let guidingBoltBadge = "";
+                if (hasGuidingBoltAdvantage) {
+                    guidingBoltBadge = `<div style="margin-top: 5px; font-size: 1.2em; color: #d4a017; font-weight: 900; border: 2px solid #d4a017; padding: 2px; border-radius: 4px; background-color: #fff8e1; text-transform: uppercase;">¡Ventaja! (Saeta Guía)</div>`;
+                }
+
                 // --- Simultaneous Attack Roll ---
                 let attackRollHtml = "";
                 if (game.settings.get("not-dice", "enableSimultaneousRoll")) {
@@ -413,9 +435,23 @@ Hooks.once("ready", () => {
                             if (clean) mod = parseInt(clean);
                         }
 
-                        const isAdvantage = rollConfig.event && rollConfig.event.shiftKey;
-                        const isDisadvantage = rollConfig.event && rollConfig.event.ctrlKey;
-                        
+                        const keyAdvantage = rollConfig.event && rollConfig.event.shiftKey;
+                        const keyDisadvantage = rollConfig.event && rollConfig.event.ctrlKey;
+
+                        // Evaluate status effects for advantage/disadvantage
+                        const effectAdvantage = hasVexAdvantage || hasGuidingBoltAdvantage;
+                        const effectDisadvantage = hasSapEffect;
+
+                        // Combine: keyboard + effects. If both advantage and disadvantage apply, they cancel out.
+                        const totalAdvantage = keyAdvantage || effectAdvantage;
+                        const totalDisadvantage = keyDisadvantage || effectDisadvantage;
+
+                        let isAdvantage = false;
+                        let isDisadvantage = false;
+                        if (totalAdvantage && !totalDisadvantage) isAdvantage = true;
+                        else if (totalDisadvantage && !totalAdvantage) isDisadvantage = true;
+                        // If both apply, they cancel — normal roll
+
                         let formula = `1d20 + ${mod}`;
                         if (isAdvantage) formula = `2d20kh + ${mod}`;
                         else if (isDisadvantage) formula = `2d20kl + ${mod}`;
@@ -453,6 +489,7 @@ Hooks.once("ready", () => {
                     ${masteryBadge}
                     ${sapBadge}
                     ${vexBadge}
+                    ${guidingBoltBadge}
                     ${attackRollHtml}
                 </div>`;
         }
@@ -609,6 +646,16 @@ Hooks.once("ready", () => {
                         await t.actor.deleteEmbeddedDocuments("ActiveEffect", [vexEffect.id]);
                         ui.notifications.info(`Ventaja Consumida: ${vexEffect.name}`);
                     }
+
+                    // 3. Guiding Bolt / Saeta Guía (any attacker consumes it)
+                    const guidingBoltEffect = t.actor.effects?.find(e => {
+                        const eName = (e.name || "").toLowerCase();
+                        return eName.includes("saeta guía") || eName.includes("saeta guia") || eName.includes("guiding bolt");
+                    });
+                    if (guidingBoltEffect) {
+                        await t.actor.deleteEmbeddedDocuments("ActiveEffect", [guidingBoltEffect.id]);
+                        ui.notifications.info(`Ventaja Consumida: ${guidingBoltEffect.name}`);
+                    }
                  }
             }
 
@@ -702,6 +749,32 @@ Hooks.once("ready", () => {
                              await t.actor.createEmbeddedDocuments("ActiveEffect", [effectData]);
                              ui.notifications.info(`Maestria Aplicada: ${activeMastery.label} -> ${t.name}`);
                          }
+                    }
+                }
+
+                // Apply Guiding Bolt / Saeta Guía Effect
+                if (isGuidingBolt) {
+                    for (const t of targetsLocal) {
+                        if (t.actor) {
+                            const gbEffectData = {
+                                name: `Saeta Guía (${item.actor.name})`,
+                                icon: item.img || "icons/svg/sun.svg",
+                                origin: item.uuid,
+                                duration: {
+                                    rounds: 1
+                                }
+                            };
+
+                            if (game.combat) {
+                                gbEffectData.duration.startRound = game.combat.round;
+                                gbEffectData.duration.startTurn = game.combat.turn;
+                            } else {
+                                gbEffectData.duration.startTime = game.time.worldTime;
+                            }
+
+                            await t.actor.createEmbeddedDocuments("ActiveEffect", [gbEffectData]);
+                            ui.notifications.info(`Saeta Guía Aplicada -> ${t.name}`);
+                        }
                     }
                 }
 
