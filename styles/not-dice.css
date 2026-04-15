@@ -19,10 +19,76 @@
     align-items: center;
     background: rgba(0, 0, 0, 0.1);
     border-radius: 4px;
-    padding: 4px 10px; /* Padding un poco más grande */
+    padding: 4px 10px;
     margin: 4px;
     border: 1px solid #7a7971;
-    font-size: 1.1em; /* Targets más legibles */
+    font-size: 1.1em;
+}
+
+/* Target card in damage dialog */
+.not-dice-target-card {
+    width: 100%;
+    margin-bottom: 8px;
+    color: #222;
+    background: rgba(0, 0, 0, 0.05);
+    border-radius: 6px;
+    padding: 8px;
+    font-size: 1em;
+}
+
+.not-dice-target-header {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.not-dice-target-img {
+    width: 48px;
+    height: 48px;
+    border-radius: 50%;
+    border: 2px solid #7a7971;
+    object-fit: cover;
+    flex-shrink: 0;
+}
+
+.not-dice-target-info {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
+
+.not-dice-target-info strong {
+    font-size: 1.3em;
+    line-height: 1.2;
+}
+
+.not-dice-target-ac {
+    font-size: 1.4em;
+    font-weight: bold;
+    color: #000;
+}
+
+.not-dice-target-trait {
+    font-size: 0.9em;
+    font-weight: bold;
+    margin-top: 4px;
+    padding: 2px 6px;
+    border-radius: 3px;
+}
+
+.not-dice-trait-res {
+    color: #a85d00;
+    background: rgba(168, 93, 0, 0.08);
+}
+
+.not-dice-trait-imm {
+    color: #c00000;
+    background: rgba(192, 0, 0, 0.08);
+}
+
+.not-dice-trait-vul {
+    color: #007a00;
+    background: rgba(0, 122, 0, 0.08);
 }
 
 /* Resaltado del Daño Total */

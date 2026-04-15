@@ -212,6 +212,26 @@ Hooks.once("ready", () => {
             rolls.push(divineFavorRoll);
         }
 
+        // --- Detect Hunter's Mark / Marca del Cazador on targets ---
+        const attackerUuid = actor?.uuid;
+        const huntersMarkTargets = Array.from(game.user.targets ?? []);
+        const hasHuntersMark = attackerUuid && huntersMarkTargets.some(t =>
+            t.actor?.effects?.some(e => {
+                const eName = (e.name || "").toLowerCase();
+                return (eName.includes("hunter's mark") || eName.includes("marca del cazador"))
+                    && (e.origin || "").includes(attackerUuid);
+            })
+        );
+
+        if (hasHuntersMark) {
+            console.log("Not Dice | Hunter's Mark detectada en objetivo — añadiendo 1d6 force");
+            const huntersMarkRoll = new DamageRoll("1d6", {}, { type: "force" });
+            huntersMarkRoll.options = huntersMarkRoll.options || {};
+            huntersMarkRoll.options.type = "force";
+            huntersMarkRoll.options.notDiceLabel = "Marca del Cazador";
+            rolls.push(huntersMarkRoll);
+        }
+
         const item = rollConfig.subject.item;
 
         // --- Detect Mastery ---
@@ -338,17 +358,26 @@ Hooks.once("ready", () => {
                 const di = getLabels(traits.di?.value);
                 const dv = getLabels(traits.dv?.value);
                 const ac = t.actor?.system?.attributes?.ac?.value;
+                const tokenImg = t.document?.texture?.src || t.actor?.img || "";
                 
                 let borderStyle = "border: 1px solid #7a7971;";
                 if (isImmune) borderStyle = "border: 2px solid #c00000;";
                 else if (isVulnerable) borderStyle = "border: 2px solid #007a00;";
                 else if (isResistant) borderStyle = "border: 2px solid #a85d00;";
 
-                targetHtml += `<div style="width: 100%; margin-bottom: 8px; font-size: 1.5em; color: #222; ${borderStyle} background: rgba(0,0,0,0.05); border-radius: 4px; padding: 5px;"><strong style='text-align: left;'>${t.name}</strong>${ac !== undefined ? ` <span style='text-align: right;font-size: 1.5em; font-weight: bold; color: #000; margin-left: 5px;' title='Armor Class'>[CA: ${ac}]</span>` : ""}`;
-                targetHtml += `</p>`;
-                if (dr) targetHtml += `<p><span style='font-size: 1em; color: #a85d00; margin-left: 4px; font-weight: bold;'>[Res: ${dr}]</span></p>`;
-                if (di) targetHtml += `<p><span style='font-size: 1em; color: #c00000; margin-left: 4px; font-weight: bold;'>[Imm: ${di}]</span></p>`;
-                if (dv) targetHtml += `<p><span style='font-size: 1em; color: #007a00; margin-left: 4px; font-weight: bold;'>[Vul: ${dv}]</span></p>`;
+                const tokenImgHtml = tokenImg ? `<img src="${tokenImg}" class="not-dice-target-img" />` : "";
+
+                targetHtml += `<div class="not-dice-target-card" style="${borderStyle}">
+                    <div class="not-dice-target-header">
+                        ${tokenImgHtml}
+                        <div class="not-dice-target-info">
+                            <strong>${t.name}</strong>
+                            ${ac !== undefined ? `<span class="not-dice-target-ac" title="Armor Class">CA: ${ac}</span>` : ""}
+                        </div>
+                    </div>`;
+                if (dr) targetHtml += `<div class="not-dice-target-trait not-dice-trait-res"><i class="fas fa-shield-alt"></i> Res: ${dr}</div>`;
+                if (di) targetHtml += `<div class="not-dice-target-trait not-dice-trait-imm"><i class="fas fa-ban"></i> Imm: ${di}</div>`;
+                if (dv) targetHtml += `<div class="not-dice-target-trait not-dice-trait-vul"><i class="fas fa-heart-broken"></i> Vul: ${dv}</div>`;
                 targetHtml += `</div>`;
             }
             targetHtml += "</div></div>";
