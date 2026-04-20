@@ -378,6 +378,17 @@ Hooks.once("ready", () => {
                 if (dr) targetHtml += `<div class="not-dice-target-trait not-dice-trait-res"><i class="fas fa-shield-alt"></i> Res: ${dr}</div>`;
                 if (di) targetHtml += `<div class="not-dice-target-trait not-dice-trait-imm"><i class="fas fa-ban"></i> Imm: ${di}</div>`;
                 if (dv) targetHtml += `<div class="not-dice-target-trait not-dice-trait-vul"><i class="fas fa-heart-broken"></i> Vul: ${dv}</div>`;
+
+                // Heavy Armor Master / Maestro en Armadura Pesada
+                const hasHAM = t.actor.items?.some(i => {
+                    const n = (i.name || "").toLowerCase();
+                    return i.type === "feat" && (
+                        n.includes("heavy armor master") ||
+                        n.includes("maestro en armadura pesada")
+                    );
+                });
+                if (hasHAM) targetHtml += `<div class="not-dice-target-trait" style="color: #4a148c; font-weight: bold;"><i class="fas fa-chess-rook"></i> Maestro Armadura Pesada (-3 PS)</div>`;
+
                 targetHtml += `</div>`;
             }
             targetHtml += "</div></div>";
@@ -833,7 +844,29 @@ Hooks.once("ready", () => {
 
                 for (const t of targetsLocal) {
                     if (t.actor) {
-                        await t.actor.applyDamage(totalValues, { ignore: true });
+                        // Heavy Armor Master / Maestro en Armadura Pesada
+                        const hasHeavyArmorMaster = t.actor.items?.some(i => {
+                            const n = (i.name || "").toLowerCase();
+                            return i.type === "feat" && (
+                                n.includes("heavy armor master") ||
+                                n.includes("maestro en armadura pesada")
+                            );
+                        });
+
+                        let finalValues = totalValues;
+                        if (hasHeavyArmorMaster) {
+                            const physicalTypes = new Set(["bludgeoning", "piercing", "slashing"]);
+                            finalValues = totalValues.map(tv => {
+                                if (physicalTypes.has(tv.type) && tv.value > 0) {
+                                    const reduced = Math.max(0, tv.value - 3);
+                                    ui.notifications.info(`Maestro en Armadura Pesada: -3 daño (${tv.type}) en ${t.name}`);
+                                    return { ...tv, value: reduced };
+                                }
+                                return tv;
+                            });
+                        }
+
+                        await t.actor.applyDamage(finalValues, { ignore: true });
                     }
                 }
             }
