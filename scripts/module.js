@@ -389,6 +389,42 @@ Hooks.once("ready", () => {
                 });
                 if (hasHAM) targetHtml += `<div class="not-dice-target-trait" style="color: #4a148c; font-weight: bold;"><i class="fas fa-chess-rook"></i> Maestro Armadura Pesada (-Prof BPS)</div>`;
 
+                // Active conditions / statuses
+                const notDiceStatusES = {
+                    blinded: "Cegado",
+                    charmed: "Encantado",
+                    deafened: "Ensordecido",
+                    diseased: "Enfermo",
+                    exhaustion: "Agotamiento",
+                    frightened: "Asustado",
+                    grappled: "Aferrado",
+                    incapacitated: "Incapacitado",
+                    invisible: "Invisible",
+                    paralyzed: "Paralizado",
+                    petrified: "Petrificado",
+                    poisoned: "Envenenado",
+                    prone: "Derribado",
+                    restrained: "Restringido",
+                    stunned: "Aturdido",
+                    unconscious: "Inconsciente",
+                    concentrating: "Concentrado",
+                    dead: "Muerto",
+                    dodging: "Esquivando",
+                    hiding: "Ocultado",
+                    sleeping: "Dormido",
+                    surprised: "Sorprendido",
+                    silenced: "Silenciado",
+                    transformed: "Transformado"
+                };
+                const activeStatuses = t.actor?.statuses ?? new Set();
+                const conditionLabels = [];
+                for (const statusId of activeStatuses) {
+                    conditionLabels.push(notDiceStatusES[statusId] || statusId);
+                }
+                if (conditionLabels.length > 0) {
+                    targetHtml += `<div class="not-dice-target-trait" style="color: #555; font-style: italic;"><i class="fas fa-exclamation-circle"></i> ${conditionLabels.join(", ")}</div>`;
+                }
+
                 targetHtml += `</div>`;
             }
             targetHtml += "</div></div>";
@@ -868,6 +904,57 @@ Hooks.once("ready", () => {
                         }
 
                         await t.actor.applyDamage(finalValues, { ignore: true });
+                    }
+                }
+
+                // --- Topple / Derribar Mastery ---
+                const isTopple = activeMastery && (
+                    activeMastery.id === "topple" ||
+                    activeMastery.label.toLowerCase().includes("topple") ||
+                    activeMastery.label.toLowerCase().includes("derribar")
+                );
+                if (isTopple) {
+                    const attackerProf = actor?.system?.attributes?.prof ?? 0;
+                    const strMod = actor?.system?.abilities?.str?.mod ?? 0;
+                    const dexMod = actor?.system?.abilities?.dex?.mod ?? 0;
+                    const attackMod = Math.max(strMod, dexMod);
+                    const toppleDC = 8 + attackerProf + attackMod;
+
+                    for (const t of targetsLocal) {
+                        if (!t.actor) continue;
+                        const conSaveRaw = t.actor.system?.abilities?.con?.save;
+                        const conSave = typeof conSaveRaw === "number" ? conSaveRaw : (t.actor.system?.abilities?.con?.mod ?? 0);
+                        const conSaveLabel = conSave >= 0 ? `+${conSave}` : `${conSave}`;
+
+                        await new Promise(resolveTopple => {
+                            new Dialog({
+                                title: `Maestría: Derribar — ${t.name}`,
+                                content: `
+                                    <div style="text-align: center; padding: 5px;">
+                                        <p><strong>${t.name}</strong> debe superar una</p>
+                                        <p style="font-size: 1.3em; font-weight: bold;">Salvación de Constitución</p>
+                                        <p>CD: <span style="font-size: 1.6em; font-weight: 900; color: #b71c1c;">${toppleDC}</span></p>
+                                        <hr>
+                                        <p>Bono CON de ${t.name}: <strong>${conSaveLabel}</strong></p>
+                                    </div>`,
+                                buttons: {
+                                    prone: {
+                                        label: "<i class='fas fa-person-falling'></i> Derribado",
+                                        callback: async () => {
+                                            await t.actor.toggleStatusEffect("prone", { active: true });
+                                            ui.notifications.info(`Derribar: ${t.name} está Derribado.`);
+                                            resolveTopple();
+                                        }
+                                    },
+                                    pass: {
+                                        label: "<i class='fas fa-check'></i> Paso",
+                                        callback: () => resolveTopple()
+                                    }
+                                },
+                                default: "pass",
+                                close: () => resolveTopple()
+                            }, { width: 320 }).render(true);
+                        });
                     }
                 }
             }
