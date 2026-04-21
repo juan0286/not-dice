@@ -387,7 +387,7 @@ Hooks.once("ready", () => {
                         n.includes("maestro en armadura pesada")
                     );
                 });
-                if (hasHAM) targetHtml += `<div class="not-dice-target-trait" style="color: #4a148c; font-weight: bold;"><i class="fas fa-chess-rook"></i> Maestro Armadura Pesada (-3 PS)</div>`;
+                if (hasHAM) targetHtml += `<div class="not-dice-target-trait" style="color: #4a148c; font-weight: bold;"><i class="fas fa-chess-rook"></i> Maestro Armadura Pesada (-Prof BPS)</div>`;
 
                 targetHtml += `</div>`;
             }
@@ -855,11 +855,12 @@ Hooks.once("ready", () => {
 
                         let finalValues = totalValues;
                         if (hasHeavyArmorMaster) {
+                            const attackerProf = actor?.system?.attributes?.prof ?? 3;
                             const physicalTypes = new Set(["bludgeoning", "piercing", "slashing"]);
                             finalValues = totalValues.map(tv => {
                                 if (physicalTypes.has(tv.type) && tv.value > 0) {
-                                    const reduced = Math.max(0, tv.value - 3);
-                                    ui.notifications.info(`Maestro en Armadura Pesada: -3 daño (${tv.type}) en ${t.name}`);
+                                    const reduced = Math.max(0, tv.value - attackerProf);
+                                    ui.notifications.info(`Maestro en Armadura Pesada: -${attackerProf} daño (${tv.type}) en ${t.name}`);
                                     return { ...tv, value: reduced };
                                 }
                                 return tv;
