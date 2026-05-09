@@ -1,11 +1,11 @@
 // ============================================================
 // not-dice | saving-throw.js (Foundry V14 + D&D5e v4)
-// Detecta áreas de efecto interceptando las Actividades de D&D5e
-// y la creación de Regiones nativas de Foundry V14.
+// Detecta áreas de efecto interceptando la creación de Regiones
+// y Plantillas en el Canvas (garantizando que la geometría exista).
 // ============================================================
 
 Hooks.once("init", () => {
-    console.log("Not Dice | Módulo inicializado (Nuevos Hooks: dnd5e.postUseActivity y createRegion).");
+    console.log("Not Dice | Módulo inicializado (Hooks: createRegion / createMeasuredTemplate).");
     game.settings.register("not-dice", "enableTemplateIntercept", {
         name: "Detectar Área de Efecto",
         hint: "Muestra un diálogo con los tokens afectados al colocar una plantilla.",
@@ -24,8 +24,8 @@ const waitForAreaObject = (document) => {
 
         const interval = setInterval(() => {
             attempts++;
-            // En V14 comprobamos si el objeto visual tiene el método testPoint (Regiones) o shape (Plantillas)
-            if (document.object && (typeof document.object.testPoint === "function" || document.object.shape)) {
+            // En V14 comprobamos si el testPoint está en el documento, o si usamos el fallback del objeto visual
+            if (document.object && (typeof document.testPoint === "function" || typeof document.object.testPoint === "function" || document.object.shape)) {
                 clearInterval(interval);
                 console.log(`Not Dice | Objeto visual del área encontrado en intento ${attempts}.`);
                 resolve(document.object);
@@ -59,11 +59,15 @@ const getTokensInsideArea = (areaObj) => {
 
         let isInside = false;
 
-        // Prioridad 1: testPoint nativo de V14 (Regiones y nuevas plantillas)
-        if (typeof areaObj.testPoint === "function") {
+        // Prioridad 1: testPoint nativo en el Documento (V14+) - Evita el warning de deprecación
+        if (typeof areaObj.document?.testPoint === "function") {
+            isInside = areaObj.document.testPoint(point);
+        } 
+        // Prioridad 2: testPoint en el Objeto (V12/V13 legacy)
+        else if (typeof areaObj.testPoint === "function") {
             isInside = areaObj.testPoint(point);
         } 
-        // Prioridad 2: Fallback clásico 2D
+        // Prioridad 3: Fallback clásico 2D
         else if (areaObj.shape && typeof areaObj.shape.contains === "function") {
             const localX = point.x - areaObj.document.x;
             const localY = point.y - areaObj.document.y;
@@ -80,51 +84,19 @@ const getTokensInsideArea = (areaObj) => {
 };
 
 // ========================================================================
-// ESTRATEGIA A: Interceptar la Actividad de D&D5e (Más preciso para hechizos)
+// Interceptar la creación real de los documentos en la escena
 // ========================================================================
-Hooks.on("dnd5e.postUseActivity", async (activity, usageConfig, results) => {
-    if (!game.settings.get("not-dice", "enableTemplateIntercept")) return;
-    
-    console.log("Not Dice | Hook dnd5e.postUseActivity disparado.");
-
-    // En D&D5e v4, results contiene las plantillas o regiones generadas
-    const templates = results?.templates ?? [];
-    const regions = results?.regions ?? [];
-    const createdAreas = [...templates, ...regions];
-
-    if (createdAreas.length === 0) {
-        console.log("Not Dice | El hechizo/actividad no generó áreas en el mapa. Ignorando.");
-        return;
-    }
-
-    const spellName = activity.item?.name ?? "Área de Efecto";
-    const casterName = activity.actor?.name ?? "Desconocido";
-
-    console.log(`Not Dice | Área generada por hechizo: ${spellName}`);
-
-    // Tomamos la primera área generada
-    const areaDoc = createdAreas[0];
-    const areaObj = await waitForAreaObject(areaDoc);
-    
-    const caughtTokens = getTokensInsideArea(areaObj);
-    showCaughtTokensDialog(spellName, casterName, caughtTokens);
-});
-
-// ========================================================================
-// ESTRATEGIA B: Interceptar la creación nativa de Regiones en V14
-// ========================================================================
-Hooks.on("createRegion", async (regionDocument, operation, userId) => {
-    // Si fue por dnd5e.postUseActivity ya se habrá ejecutado, esto funciona de red de seguridad
+async function handleAreaCreation(document, userId, tipoLog) {
     if (userId !== game.user.id) return;
     if (!game.settings.get("not-dice", "enableTemplateIntercept")) return;
 
-    // Solo nos interesan regiones vinculadas a un ítem/hechizo
-    const originUuid = regionDocument.flags?.dnd5e?.origin;
+    // Solo nos interesan áreas generadas por un hechizo/ítem de D&D5e
+    const originUuid = document.flags?.dnd5e?.origin;
     if (!originUuid) return; 
 
-    console.log("Not Dice | Hook nativo createRegion disparado.");
+    console.log(`Not Dice | Hook ${tipoLog} disparado. Analizando área...`);
 
-    let spellName = "Región de Efecto";
+    let spellName = "Área de Efecto";
     let casterName = "Desconocido";
 
     try {
@@ -134,16 +106,27 @@ Hooks.on("createRegion", async (regionDocument, operation, userId) => {
             casterName = item.actor?.name || "Desconocido";
         }
     } catch (error) {
-        console.error("Not Dice | Fallo al buscar el origen de la región:", error);
+        console.error("Not Dice | Fallo al buscar el origen del área:", error);
     }
 
-    const areaObj = await waitForAreaObject(regionDocument);
+    const areaObj = await waitForAreaObject(document);
     const caughtTokens = getTokensInsideArea(areaObj);
     showCaughtTokensDialog(spellName, casterName, caughtTokens);
+}
+
+// Hook para las nuevas Regiones (V14)
+Hooks.on("createRegion", async (document, operation, userId) => {
+    handleAreaCreation(document, userId, "createRegion");
 });
 
+// Hook para las Plantillas clásicas (Fallback para módulos/versiones anteriores)
+Hooks.on("createMeasuredTemplate", async (document, operation, userId) => {
+    handleAreaCreation(document, userId, "createMeasuredTemplate");
+});
 
-// 4. Mostrar la UI (Idéntico a la versión anterior)
+// ========================================================================
+// 3. Mostrar la UI
+// ========================================================================
 const showCaughtTokensDialog = (spellName, casterName, tokens) => {
     let targetsHtml = "";
 
