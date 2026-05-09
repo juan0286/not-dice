@@ -2,7 +2,8 @@
 // not-dice | saving-throw.js (Foundry V14 + D&D5e v4)
 // Detecta áreas de efecto interceptando la creación de Regiones
 // y Plantillas en el Canvas (garantizando que la geometría exista).
-// Incluye traducción de MyMemory en tiempo real y UI interactiva.
+// Incluye traducción de MyMemory en tiempo real, UI interactiva
+// y aplicación de Efectos Activos.
 // ============================================================
 
 Hooks.once("init", () => {
@@ -149,6 +150,7 @@ async function handleAreaCreation(document, userId, tipoLog) {
     if (!originUuid) return; 
 
     let spellData = {
+        originUuid: originUuid,
         name: "Área de Efecto",
         caster: "Desconocido",
         img: "icons/magic/light/explosion-star-glow-blue-yellow.webp",
@@ -156,7 +158,8 @@ async function handleAreaCreation(document, userId, tipoLog) {
         saveAbilityKey: "", // Clave pura para sacar el modificador (ej. "dex")
         saveAbility: "",
         saveDC: "",
-        description: ""
+        description: "",
+        effects: [] // Array para guardar los Efectos Activos extraídos
     };
 
     try {
@@ -174,8 +177,10 @@ async function handleAreaCreation(document, userId, tipoLog) {
                 spellData.level = "Habilidad / Objeto";
             }
 
+            let saveActivity = null;
+
             if (actualItem.system?.activities) {
-                const saveActivity = actualItem.system.activities.contents?.find(a => a.type === "save")
+                saveActivity = actualItem.system.activities.contents?.find(a => a.type === "save")
                     || actualItem.system.activities.getByType?.("save")?.[0]
                     || (item.type === "save" ? item : null);
 
@@ -199,6 +204,27 @@ async function handleAreaCreation(document, userId, tipoLog) {
                 spellData.saveAbility = CONFIG.DND5E?.abilities?.[ability]?.label || ability.toUpperCase();
                 spellData.saveDC = actualItem.system?.save?.dc || "";
             }
+
+            // --- EXTRACCIÓN DE EFECTOS ---
+            if (actualItem.effects && actualItem.effects.size > 0) {
+                let validEffectIds = null;
+                // Si la actividad especifica qué efectos aplica, filtramos por ellos
+                if (saveActivity && saveActivity.effects && saveActivity.effects.length > 0) {
+                    validEffectIds = saveActivity.effects.map(e => e._id);
+                }
+
+                actualItem.effects.forEach(eff => {
+                    if (eff.transfer) return; // Ignoramos efectos pasivos del lanzador
+                    if (validEffectIds && !validEffectIds.includes(eff.id)) return;
+                    
+                    spellData.effects.push({
+                        id: eff.id,
+                        name: eff.name,
+                        img: eff.icon || eff.img,
+                        data: eff.toObject() // Objeto de datos puro para inyectar después
+                    });
+                });
+            }
         }
     } catch (error) {
         console.error("Not Dice | Fallo al procesar el ítem:", error);
@@ -214,7 +240,7 @@ Hooks.on("createMeasuredTemplate", async (document, operation, userId) => handle
 
 // 5. Mostrar la UI
 const showCaughtTokensDialog = (spellData, tokens) => {
-    const { name, caster, img, level, saveAbilityKey, saveAbility, saveDC, description } = spellData;
+    const { name, caster, img, level, saveAbilityKey, saveAbility, saveDC, description, effects } = spellData;
     const enableTranslation = game.settings.get("not-dice", "enableTranslation");
     const uniqueId = "nd-ui-" + Math.random().toString(36).substring(2, 9);
     
@@ -265,11 +291,19 @@ const showCaughtTokensDialog = (spellData, tokens) => {
     let saveBadge = "";
     if (saveAbility) {
         saveBadge = `
-            <div style="margin-top: 6px;">
-                <span style="display:inline-block; font-size:0.85em; background:#d3e3fd; color:#0b57d0; padding:3px 8px; border-radius:12px; border:1px solid #a8c7fa;">
-                    <strong>Salvación:</strong> ${saveAbility} ${saveDC ? `(CD ${saveDC})` : ""}
-                </span>
-            </div>
+            <span style="display:inline-block; font-size:0.85em; background:#d3e3fd; color:#0b57d0; padding:3px 8px; border-radius:12px; border:1px solid #a8c7fa; margin-right: 4px;">
+                <strong>Salvación:</strong> ${saveAbility} ${saveDC ? `(CD ${saveDC})` : ""}
+            </span>
+        `;
+    }
+
+    let effectsBadge = "";
+    if (effects && effects.length > 0) {
+        const effectIcons = effects.map(e => `<img src="${e.img}" style="width:14px; height:14px; vertical-align:middle; border-radius:3px; margin-right:2px;" title="${e.name}">`).join("");
+        effectsBadge = `
+            <span style="display:inline-block; font-size:0.85em; background:#fce8e6; color:#c5221f; padding:3px 8px; border-radius:12px; border:1px solid #fad2cf;">
+                <strong>Efectos:</strong> ${effectIcons}
+            </span>
         `;
     }
 
@@ -279,7 +313,10 @@ const showCaughtTokensDialog = (spellData, tokens) => {
             <div style="flex:1; min-width:0;">
                 <div style="font-size:1.2em; font-weight:bold; color:#000; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">${name}</div>
                 <div style="font-size:0.85em; color:#555;">Lanzado por <strong>${caster}</strong> • <span style="font-style:italic;">${level}</span></div>
-                ${saveBadge}
+                <div style="margin-top: 6px; display:flex; flex-wrap:wrap; gap:4px;">
+                    ${saveBadge}
+                    ${effectsBadge}
+                </div>
             </div>
         </div>
     `;
@@ -319,6 +356,15 @@ const showCaughtTokensDialog = (spellData, tokens) => {
         `;
     }
 
+    const applyEffectsHtml = effects.length > 0 ? `
+        <div style="margin-top: 15px; display: flex; justify-content: space-between; align-items: center; border-top: 1px solid #ddd; padding-top: 10px;">
+            <span style="font-size: 0.85em; color: #666; font-style: italic;">* Aplica a los seleccionados con 'Falla'.</span>
+            <button id="${uniqueId}-apply-effects" style="background: #e53935; color: white; border: 1px solid #c62828; padding: 6px 12px; border-radius: 4px; cursor: pointer; font-weight: bold; font-family: inherit; transition: background 0.2s;">
+                <i class="fas fa-bolt"></i> Aplicar Efectos
+            </button>
+        </div>
+    ` : "";
+
     const content = `
         <div style="font-family:inherit; padding:4px 2px; margin-bottom: 10px;" id="${uniqueId}-main-container">
             ${headerHtml}
@@ -327,6 +373,7 @@ const showCaughtTokensDialog = (spellData, tokens) => {
             <div style="max-height: 250px; overflow-y: auto; padding-right: 4px;">
                 ${targetsHtml}
             </div>
+            ${applyEffectsHtml}
         </div>
     `;
 
@@ -334,6 +381,9 @@ const showCaughtTokensDialog = (spellData, tokens) => {
     const onRenderComplete = () => {
         const container = document.getElementById(`${uniqueId}-main-container`);
         if (!container) return;
+
+        // Objeto para rastrear el estado actual (pass/fail) de cada token
+        const tokenStates = {};
 
         // 1. Alternar idiomas (si está habilitado)
         if (enableTranslation) {
@@ -362,6 +412,7 @@ const showCaughtTokensDialog = (spellData, tokens) => {
 
         // Función para cambiar visualmente el estado de Pasa/Falla
         const setSaveState = (tokenId, state) => {
+            tokenStates[tokenId] = state; // Guardamos el estado para el botón de aplicar efectos
             const passBtn = container.querySelector(`.${uniqueId}-btn-pass[data-token-id="${tokenId}"]`);
             const failBtn = container.querySelector(`.${uniqueId}-btn-fail[data-token-id="${tokenId}"]`);
             if (!passBtn || !failBtn) return;
@@ -398,7 +449,6 @@ const showCaughtTokensDialog = (spellData, tokens) => {
                     // Lanzar la salvación a través del sistema D&D5e
                     const rolls = await token.actor.rollSavingThrow({ ability: saveAbilityKey });
                     if (rolls) {
-                        // Soporta tanto array de tiradas como objeto único (según versión exacta de dnd5e)
                         const roll = Array.isArray(rolls) ? rolls[0] : rolls;
                         const total = roll.total;
                         const dc = parseInt(saveDC);
@@ -414,6 +464,39 @@ const showCaughtTokensDialog = (spellData, tokens) => {
                 }
             });
         });
+
+        // 5. Aplicar Efectos a los que fallaron
+        const applyBtn = document.getElementById(`${uniqueId}-apply-effects`);
+        if (applyBtn) {
+            applyBtn.addEventListener('click', async (e) => {
+                e.preventDefault();
+                const failedTokens = tokens.filter(t => tokenStates[t.id] === 'fail');
+                
+                // Filtramos por los que además tienen el checkbox activado
+                const validFailedTokens = failedTokens.filter(t => {
+                    const cb = container.querySelector(`.${uniqueId}-cb[data-token-id="${t.id}"]`);
+                    return cb && cb.checked;
+                });
+
+                if (validFailedTokens.length === 0) {
+                    ui.notifications.warn("Not Dice | No hay objetivos válidos marcados con 'Falla'.");
+                    return;
+                }
+
+                let appliedCount = 0;
+                for (const t of validFailedTokens) {
+                    for (const eff of effects) {
+                        const effectData = foundry.utils.duplicate(eff.data);
+                        delete effectData._id; // Nos aseguramos de que Foundry genere un ID nuevo
+                        effectData.origin = spellData.originUuid;
+                        
+                        await t.actor.createEmbeddedDocuments("ActiveEffect", [effectData]);
+                    }
+                    appliedCount++;
+                }
+                ui.notifications.info(`Not Dice | Efectos aplicados exitosamente a ${appliedCount} objetivos.`);
+            });
+        }
     };
 
     try {
