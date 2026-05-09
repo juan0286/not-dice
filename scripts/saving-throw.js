@@ -356,14 +356,15 @@ const showCaughtTokensDialog = (spellData, tokens) => {
         `;
     }
 
-    const applyEffectsHtml = effects.length > 0 ? `
+    const actionsHtml = `
         <div style="margin-top: 15px; display: flex; justify-content: space-between; align-items: center; border-top: 1px solid #ddd; padding-top: 10px;">
-            <span style="font-size: 0.85em; color: #666; font-style: italic;">* Aplica a los seleccionados con 'Falla'.</span>
-            <button id="${uniqueId}-apply-effects" style="background: #e53935; color: white; border: 1px solid #c62828; padding: 6px 12px; border-radius: 4px; cursor: pointer; font-weight: bold; font-family: inherit; transition: background 0.2s;">
-                <i class="fas fa-bolt"></i> Aplicar Efectos
-            </button>
+            <span style="font-size: 0.85em; color: #666; font-style: italic;">* Selecciona Pasa/Falla y luego tira Daño.</span>
+            <div style="display: flex; gap: 8px;">
+                ${effects.length > 0 ? `<button id="${uniqueId}-apply-effects" style="background: #e53935; color: white; border: 1px solid #c62828; padding: 6px 12px; border-radius: 4px; cursor: pointer; font-weight: bold; font-family: inherit; transition: background 0.2s;"><i class="fas fa-bolt"></i> Aplicar Efectos</button>` : ""}
+                <button id="${uniqueId}-roll-damage" style="background: #1a73e8; color: white; border: 1px solid #0b57d0; padding: 6px 12px; border-radius: 4px; cursor: pointer; font-weight: bold; font-family: inherit; transition: background 0.2s;"><i class="fas fa-skull"></i> Tirar Daño</button>
+            </div>
         </div>
-    ` : "";
+    `;
 
     const content = `
         <div style="font-family:inherit; padding:4px 2px; margin-bottom: 10px;" id="${uniqueId}-main-container">
@@ -373,7 +374,7 @@ const showCaughtTokensDialog = (spellData, tokens) => {
             <div style="max-height: 250px; overflow-y: auto; padding-right: 4px;">
                 ${targetsHtml}
             </div>
-            ${applyEffectsHtml}
+            ${actionsHtml}
         </div>
     `;
 
@@ -495,6 +496,46 @@ const showCaughtTokensDialog = (spellData, tokens) => {
                     appliedCount++;
                 }
                 ui.notifications.info(`Not Dice | Efectos aplicados exitosamente a ${appliedCount} objetivos.`);
+            });
+        }
+
+        // 6. Tirar Daño (pasa los multiplicadores al diálogo de daño)
+        const rollDamageBtn = document.getElementById(`${uniqueId}-roll-damage`);
+        if (rollDamageBtn) {
+            rollDamageBtn.addEventListener('click', async (e) => {
+                e.preventDefault();
+                try {
+                    const item = await fromUuid(spellData.originUuid);
+                    const actualItem = item?.item || item;
+                    if (!actualItem) return ui.notifications.warn("Not Dice | No se pudo encontrar el objeto origen.");
+                    
+                    const dmgAct = actualItem.system.activities?.contents?.find(a => a.type === "damage" || a.type === "attack" || a.type === "save");
+                    
+                    const targetMultipliers = {};
+                    const targetIds = [];
+                    for (const t of tokens) {
+                        const cb = container.querySelector(`.${uniqueId}-cb[data-token-id="${t.id}"]`);
+                        if (!cb || !cb.checked) continue;
+                        
+                        const state = tokenStates[t.id];
+                        targetMultipliers[t.id] = state === 'pass' ? 0.5 : 1;
+                        targetIds.push(t.id);
+                    }
+                    
+                    // Inyectamos los datos en el evento real (e) para que el core de D&D5e tenga acceso a e.currentTarget y e.target sin arrojar TypeError
+                    e.notDiceMultipliers = targetMultipliers;
+                    e.targetIds = targetIds;
+                    
+                    if (dmgAct && typeof dmgAct.rollDamage === "function") {
+                        await dmgAct.rollDamage({ event: e, notDiceMultipliers: targetMultipliers });
+                    } else if (typeof actualItem.rollDamage === "function") {
+                        await actualItem.rollDamage({ event: e, notDiceMultipliers: targetMultipliers });
+                    } else {
+                        ui.notifications.warn("Not Dice | Este hechizo no tiene un bloque de daño configurado.");
+                    }
+                } catch (err) {
+                    console.error("Not Dice | Error tirando daño:", err);
+                }
             });
         }
     };
