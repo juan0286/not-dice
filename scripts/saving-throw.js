@@ -8,7 +8,7 @@
 
 Hooks.once("init", () => {
     console.log("Not Dice | Módulo inicializado (Traducción y UI Interactiva Activas).");
-    
+
     // Configuración para activar/desactivar la intercepción de áreas
     game.settings.register("not-dice", "enableTemplateIntercept", {
         name: "Detectar Área de Efecto",
@@ -89,7 +89,7 @@ const getTokensInsideArea = (areaObj) => {
             caughtTokens.push(token);
         }
     }
-    
+
     return caughtTokens;
 };
 
@@ -111,9 +111,9 @@ async function translateAndUpdate(htmlDesc, targetId) {
 
     // Dividimos el texto en trozos de ~450 caracteres.
     const chunks = plainText.match(/.{1,450}(?:\s|$)/g) || [plainText];
-    
+
     // Traducimos máximo 2 bloques (~900 chars).
-    const maxChunks = Math.min(chunks.length, 2); 
+    const maxChunks = Math.min(chunks.length, 2);
     let finalTranslation = "";
 
     for (let i = 0; i < maxChunks; i++) {
@@ -121,7 +121,7 @@ async function translateAndUpdate(htmlDesc, targetId) {
             const url = `https://api.mymemory.translated.net/get?q=${encodeURIComponent(chunks[i].trim())}&langpair=en|es${emailParam}`;
             const response = await fetch(url);
             const data = await response.json();
-            
+
             if (data?.responseData?.translatedText) {
                 finalTranslation += `<p style="margin-bottom: 4px;">${data.responseData.translatedText}</p>`;
             } else {
@@ -133,7 +133,7 @@ async function translateAndUpdate(htmlDesc, targetId) {
             break;
         }
     }
-    
+
     if (chunks.length > 2) {
         finalTranslation += `<p style="color: #888; font-style: italic;">[...] Traducción truncada para proteger el límite de la API gratuita.</p>`;
     }
@@ -147,7 +147,7 @@ async function handleAreaCreation(document, userId, tipoLog) {
     if (!game.settings.get("not-dice", "enableTemplateIntercept")) return;
 
     const originUuid = document.flags?.dnd5e?.origin;
-    if (!originUuid) return; 
+    if (!originUuid) return;
 
     let spellData = {
         originUuid: originUuid,
@@ -191,7 +191,7 @@ async function handleAreaCreation(document, userId, tipoLog) {
                         spellData.saveAbilityKey = ability;
                         spellData.saveAbility = CONFIG.DND5E?.abilities?.[ability]?.label || ability.toUpperCase();
                     }
-                    
+
                     if (saveActivity.save?.dc?.value) {
                         spellData.saveDC = saveActivity.save.dc.value;
                     } else if (actualItem.actor && actualItem.actor.system?.attributes?.spelldc) {
@@ -216,7 +216,7 @@ async function handleAreaCreation(document, userId, tipoLog) {
                 actualItem.effects.forEach(eff => {
                     if (eff.transfer) return; // Ignoramos efectos pasivos del lanzador
                     if (validEffectIds && !validEffectIds.includes(eff.id)) return;
-                    
+
                     spellData.effects.push({
                         id: eff.id,
                         name: eff.name,
@@ -243,7 +243,7 @@ const showCaughtTokensDialog = (spellData, tokens) => {
     const { name, caster, img, level, saveAbilityKey, saveAbility, saveDC, description, effects } = spellData;
     const enableTranslation = game.settings.get("not-dice", "enableTranslation");
     const uniqueId = "nd-ui-" + Math.random().toString(36).substring(2, 9);
-    
+
     let targetsHtml = "";
 
     if (tokens.length === 0) {
@@ -251,7 +251,7 @@ const showCaughtTokensDialog = (spellData, tokens) => {
     } else {
         targetsHtml = tokens.map(t => {
             const tokenImg = t.document.texture?.src || t.actor.img;
-            
+
             // Determinar el modificador de salvación del actor para este hechizo
             const saveModRaw = saveAbilityKey ? t.actor.system?.abilities?.[saveAbilityKey]?.save : null;
             const saveModFormateado = Number.isFinite(saveModRaw) ? (saveModRaw >= 0 ? `+${saveModRaw}` : saveModRaw) : "--";
@@ -370,7 +370,12 @@ const showCaughtTokensDialog = (spellData, tokens) => {
         <div style="font-family:inherit; padding:4px 2px; margin-bottom: 10px;" id="${uniqueId}-main-container">
             ${headerHtml}
             ${descriptionHtml}
-            <h3 style="border-bottom: 1px solid #ccc; padding-bottom: 4px; margin-bottom: 10px;">Objetivos Atrapados (${tokens.length}):</h3>
+            <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #ccc; padding-bottom: 4px; margin-bottom: 10px;">
+                <h3 style="margin: 0; border: none; padding: 0;">Objetivos Atrapados (${tokens.length}):</h3>
+                <button id="${uniqueId}-epic-btn" style="background: #9c27b0; color: white; border: 1px solid #7b1fa2; padding: 4px 12px; border-radius: 4px; cursor: pointer; font-weight: bold; font-family: inherit; font-size: 0.85em; display:flex; align-items:center; gap:4px; box-shadow: 0 1px 2px rgba(0,0,0,0.2);">
+                    <i class="fas fa-meteor"></i> Epic
+                </button>
+            </div>
             <div style="max-height: 250px; overflow-y: auto; padding-right: 4px;">
                 ${targetsHtml}
             </div>
@@ -472,7 +477,7 @@ const showCaughtTokensDialog = (spellData, tokens) => {
             applyBtn.addEventListener('click', async (e) => {
                 e.preventDefault();
                 const failedTokens = tokens.filter(t => tokenStates[t.id] === 'fail');
-                
+
                 // Filtramos por los que además tienen el checkbox activado
                 const validFailedTokens = failedTokens.filter(t => {
                     const cb = container.querySelector(`.${uniqueId}-cb[data-token-id="${t.id}"]`);
@@ -490,7 +495,7 @@ const showCaughtTokensDialog = (spellData, tokens) => {
                         const effectData = foundry.utils.duplicate(eff.data);
                         delete effectData._id; // Nos aseguramos de que Foundry genere un ID nuevo
                         effectData.origin = spellData.originUuid;
-                        
+
                         await t.actor.createEmbeddedDocuments("ActiveEffect", [effectData]);
                     }
                     appliedCount++;
@@ -508,24 +513,24 @@ const showCaughtTokensDialog = (spellData, tokens) => {
                     const item = await fromUuid(spellData.originUuid);
                     const actualItem = item?.item || item;
                     if (!actualItem) return ui.notifications.warn("Not Dice | No se pudo encontrar el objeto origen.");
-                    
+
                     const dmgAct = actualItem.system.activities?.contents?.find(a => a.type === "damage" || a.type === "attack" || a.type === "save");
-                    
+
                     const targetMultipliers = {};
                     const targetIds = [];
                     for (const t of tokens) {
                         const cb = container.querySelector(`.${uniqueId}-cb[data-token-id="${t.id}"]`);
                         if (!cb || !cb.checked) continue;
-                        
+
                         const state = tokenStates[t.id];
                         targetMultipliers[t.id] = state === 'pass' ? 0.5 : 1;
                         targetIds.push(t.id);
                     }
-                    
+
                     // Inyectamos los datos en el evento real (e) para que el core de D&D5e tenga acceso a e.currentTarget y e.target sin arrojar TypeError
                     e.notDiceMultipliers = targetMultipliers;
                     e.targetIds = targetIds;
-                    
+
                     if (dmgAct && typeof dmgAct.rollDamage === "function") {
                         await dmgAct.rollDamage({ event: e, notDiceMultipliers: targetMultipliers });
                     } else if (typeof actualItem.rollDamage === "function") {
@@ -535,6 +540,55 @@ const showCaughtTokensDialog = (spellData, tokens) => {
                     }
                 } catch (err) {
                     console.error("Not Dice | Error tirando daño:", err);
+                }
+            });
+        }
+
+        // 7. Botón Epic Roll
+        const epicBtn = document.getElementById(`${uniqueId}-epic-btn`);
+        if (epicBtn) {
+            epicBtn.addEventListener("click", (e) => {
+                e.preventDefault();
+
+                // Targetear los tokens atrapados para que la UI de Epic Roll los tome automáticamente
+                if (game.user.targets) game.user.targets.clear(); // Limpia los targets actuales
+                tokens.forEach(t => t.setTarget(true, { releaseOthers: false, user: game.user }));
+
+                let macroFound = false;
+
+                // Opción 1: Buscamos una macro de usuario con nombre 'epic roll' o 'epic'
+                const epicMacro = game.macros.find(m => m.name.toLowerCase().includes("epic roll") || m.name.toLowerCase() === "epic");
+                if (epicMacro) {
+                    epicMacro.execute();
+                    macroFound = true;
+                } else if (ui.EpicRolls5e && typeof ui.EpicRolls5e.requestRoll === "function") {
+                    console.log("Not Dice | API Epic Rolls encontrada, enviando estructura estricta...");
+                    // Opción 2: Fallback a llamar a la API directamente con la estructura estricta
+                    const epicData = {
+                        actors: tokens.map(t => t.actor?.uuid).filter(Boolean),
+                        contestants: [],
+                        type: `save.${spellData.saveAbilityKey}`,
+                        contest: null,
+                        options: {
+                            formula: "",
+                            DC: parseInt(spellData.saveDC) || null,
+                            showDC: true,
+                            useAverage: false,
+                            allowReroll: false,
+                            showRollResults: true,
+                            blindRoll: false,
+                            hideNames: false,
+                            autoColor: true,
+                            color: "0",
+                            customLabel: ""
+                        }
+                    };
+                    ui.EpicRolls5e.requestRoll(epicData);
+                    macroFound = true;
+                }
+
+                if (!macroFound) {
+                    ui.notifications.warn("Not Dice | No se encontró la API de Epic Rolls 5e ni una macro llamada 'Epic Roll' o 'Epic'.");
                 }
             });
         }
