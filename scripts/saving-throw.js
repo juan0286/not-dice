@@ -583,8 +583,103 @@ const showCaughtTokensDialog = (spellData, tokens) => {
                             customLabel: ""
                         }
                     };
-                    ui.EpicRolls5e.requestRoll(epicData);
+                    
+                    const epicPromise = ui.EpicRolls5e.requestRoll(epicData);
                     macroFound = true;
+                    
+                    // Función para actualizar radios basada en resultados
+                    const updateTokensFromResult = (results) => {
+                        console.log("Not Dice | Procesando resultados de Epic:", results);
+                        
+                        // Extraemos el objeto de resultados reales si viene anidado (común en TheRipper93)
+                        let actualResults = results;
+                        if (results && !Array.isArray(results)) {
+                            if (results.results && typeof results.results === 'object') actualResults = results.results;
+                            else if (results.contestants && typeof results.contestants === 'object') actualResults = results.contestants;
+                        }
+
+                        let updated = 0;
+                        const resultsArray = Array.isArray(actualResults) ? actualResults : Object.keys(actualResults).map(k => {
+                            return typeof actualResults[k] === 'object' ? { ...actualResults[k], _keyId: k } : { value: actualResults[k], _keyId: k };
+                        });
+                        
+                        for (const res of resultsArray) {
+                            if (!res) continue;
+                            console.log(`Not Dice | Inspeccionando res crudo de Epic:`, JSON.stringify({
+                                total: res.total, success: res.success, isSuccess: res.isSuccess, pass: res.pass 
+                            }));
+                            
+                            // Intentamos encontrar el booleano de éxito directo
+                            let isSuccess = res.success ?? res.isSuccess ?? res.passed ?? res.pass ?? res.value?.success ?? res.value?.isSuccess ?? (res.value === 'pass' || res.value === true);
+                            
+                            // FALLBACK: Extraemos el valor matemático de la tirada desde res.roll
+                            let rollValue = undefined;
+                            if (typeof res.roll === 'number' || typeof res.roll === 'string') {
+                                rollValue = res.roll;
+                            } else if (res.roll && typeof res.roll === 'object') {
+                                rollValue = res.roll.total ?? res.roll._total ?? res.roll.value ?? res.roll.result;
+                            }
+                            if (rollValue === undefined) rollValue = res.total ?? res.value;
+
+                            if (rollValue !== undefined && spellData.saveDC) {
+                                const dc = parseInt(spellData.saveDC);
+                                const numericRoll = parseInt(rollValue);
+                                if (!isNaN(dc) && !isNaN(numericRoll)) {
+                                    isSuccess = numericRoll >= dc;
+                                    console.log(`Not Dice | Evaluación manual: Tirada (${numericRoll}) vs CD (${dc}) -> ${isSuccess ? 'PASA' : 'FALLA'}`);
+                                }
+                            }
+                            
+                            // Intentamos encontrar el ID del actor o token
+                            const actorId = res.actorId || res.actor?._id || res.actor?.id || res.tokenId || res.token?._id || res.token?.id || res.id || res._keyId || (typeof res.actor === 'string' ? res.actor : null);
+                            
+                            console.log(`Not Dice | Analizando actor/token ID: ${actorId} - Éxito: ${isSuccess}`);
+                            
+                            if (isSuccess !== undefined && actorId) {
+                                // Buscar el token afectado comparando id, uuid del actor y uuid del token
+                                const targetToken = tokens.find(t => 
+                                    t.actor?.id === actorId || 
+                                    t.actor?.uuid === actorId || 
+                                    t.id === actorId ||
+                                    t.document?.uuid === actorId
+                                );
+                                
+                                if (targetToken) {
+                                    console.log(`Not Dice | ¡Match! Token encontrado: ${targetToken.name}`);
+                                    const currentState = tokenStates[targetToken.id];
+                                    const newState = isSuccess ? 'pass' : 'fail';
+                                    if (currentState !== newState) {
+                                        setSaveState(targetToken.id, newState);
+                                        updated++;
+                                    }
+                                } else {
+                                    console.warn(`Not Dice | No se encontró el token para ID: ${actorId}`);
+                                }
+                            }
+                        }
+                        if (updated > 0) ui.notifications.info(`Not Dice | ${updated} objetivos sincronizados desde Epic Rolls.`);
+                    };
+
+                    // Intento 1: Atrapar resultados de la Promesa de requestRoll
+                    if (epicPromise && typeof epicPromise.then === "function") {
+                        epicPromise.then((res) => {
+                            if (res && (Array.isArray(res) || Object.keys(res).length > 0)) {
+                                updateTokensFromResult(res);
+                            }
+                        }).catch(e => console.error("Not Dice | Promesa Epic rechazada:", e));
+                    }
+
+                    // Intento 2: Atrapar resultados directamente del chat por si la promesa no los devuelve
+                    const hookId = Hooks.on("createChatMessage", (msg) => {
+                        const epicFlags = msg.flags?.["epic-rolls-5e"];
+                        if (epicFlags && (epicFlags.results || epicFlags.contestants)) {
+                            updateTokensFromResult(epicFlags.results || epicFlags.contestants);
+                            Hooks.off("createChatMessage", hookId); // Desconectar hook
+                        }
+                    });
+                    
+                    // Desconectar el hook luego de 3 minutos por limpieza
+                    setTimeout(() => Hooks.off("createChatMessage", hookId), 180000);
                 }
 
                 if (!macroFound) {
