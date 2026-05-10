@@ -419,14 +419,14 @@ Hooks.once("ready", () => {
                         <div style="flex:1; min-width:0;">
                             <div style="display:flex; justify-content:space-between; align-items:center;">
                                 <span style="font-weight:bold; font-size:1.1em; color:inherit;">${t.name}</span>
-                                ${ac !== undefined ? `<span style="font-size:0.85em; font-weight:bold; background:var(--color-bg, #fff); color:inherit; padding:2px 6px; border-radius:4px; border:1px solid var(--color-border-light-2, #ccc); box-shadow:0 1px 1px rgba(0,0,0,0.1);" title="Clase de Armadura">CA ${ac}</span>` : ""}
+                                ${ac !== undefined ? `<span style="font-size:0.85em; font-weight:bold; background:rgba(128,128,128,0.2); color:inherit; padding:2px 6px; border-radius:4px; border:1px solid var(--color-border-light-2, #ccc); box-shadow:0 1px 1px rgba(0,0,0,0.1);" title="Clase de Armadura">CA ${ac}</span>` : ""}
                             </div>
                             <div>${badgesHtml}</div>
                         </div>
                         <div style="flex-shrink:0; display:flex; flex-direction:column; align-items:flex-end; gap:4px;">
                             <label style="font-size:0.75em; color:inherit; opacity:0.7;">Multiplicador:</label>
-                            <select name="target-multiplier-${t.id}" style="padding:2px 4px; border:1px solid var(--color-border-light-2, #ccc); background:var(--color-bg, #fff); color:inherit; border-radius:4px; font-size:0.9em; cursor:pointer;">
-                                ${multiplierOptions.map(o => `<option value="${o.val}" ${o.val === detectedMultiplier ? "selected" : ""}>${o.label}</option>`).join("")}
+                            <select name="target-multiplier-${t.id}" style="padding:2px 4px; border:1px solid var(--color-border-light-2, #ccc); background:rgba(128,128,128,0.1); color:inherit; border-radius:4px; font-size:0.9em; cursor:pointer;">
+                                ${multiplierOptions.map(o => `<option value="${o.val}" style="color:inherit;" ${o.val === detectedMultiplier ? "selected" : ""}>${o.label}</option>`).join("")}
                             </select>
                         </div>
                     </div>`;
@@ -651,20 +651,20 @@ Hooks.once("ready", () => {
                     <div style="display:flex; gap:10px; margin-bottom: 8px;">
                         <div style="flex:1;">
                             <label style="font-size:0.85em; color:inherit; opacity:0.7;">Fórmula:</label>
-                            <input type="text" value="${part.formula}" disabled style="width: 100%; padding:4px 6px; border:1px solid var(--color-border-light-2, #ccc); border-radius:4px; background:var(--color-bg-option, rgba(0,0,0,0.1)); color:inherit; font-family:monospace; font-size:1.1em; ${part.isOffhandWithoutStyle ? 'border-color:#ff5252; background-color:rgba(197,34,31,0.1);' : ''}"/>
+                            <input type="text" value="${part.formula}" readonly style="width: 100%; padding:4px 6px; border:1px solid var(--color-border-light-2, #ccc); border-radius:4px; background:rgba(128,128,128,0.1); color:inherit; font-family:monospace; font-size:1.1em; ${part.isOffhandWithoutStyle ? 'border-color:#ff5252; background-color:rgba(197,34,31,0.1);' : ''}"/>
                             ${part.isOffhandWithoutStyle ? '<div style="font-size: 0.75em; color: #ff5252; margin-top: 2px;">* Sin mod. de característica</div>' : ''}
                         </div>
                         ${part.versatileFormula ? `
                         <div style="flex:1;">
                             <label style="font-size:0.85em; color:inherit; opacity:0.7;">Versátil (2M):</label>
-                            <input type="text" value="${part.versatileFormula}" disabled style="width: 100%; padding:4px 6px; border:1px solid var(--color-border-light-2, #ccc); border-radius:4px; background:var(--color-bg-option, rgba(0,0,0,0.1)); color:inherit; font-family:monospace; font-size:1.1em;"/>
+                            <input type="text" value="${part.versatileFormula}" readonly style="width: 100%; padding:4px 6px; border:1px solid var(--color-border-light-2, #ccc); border-radius:4px; background:rgba(128,128,128,0.1); color:inherit; font-family:monospace; font-size:1.1em;"/>
                         </div>` : ""}
                     </div>
                     
                     <div style="display:flex; gap:10px; align-items:flex-end;">
                         <div style="flex:1;">
                             <label style="font-size:0.85em; color:inherit; opacity:0.7;">Total Daño:</label>
-                            <input type="number" name="total-${part.index}" value="0" style="width: 100%; height: 38px; font-size:1.6em; font-weight:bold; text-align:center; padding:4px; border:1px solid var(--color-border-light-2, #aaa); border-radius:4px; color:#ff5252; background:var(--color-bg, #fff);"/>
+                            <input type="number" name="total-${part.index}" value="0" style="width: 100%; height: 38px; font-size:1.6em; font-weight:bold; text-align:center; padding:4px; border:1px solid var(--color-border-light-2, #aaa); border-radius:4px; color:#ff5252; background:rgba(128,128,128,0.1);"/>
                         </div>
                         <div style="display:flex; gap:4px; padding-bottom:1px;">
                             <button type="button" class="roll-damage-btn" data-index="${part.index}" style="width:38px; height:38px; border:1px solid var(--color-border-light-2, #bbb); border-radius:4px; background:var(--color-bg-option, rgba(127,127,127,0.1)); color:inherit; cursor:pointer;" title="Tirar Daño Normal"><i class="fas fa-dice" style="color:inherit; opacity:0.8;"></i></button>

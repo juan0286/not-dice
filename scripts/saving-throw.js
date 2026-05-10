@@ -159,7 +159,8 @@ async function handleAreaCreation(document, userId, tipoLog) {
         saveAbility: "",
         saveDC: "",
         description: "",
-        effects: [] // Array para guardar los Efectos Activos extraídos
+        effects: [], // Array para guardar los Efectos Activos extraídos
+        hasDamage: false // Bandera para saber si el hechizo hace daño
     };
 
     try {
@@ -203,6 +204,18 @@ async function handleAreaCreation(document, userId, tipoLog) {
                 spellData.saveAbilityKey = ability;
                 spellData.saveAbility = CONFIG.DND5E?.abilities?.[ability]?.label || ability.toUpperCase();
                 spellData.saveDC = actualItem.system?.save?.dc || "";
+            }
+
+            // --- EXTRACCIÓN DE DAÑO ---
+            if (actualItem.system?.activities) {
+                for (const act of actualItem.system.activities.values()) {
+                    if (act.damage && act.damage.parts && act.damage.parts.length > 0) {
+                        spellData.hasDamage = true;
+                        break;
+                    }
+                }
+            } else if (actualItem.system?.damage?.parts && actualItem.system.damage.parts.length > 0) {
+                spellData.hasDamage = true;
             }
 
             // --- EXTRACCIÓN DE EFECTOS ---
@@ -308,11 +321,11 @@ const showCaughtTokensDialog = (spellData, tokens) => {
     }
 
     const headerHtml = `
-        <div style="display:flex; align-items:center; gap:12px; margin-bottom:12px; padding:10px; border:1px solid #ddd; border-radius:6px; background:rgba(0,0,0,0.03); box-shadow: 0 1px 3px rgba(0,0,0,0.05);">
-            <img src="${img}" style="width:54px; height:54px; border:1px solid #aaa; border-radius:6px; object-fit:cover; flex-shrink:0;">
+        <div style="display:flex; align-items:center; gap:12px; margin-bottom:12px; padding:10px; border:1px solid var(--color-border-light-2, #ddd); border-radius:6px; background:rgba(128,128,128,0.1); box-shadow: 0 1px 3px rgba(0,0,0,0.1);">
+            <img src="${img}" style="width:54px; height:54px; border:1px solid var(--color-border-light-2, #aaa); border-radius:6px; object-fit:cover; flex-shrink:0;">
             <div style="flex:1; min-width:0;">
-                <div style="font-size:1.2em; font-weight:bold; color:#000; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">${name}</div>
-                <div style="font-size:0.85em; color:#555;">Lanzado por <strong>${caster}</strong> • <span style="font-style:italic;">${level}</span></div>
+                <div style="font-size:1.2em; font-weight:bold; color:inherit; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">${name}</div>
+                <div style="font-size:0.95em; color:inherit; opacity:0.85;">Lanzado por <strong>${caster}</strong> • <span style="font-style:italic;">${level}</span></div>
                 <div style="margin-top: 6px; display:flex; flex-wrap:wrap; gap:4px;">
                     ${saveBadge}
                     ${effectsBadge}
@@ -324,18 +337,18 @@ const showCaughtTokensDialog = (spellData, tokens) => {
     let descriptionHtml = "";
     if (enableTranslation) {
         descriptionHtml = `
-            <div id="${uniqueId}-desc-container" style="font-size: 0.85em; color: #333; max-height: 140px; overflow-y: auto; padding: 8px; margin-bottom: 12px; background: rgba(255,255,255,0.6); border: 1px solid #ddd; border-radius: 4px; box-shadow: inset 0 1px 3px rgba(0,0,0,0.03); cursor: pointer;" title="Haz clic en este cuadro para cambiar de idioma">
+            <div id="${uniqueId}-desc-container" style="font-size: 0.85em; color: inherit; max-height: 140px; overflow-y: auto; padding: 8px; margin-bottom: 12px; background: rgba(128,128,128,0.1); border: 1px solid var(--color-border-light-2, #ddd); border-radius: 4px; box-shadow: inset 0 1px 3px rgba(0,0,0,0.1); cursor: pointer;" title="Haz clic en este cuadro para cambiar de idioma">
                 <div id="${uniqueId}-es" style="display: block;">
                     <div style="font-weight: bold; color: #1a73e8; margin-bottom: 6px; font-size: 0.95em; border-bottom: 1px solid rgba(26,115,232,0.3); padding-bottom:3px;">
-                        <i class="fas fa-language"></i> Español <span style="font-size: 0.8em; font-weight: normal; color: #777;">(Clic para ver Original)</span>
+                        <i class="fas fa-language"></i> Español <span style="font-size: 0.8em; font-weight: normal; color: inherit; opacity:0.7;">(Clic para ver Original)</span>
                     </div>
                     <div id="${uniqueId}-es-content" style="line-height: 1.3;">
-                        <span style="color: #666;"><em>Traduciendo descripción... <i class="fas fa-spinner fa-spin"></i></em></span>
+                        <span style="color: inherit; opacity:0.8;"><em>Traduciendo descripción... <i class="fas fa-spinner fa-spin"></i></em></span>
                     </div>
                 </div>
                 <div id="${uniqueId}-en" style="display: none;">
                     <div style="font-weight: bold; color: #d93025; margin-bottom: 6px; font-size: 0.95em; border-bottom: 1px solid rgba(217,48,37,0.3); padding-bottom:3px;">
-                        <i class="fas fa-language"></i> Original <span style="font-size: 0.8em; font-weight: normal; color: #777;">(Clic para ver Español)</span>
+                        <i class="fas fa-language"></i> Original <span style="font-size: 0.8em; font-weight: normal; color: inherit; opacity:0.7;">(Clic para ver Español)</span>
                     </div>
                     <div style="line-height: 1.3;">
                         ${description}
@@ -345,8 +358,8 @@ const showCaughtTokensDialog = (spellData, tokens) => {
         `;
     } else {
         descriptionHtml = `
-            <div style="font-size: 0.85em; color: #333; max-height: 140px; overflow-y: auto; padding: 8px; margin-bottom: 12px; background: rgba(255,255,255,0.6); border: 1px solid #ddd; border-radius: 4px; box-shadow: inset 0 1px 3px rgba(0,0,0,0.03);">
-                <div style="font-weight: bold; color: #444; margin-bottom: 6px; font-size: 0.95em; border-bottom: 1px solid #ccc; padding-bottom:3px;">
+            <div style="font-size: 0.85em; color: inherit; max-height: 140px; overflow-y: auto; padding: 8px; margin-bottom: 12px; background: rgba(128,128,128,0.1); border: 1px solid var(--color-border-light-2, #ddd); border-radius: 4px; box-shadow: inset 0 1px 3px rgba(0,0,0,0.1);">
+                <div style="font-weight: bold; color: inherit; opacity:0.9; margin-bottom: 6px; font-size: 0.95em; border-bottom: 1px solid var(--color-border-light-2, #ccc); padding-bottom:3px;">
                     Descripción del Hechizo
                 </div>
                 <div style="line-height: 1.3;">
@@ -357,11 +370,11 @@ const showCaughtTokensDialog = (spellData, tokens) => {
     }
 
     const actionsHtml = `
-        <div style="margin-top: 15px; display: flex; justify-content: space-between; align-items: center; border-top: 1px solid #ddd; padding-top: 10px;">
-            <span style="font-size: 0.85em; color: #666; font-style: italic;">* Selecciona Pasa/Falla y luego tira Daño.</span>
+        <div style="margin-top: 15px; display: flex; justify-content: space-between; align-items: center; border-top: 1px solid var(--color-border-light-2, #ddd); padding-top: 10px;">
+            <span style="font-size: 0.85em; color: inherit; opacity: 0.8; font-style: italic;">* Selecciona Pasa/Falla${spellData.hasDamage ? ' y luego tira Daño.' : '.'}</span>
             <div style="display: flex; gap: 8px;">
                 ${effects.length > 0 ? `<button id="${uniqueId}-apply-effects" style="background: #e53935; color: white; border: 1px solid #c62828; padding: 6px 12px; border-radius: 4px; cursor: pointer; font-weight: bold; font-family: inherit; transition: background 0.2s;"><i class="fas fa-bolt"></i> Aplicar Efectos</button>` : ""}
-                <button id="${uniqueId}-roll-damage" style="background: #1a73e8; color: white; border: 1px solid #0b57d0; padding: 6px 12px; border-radius: 4px; cursor: pointer; font-weight: bold; font-family: inherit; transition: background 0.2s;"><i class="fas fa-skull"></i> Tirar Daño</button>
+                ${spellData.hasDamage ? `<button id="${uniqueId}-roll-damage" style="background: #1a73e8; color: white; border: 1px solid #0b57d0; padding: 6px 12px; border-radius: 4px; cursor: pointer; font-weight: bold; font-family: inherit; transition: background 0.2s;"><i class="fas fa-skull"></i> Tirar Daño</button>` : ""}
             </div>
         </div>
     `;
