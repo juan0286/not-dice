@@ -52,6 +52,7 @@ const notDiceBuildAttackPayload = (rollConfig) => {
         targetIds: Array.from(game.user.targets ?? []).map(t => t.id),
         isNickAttack: rollConfig.isNickAttack,
         senderName: game.user.name,
+        senderUserId: game.user.id,
         targetUserId: notDiceFirstActiveGmId()
     };
 };
@@ -79,6 +80,35 @@ const notDiceHandleAttackSocket = async (data) => {
         return;
     }
 
+    if (data.type === "not-dice.show-spell-damage") {
+        try {
+            if (globalThis._notDiceActiveAttackDialogs && globalThis._notDiceActiveAttackDialogs[data.itemUuid]) {
+                const wasUpdated = globalThis._notDiceActiveAttackDialogs[data.itemUuid](data.preCalculatedTotals);
+                if (wasUpdated) {
+                    ui.notifications?.info(`Not Dice | Daño actualizado por ${data.senderName || "jugador"}.`);
+                    return;
+                }
+            }
+
+            const item = data.itemUuid ? await fromUuid(data.itemUuid) : null;
+            const activity = item?.system?.activities?.find(a => a.type === "save" || a.type === "damage" || a.type === "attack") || (item?.type === "save" || item?.type === "spell" ? item : null);
+            
+            if (!item || !activity) return ui.notifications?.warn("Not Dice | No se pudo recuperar la actividad para el daño del hechizo.");
+
+            await activity.rollDamage({
+                event: { targetIds: data.targetIds },
+                options: { 
+                    notDicePreCalculatedTotals: data.preCalculatedTotals,
+                    notDiceMultipliers: data.notDiceMultipliers
+                }
+            });
+            ui.notifications?.info(`Not Dice | Daño de hechizo enviado por ${data.senderName || "jugador"}.`);
+        } catch(e) {
+            console.error("Not Dice | Error en show-spell-damage", e);
+        }
+        return;
+    }
+
     if (data.type !== "not-dice.show-attack-dialog") return;
 
     try {
@@ -87,7 +117,7 @@ const notDiceHandleAttackSocket = async (data) => {
         if (!item || !activity) return ui.notifications?.warn("Not Dice | No se pudo recuperar la actividad del ataque.");
 
         await activity.rollDamage({
-            event: { targetIds: data.targetIds },
+            event: { targetIds: data.targetIds, senderUserId: data.senderUserId },
             isNickAttack: data.isNickAttack
         });
         ui.notifications?.info(`Not Dice | Resolviendo daño enviado por ${data.senderName || "jugador"}.`);
@@ -664,7 +694,7 @@ Hooks.once("ready", () => {
                     <div style="display:flex; gap:10px; align-items:flex-end;">
                         <div style="flex:1;">
                             <label style="font-size:0.85em; color:inherit; opacity:0.7;">Total Daño:</label>
-                            <input type="number" name="total-${part.index}" value="0" style="width: 100%; height: 38px; font-size:1.6em; font-weight:bold; text-align:center; padding:4px; border:1px solid var(--color-border-light-2, #aaa); border-radius:4px; color:#ff5252; background:rgba(128,128,128,0.1);"/>
+                            <input type="number" name="total-${part.index}" value="${rollConfig.options?.notDicePreCalculatedTotals?.[part.index] !== undefined ? rollConfig.options.notDicePreCalculatedTotals[part.index] : '0'}" style="width: 100%; height: 38px; font-size:1.6em; font-weight:bold; text-align:center; padding:4px; border:1px solid var(--color-border-light-2, #aaa); border-radius:4px; color:#ff5252; background:rgba(128,128,128,0.1);"/>
                         </div>
                         <div style="display:flex; gap:4px; padding-bottom:1px;">
                             <button type="button" class="roll-damage-btn" data-index="${part.index}" style="width:38px; height:38px; border:1px solid var(--color-border-light-2, #bbb); border-radius:4px; background:var(--color-bg-option, rgba(127,127,127,0.1)); color:inherit; cursor:pointer;" title="Tirar Daño Normal"><i class="fas fa-dice" style="color:inherit; opacity:0.8;"></i></button>
@@ -672,6 +702,18 @@ Hooks.once("ready", () => {
                         </div>
                     </div>
                 </div>`;
+            }
+
+            let requestDamageBtnHtml = "";
+            const senderUserId = rollConfig?.event?.senderUserId;
+            if (senderUserId && senderUserId !== game.user.id && damageParts.length > 0) {
+                requestDamageBtnHtml = `
+                    <div style="text-align: center; margin-top: 10px; margin-bottom: 5px;">
+                        <button type="button" id="not-dice-btn-request-damage-attack" data-user="${senderUserId}" data-uuid="${item.uuid}" style="background: rgba(26,115,232,0.1); border: 1px solid rgba(26,115,232,0.4); color: #1a73e8; font-weight: bold; border-radius: 4px; padding: 6px 12px; cursor: pointer; transition: all 0.2s;">
+                            <i class="fas fa-dice"></i> Solicitar Tirada de Daño al Jugador
+                        </button>
+                    </div>
+                `;
             }
 
             const dialogContent = `
@@ -682,6 +724,7 @@ Hooks.once("ready", () => {
                     <div style="max-height: 380px; overflow-y: auto; padding-right: 6px;">
                         ${damageInputsHtml}
                     </div>
+                    ${requestDamageBtnHtml}
                 </div>
             `;
 
@@ -989,6 +1032,69 @@ Hooks.once("ready", () => {
                         }
                     });
                 });
+
+                globalThis._notDiceActiveAttackDialogs = globalThis._notDiceActiveAttackDialogs || {};
+                globalThis._notDiceActiveAttackDialogs[item.uuid] = (totals) => {
+                    const reqBtn = root.querySelector(`#not-dice-btn-request-damage-attack`);
+                    if (!document.body.contains(root)) return false; // El DOM del dialog ya no existe
+                    
+                    for (let i = 0; i < totals.length; i++) {
+                        const inputTotal = root.querySelector(`[name='total-${damageParts[i].index}']`);
+                        if (inputTotal) inputTotal.value = totals[i];
+                    }
+                    if (reqBtn) {
+                        reqBtn.innerHTML = "<i class='fas fa-check'></i> Daño Recibido";
+                    }
+                    return true;
+                };
+
+                const reqBtn = root.querySelector(`#not-dice-btn-request-damage-attack`);
+                if (reqBtn) {
+                    reqBtn.addEventListener("click", async (ev) => {
+                        ev.preventDefault();
+                        const uId = reqBtn.dataset.user;
+                        const uuid = reqBtn.dataset.uuid;
+                        
+                        const formulas = damageParts.map(p => p.formula).join(" + ");
+                        
+                        const targetIds = [];
+                        const targetMultipliers = {};
+                        root.querySelectorAll("select[name^='target-multiplier-']").forEach(select => {
+                            const tId = select.name.replace("target-multiplier-", "");
+                            const mult = parseFloat(select.value);
+                            if (mult > 0 || mult === -1) { 
+                                targetIds.push(tId);
+                                targetMultipliers[tId] = mult;
+                            }
+                        });
+                        
+                        if (targetIds.length === 0) {
+                            ui.notifications.warn("Not Dice | No hay objetivos válidos para solicitar daño.");
+                            return;
+                        }
+
+                        const targetIdsStr = targetIds.join(",");
+                        const multipliersStr = JSON.stringify(targetMultipliers).replace(/"/g, '&quot;');
+                        
+                        ChatMessage.create({
+                            whisper: [uId],
+                            content: `
+                                <div class="not-dice-damage-request" style="text-align:center; padding:10px;">
+                                    <h3 style="margin-bottom:5px;">Daño de ${item.name}</h3>
+                                    <p style="font-size:0.9em; margin-bottom:10px;">El GM solicita tu tirada de daño.</p>
+                                    <button class="not-dice-roll-spell-damage" data-uuid="${uuid}" data-formulas="${formulas}" data-targets="${targetIdsStr}" data-multipliers="${multipliersStr}" style="background: rgba(197,34,31,0.1); border: 1px solid #d32f2f; color: #ff5252; font-weight: bold; padding: 6px; border-radius:4px; cursor:pointer; width:100%;">
+                                        <i class="fas fa-dice-d20"></i> Lanzar Daño
+                                    </button>
+                                </div>
+                            `
+                        });
+                        
+                        reqBtn.innerHTML = "<i class='fas fa-check'></i> Solicitud Enviada";
+                        reqBtn.disabled = true;
+                        reqBtn.style.opacity = "0.6";
+                        reqBtn.style.cursor = "not-allowed";
+                    });
+                }
             };
 
             const result = await new Promise(resolve => {

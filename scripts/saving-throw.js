@@ -151,6 +151,7 @@ async function handleAreaCreation(document, userId, tipoLog) {
 
     let spellData = {
         originUuid: originUuid,
+        userId: userId,
         name: "Área de Efecto",
         caster: "Desconocido",
         img: "icons/magic/light/explosion-star-glow-blue-yellow.webp",
@@ -460,6 +461,17 @@ const showCaughtTokensDialog = (spellData, tokens, templateDocument) => {
         </div>
     `;
 
+    let requestDamageBtnHtml = "";
+    if (spellData.userId && spellData.userId !== game.user.id && spellData.hasDamage) {
+        requestDamageBtnHtml = `
+            <div style="text-align: center; margin-top: 10px; margin-bottom: 5px;">
+                <button type="button" id="${uniqueId}-btn-request-damage" data-user="${spellData.userId}" data-uuid="${spellData.originUuid}" style="background: rgba(26,115,232,0.1); border: 1px solid rgba(26,115,232,0.4); color: #1a73e8; font-weight: bold; border-radius: 4px; padding: 6px 12px; cursor: pointer; transition: all 0.2s;">
+                    <i class="fas fa-dice"></i> Solicitar Tirada de Daño al Jugador
+                </button>
+            </div>
+        `;
+    }
+
     const content = `
         <div style="font-family:inherit; padding:4px 2px; margin-bottom: 10px;" id="${uniqueId}-main-container">
             ${headerHtml}
@@ -473,6 +485,7 @@ const showCaughtTokensDialog = (spellData, tokens, templateDocument) => {
             <div style="max-height: 250px; overflow-y: auto; padding-right: 4px;">
                 ${targetsHtml}
             </div>
+            ${requestDamageBtnHtml}
             ${actionsHtml}
         </div>
     `;
@@ -781,6 +794,54 @@ const showCaughtTokensDialog = (spellData, tokens, templateDocument) => {
                 }
             });
         }
+
+        // 8. Botón solicitar daño al jugador
+        const reqBtn = container.querySelector(`#${uniqueId}-btn-request-damage`);
+        if (reqBtn) {
+            reqBtn.addEventListener("click", async (ev) => {
+                ev.preventDefault();
+                const uId = reqBtn.dataset.user;
+                const uuid = reqBtn.dataset.uuid;
+                const formulas = spellData.damageLabels.map(d => d.formula).join(" + ");
+                
+                const targetIds = [];
+                const targetMultipliers = {};
+                for (const t of tokens) {
+                    const cb = container.querySelector(`.${uniqueId}-cb[data-token-id="${t.id}"]`);
+                    if (!cb || !cb.checked) continue;
+                    
+                    const state = tokenStates[t.id];
+                    targetMultipliers[t.id] = state === 'pass' ? 0.5 : 1;
+                    targetIds.push(t.id);
+                }
+                
+                if (targetIds.length === 0) {
+                    ui.notifications.warn("Not Dice | No hay objetivos marcados (checkbox) para solicitar daño.");
+                    return;
+                }
+                
+                const targetIdsStr = targetIds.join(",");
+                const multipliersStr = JSON.stringify(targetMultipliers).replace(/"/g, '&quot;');
+                
+                ChatMessage.create({
+                    whisper: [uId],
+                    content: `
+                        <div class="not-dice-damage-request" style="text-align:center; padding:10px;">
+                            <h3 style="margin-bottom:5px;">Daño de ${spellData.name}</h3>
+                            <p style="font-size:0.9em; margin-bottom:10px;">El GM solicita tu tirada de daño.</p>
+                            <button class="not-dice-roll-spell-damage" data-uuid="${uuid}" data-formulas="${formulas}" data-targets="${targetIdsStr}" data-multipliers="${multipliersStr}" style="background: rgba(197,34,31,0.1); border: 1px solid #d32f2f; color: #ff5252; font-weight: bold; padding: 6px; border-radius:4px; cursor:pointer; width:100%;">
+                                <i class="fas fa-dice-d20"></i> Lanzar Daño
+                            </button>
+                        </div>
+                    `
+                });
+                
+                reqBtn.innerHTML = "<i class='fas fa-check'></i> Solicitud Enviada";
+                reqBtn.disabled = true;
+                reqBtn.style.opacity = "0.6";
+                reqBtn.style.cursor = "not-allowed";
+            });
+        }
     };
 
     try {
@@ -829,3 +890,62 @@ const showCaughtTokensDialog = (spellData, tokens, templateDocument) => {
         console.error("Not Dice | Error crítico al intentar mostrar la ventana de diálogo:", error);
     }
 };
+
+Hooks.on("renderChatMessage", (message, html) => {
+    html.find(".not-dice-roll-spell-damage").click(async (ev) => {
+        ev.preventDefault();
+        const btn = ev.currentTarget;
+        const uuid = btn.dataset.uuid;
+        const formulas = btn.dataset.formulas;
+        
+        btn.disabled = true;
+        btn.innerHTML = "<i class='fas fa-spinner fa-spin'></i> Tirando...";
+        btn.style.opacity = "0.7";
+        btn.style.cursor = "not-allowed";
+        
+        try {
+            const formulaParts = formulas.split(" + ");
+            const totals = [];
+            let grandTotal = 0;
+            
+            for (const f of formulaParts) {
+                const roll = await new Roll(f.trim()).evaluate();
+                if (game.dice3d) {
+                    await game.dice3d.showForRoll(roll, game.user, true);
+                } else if (game.settings.get("not-dice", "enableSound")) {
+                    AudioHelper.play({src: "sounds/dice.wav"});
+                }
+                totals.push(roll.total);
+                grandTotal += roll.total;
+            }
+            
+            const targetUserId = game.users.find(u => u.isGM && u.active)?.id;
+            
+            if (!targetUserId || !game.socket) {
+                ui.notifications.warn("Not Dice | No hay un GM activo para recibir el daño.");
+                btn.disabled = false;
+                btn.innerHTML = "Error. GM desconectado.";
+                return;
+            }
+            
+            const payload = {
+                type: "not-dice.show-spell-damage",
+                itemUuid: uuid,
+                targetIds: btn.dataset.targets ? btn.dataset.targets.split(",") : Array.from(game.user.targets).map(t => t.id),
+                notDiceMultipliers: btn.dataset.multipliers ? JSON.parse(btn.dataset.multipliers) : {},
+                senderName: game.user.name,
+                targetUserId: targetUserId,
+                preCalculatedTotals: totals
+            };
+            
+            game.socket.emit("module.not-dice", payload);
+            ui.notifications.info("Not Dice | Resultado de daño enviado al GM.");
+            
+            btn.innerHTML = `<i class='fas fa-check'></i> Daño Enviado (${grandTotal})`;
+        } catch(e) {
+            console.error("Not Dice | Error tirando daño del hechizo", e);
+            btn.disabled = false;
+            btn.innerHTML = "Error. Reintentar";
+        }
+    });
+});
