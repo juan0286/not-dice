@@ -1055,7 +1055,7 @@ Hooks.once("ready", () => {
                         const uId = reqBtn.dataset.user;
                         const uuid = reqBtn.dataset.uuid;
                         
-                        const formulas = damageParts.map(p => p.formula).join(" + ");
+                        const formulas = damageParts.map(p => p.formula).join("||");
                         
                         const targetIds = [];
                         const targetMultipliers = {};

@@ -802,7 +802,7 @@ const showCaughtTokensDialog = (spellData, tokens, templateDocument) => {
                 ev.preventDefault();
                 const uId = reqBtn.dataset.user;
                 const uuid = reqBtn.dataset.uuid;
-                const formulas = spellData.damageLabels.map(d => d.formula).join(" + ");
+                const formulas = spellData.damageLabels.map(d => d.formula).join("||");
                 
                 const targetIds = [];
                 const targetMultipliers = {};
@@ -904,7 +904,7 @@ Hooks.on("renderChatMessage", (message, html) => {
         btn.style.cursor = "not-allowed";
         
         try {
-            const formulaParts = formulas.split(" + ");
+            const formulaParts = formulas.split("||");
             const totals = [];
             let grandTotal = 0;
             
