@@ -160,7 +160,8 @@ async function handleAreaCreation(document, userId, tipoLog) {
         saveDC: "",
         description: "",
         effects: [], // Array para guardar los Efectos Activos extraídos
-        hasDamage: false // Bandera para saber si el hechizo hace daño
+        hasDamage: false, // Bandera para saber si el hechizo hace daño
+        damageLabels: [] // Textos del daño
     };
 
     try {
@@ -207,15 +208,41 @@ async function handleAreaCreation(document, userId, tipoLog) {
             }
 
             // --- EXTRACCIÓN DE DAÑO ---
+            spellData.damageLabels = [];
+            let hasParts = false;
+            
             if (actualItem.system?.activities) {
                 for (const act of actualItem.system.activities.values()) {
                     if (act.damage && act.damage.parts && act.damage.parts.length > 0) {
                         spellData.hasDamage = true;
-                        break;
+                        hasParts = true;
+                        for (const p of act.damage.parts) {
+                            let formula = "";
+                            let type = "";
+                            if (Array.isArray(p)) {
+                                formula = p[0] || "";
+                                type = p[1] || "";
+                            } else {
+                                formula = p.formula || (p.number && p.denomination ? `${p.number}d${p.denomination}${p.bonus ? '+' + p.bonus : ''}` : p.custom?.formula) || "";
+                                type = p.types && p.types.size > 0 ? Array.from(p.types)[0] : (Array.isArray(p.types) ? p.types[0] : "");
+                            }
+                            if (formula) spellData.damageLabels.push({ formula: formula.trim(), type: type.trim().toLowerCase() });
+                        }
                     }
                 }
             } else if (actualItem.system?.damage?.parts && actualItem.system.damage.parts.length > 0) {
                 spellData.hasDamage = true;
+                hasParts = true;
+                for (const p of actualItem.system.damage.parts) {
+                    if (Array.isArray(p) && p[0]) {
+                        spellData.damageLabels.push({ formula: p[0].trim(), type: (p[1] || "").trim().toLowerCase() });
+                    }
+                }
+            }
+            
+            if (!hasParts && actualItem.labels?.damage) {
+                spellData.hasDamage = true;
+                spellData.damageLabels.push({ formula: actualItem.labels.damage, type: "" });
             }
 
             // --- EXTRACCIÓN DE EFECTOS ---
@@ -266,7 +293,20 @@ const showCaughtTokensDialog = (spellData, tokens, templateDocument) => {
             const tokenImg = t.document.texture?.src || t.actor.img;
 
             // Determinar el modificador de salvación del actor para este hechizo
-            const saveModRaw = saveAbilityKey ? t.actor.system?.abilities?.[saveAbilityKey]?.save : null;
+            let saveModRaw = null;
+            if (saveAbilityKey) {
+                const saveKey = saveAbilityKey.toLowerCase();
+                const abilityObj = t.actor?.system?.abilities?.[saveKey];
+                if (abilityObj) {
+                    saveModRaw = abilityObj.save;
+                    // Fallback si la propiedad .save no existe directamente en el actor (sistemas más recientes sin datos derivados en este punto)
+                    if (saveModRaw === undefined && abilityObj.mod !== undefined) {
+                        const profBonus = t.actor.system?.attributes?.prof || 0;
+                        const isProf = abilityObj.proficient || 0;
+                        saveModRaw = abilityObj.mod + (isProf * profBonus);
+                    }
+                }
+            }
             const saveModFormateado = Number.isFinite(saveModRaw) ? (saveModRaw >= 0 ? `+${saveModRaw}` : saveModRaw) : "--";
             const saveText = saveAbilityKey ? `<span style="font-size:0.85em; color:#555; margin-left:4px;" title="Modificador de Salvación">(${saveModFormateado})</span>` : "";
 
@@ -304,9 +344,10 @@ const showCaughtTokensDialog = (spellData, tokens, templateDocument) => {
     let saveBadge = "";
     if (saveAbility) {
         saveBadge = `
-            <span style="display:inline-block; font-size:0.85em; background:#d3e3fd; color:#0b57d0; padding:3px 8px; border-radius:12px; border:1px solid #a8c7fa; margin-right: 4px;">
-                <strong>Salvación:</strong> ${saveAbility} ${saveDC ? `(CD ${saveDC})` : ""}
-            </span>
+            <div style="display:flex; flex-direction:column; align-items:center; justify-content:center; background:rgba(128, 128, 128, 0.15); padding:6px 12px; border-radius:8px; border:2px solid rgba(128, 128, 128, 0.4); margin-left: auto; text-align:center; min-width: 90px; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
+                <span style="font-size:0.75em; text-transform:uppercase; font-weight:bold; opacity:0.8; letter-spacing:0.5px;">Salvación</span>
+                <span style="font-size:1.3em; font-weight:900;">${saveAbility} ${saveDC ? `<span style="opacity:0.6;">CD</span> ${saveDC}` : ""}</span>
+            </div>
         `;
     }
 
@@ -320,6 +361,45 @@ const showCaughtTokensDialog = (spellData, tokens, templateDocument) => {
         `;
     }
 
+    let damageBadge = "";
+    if (spellData.damageLabels && spellData.damageLabels.length > 0) {
+        const damageStyle = {
+             acid: { color: "#aeea00", bg: "rgba(174, 234, 0, 0.15)", border: "rgba(174, 234, 0, 0.4)" },
+             bludgeoning: { color: "inherit", bg: "rgba(128, 128, 128, 0.15)", border: "var(--color-border-light-2, #ccc)" },
+             cold: { color: "#4fc3f7", bg: "rgba(79, 195, 247, 0.15)", border: "rgba(79, 195, 247, 0.4)" },
+             fire: { color: "#ff5252", bg: "rgba(255, 82, 82, 0.15)", border: "rgba(255, 82, 82, 0.4)" },
+             force: { color: "#e040fb", bg: "rgba(224, 64, 251, 0.15)", border: "rgba(224, 64, 251, 0.4)" }, 
+             lightning: { color: "#ffd600", bg: "rgba(255, 214, 0, 0.15)", border: "rgba(255, 214, 0, 0.4)" },
+             necrotic: { color: "#b0bec5", bg: "rgba(176, 190, 197, 0.15)", border: "rgba(176, 190, 197, 0.4)" },
+             piercing: { color: "inherit", bg: "rgba(128, 128, 128, 0.15)", border: "var(--color-border-light-2, #ccc)" },
+             poison: { color: "#69f0ae", bg: "rgba(105, 240, 174, 0.15)", border: "rgba(105, 240, 174, 0.4)" },
+             psychic: { color: "#ff4081", bg: "rgba(255, 64, 129, 0.15)", border: "rgba(255, 64, 129, 0.4)" },
+             radiant: { color: "#ffca28", bg: "rgba(255, 202, 40, 0.15)", border: "rgba(255, 202, 40, 0.4)" },
+             slashing: { color: "inherit", bg: "rgba(128, 128, 128, 0.15)", border: "var(--color-border-light-2, #ccc)" },
+             thunder: { color: "#7c4dff", bg: "rgba(124, 77, 255, 0.15)", border: "rgba(124, 77, 255, 0.4)" },
+             healing: { color: "#69f0ae", bg: "rgba(105, 240, 174, 0.15)", border: "rgba(105, 240, 174, 0.4)" },
+             temphp: { color: "inherit", bg: "rgba(128, 128, 128, 0.15)", border: "var(--color-border-light-2, #ccc)" }
+        };
+
+        damageBadge = spellData.damageLabels.map(d => {
+            const style = damageStyle[d.type] || { color: "inherit", bg: "rgba(128,128,128,0.15)", border: "var(--color-border-light-2, #ccc)" };
+            // Capitalizar la primera letra del tipo si existe
+            const typeDisplay = d.type ? d.type.charAt(0).toUpperCase() + d.type.slice(1) : "";
+            
+            return `
+                <span style="display:inline-block; font-size:0.85em; background:${style.bg}; color:${style.color}; padding:3px 8px; border-radius:12px; border:1px solid ${style.border}; white-space:nowrap; margin-right:4px;">
+                    <strong style="color:inherit; opacity:0.9;">Daño:</strong> <span style="font-weight:bold;">${d.formula}</span> <span style="font-size:0.9em; opacity:0.8;">${typeDisplay}</span>
+                </span>
+            `;
+        }).join("");
+    } else if (spellData.hasDamage) {
+        damageBadge = `
+            <span style="display:inline-block; font-size:0.85em; background:rgba(128,128,128,0.15); color:inherit; opacity: 0.9; padding:3px 8px; border-radius:12px; border:1px solid var(--color-border-light-2, #ccc); white-space:nowrap;">
+                <strong>Daño:</strong> Sí
+            </span>
+        `;
+    }
+
     const headerHtml = `
         <div style="display:flex; align-items:center; gap:12px; margin-bottom:12px; padding:10px; border:1px solid var(--color-border-light-2, #ddd); border-radius:6px; background:rgba(128,128,128,0.1); box-shadow: 0 1px 3px rgba(0,0,0,0.1);">
             <img src="${img}" style="width:54px; height:54px; border:1px solid var(--color-border-light-2, #aaa); border-radius:6px; object-fit:cover; flex-shrink:0;">
@@ -327,10 +407,11 @@ const showCaughtTokensDialog = (spellData, tokens, templateDocument) => {
                 <div style="font-size:1.2em; font-weight:bold; color:inherit; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">${name}</div>
                 <div style="font-size:0.95em; color:inherit; opacity:0.85;">Lanzado por <strong>${caster}</strong> • <span style="font-style:italic;">${level}</span></div>
                 <div style="margin-top: 6px; display:flex; flex-wrap:wrap; gap:4px;">
-                    ${saveBadge}
                     ${effectsBadge}
+                    ${damageBadge}
                 </div>
             </div>
+            ${saveBadge}
         </div>
     `;
 
@@ -596,14 +677,14 @@ const showCaughtTokensDialog = (spellData, tokens, templateDocument) => {
                             customLabel: ""
                         }
                     };
-                    
+
                     const epicPromise = ui.EpicRolls5e.requestRoll(epicData);
                     macroFound = true;
-                    
+
                     // Función para actualizar radios basada en resultados
                     const updateTokensFromResult = (results) => {
                         console.log("Not Dice | Procesando resultados de Epic:", results);
-                        
+
                         // Extraemos el objeto de resultados reales si viene anidado (común en TheRipper93)
                         let actualResults = results;
                         if (results && !Array.isArray(results)) {
@@ -615,16 +696,16 @@ const showCaughtTokensDialog = (spellData, tokens, templateDocument) => {
                         const resultsArray = Array.isArray(actualResults) ? actualResults : Object.keys(actualResults).map(k => {
                             return typeof actualResults[k] === 'object' ? { ...actualResults[k], _keyId: k } : { value: actualResults[k], _keyId: k };
                         });
-                        
+
                         for (const res of resultsArray) {
                             if (!res) continue;
                             console.log(`Not Dice | Inspeccionando res crudo de Epic:`, JSON.stringify({
-                                total: res.total, success: res.success, isSuccess: res.isSuccess, pass: res.pass 
+                                total: res.total, success: res.success, isSuccess: res.isSuccess, pass: res.pass
                             }));
-                            
+
                             // Intentamos encontrar el booleano de éxito directo
                             let isSuccess = res.success ?? res.isSuccess ?? res.passed ?? res.pass ?? res.value?.success ?? res.value?.isSuccess ?? (res.value === 'pass' || res.value === true);
-                            
+
                             // FALLBACK: Extraemos el valor matemático de la tirada desde res.roll
                             let rollValue = undefined;
                             if (typeof res.roll === 'number' || typeof res.roll === 'string') {
@@ -642,21 +723,21 @@ const showCaughtTokensDialog = (spellData, tokens, templateDocument) => {
                                     console.log(`Not Dice | Evaluación manual: Tirada (${numericRoll}) vs CD (${dc}) -> ${isSuccess ? 'PASA' : 'FALLA'}`);
                                 }
                             }
-                            
+
                             // Intentamos encontrar el ID del actor o token
                             const actorId = res.actorId || res.actor?._id || res.actor?.id || res.tokenId || res.token?._id || res.token?.id || res.id || res._keyId || (typeof res.actor === 'string' ? res.actor : null);
-                            
+
                             console.log(`Not Dice | Analizando actor/token ID: ${actorId} - Éxito: ${isSuccess}`);
-                            
+
                             if (isSuccess !== undefined && actorId) {
                                 // Buscar el token afectado comparando id, uuid del actor y uuid del token
-                                const targetToken = tokens.find(t => 
-                                    t.actor?.id === actorId || 
-                                    t.actor?.uuid === actorId || 
+                                const targetToken = tokens.find(t =>
+                                    t.actor?.id === actorId ||
+                                    t.actor?.uuid === actorId ||
                                     t.id === actorId ||
                                     t.document?.uuid === actorId
                                 );
-                                
+
                                 if (targetToken) {
                                     console.log(`Not Dice | ¡Match! Token encontrado: ${targetToken.name}`);
                                     const currentState = tokenStates[targetToken.id];
@@ -690,7 +771,7 @@ const showCaughtTokensDialog = (spellData, tokens, templateDocument) => {
                             Hooks.off("createChatMessage", hookId); // Desconectar hook
                         }
                     });
-                    
+
                     // Desconectar el hook luego de 3 minutos por limpieza
                     setTimeout(() => Hooks.off("createChatMessage", hookId), 180000);
                 }
@@ -711,10 +792,10 @@ const showCaughtTokensDialog = (spellData, tokens, templateDocument) => {
                 position: { width: 500 }, // Ancho aumentado para acomodar los nuevos botones
                 buttons: [
                     { action: "ok", icon: "fa-solid fa-check", label: "Aceptar", default: true },
-                    { 
-                        action: "delete", 
-                        icon: "fa-solid fa-trash", 
-                        label: "Aceptar y borrar template", 
+                    {
+                        action: "delete",
+                        icon: "fa-solid fa-trash",
+                        label: "Aceptar y borrar template",
                         callback: async () => {
                             if (templateDocument && typeof templateDocument.delete === "function") {
                                 await templateDocument.delete();
@@ -729,10 +810,10 @@ const showCaughtTokensDialog = (spellData, tokens, templateDocument) => {
                 title: `Área de Efecto detectada`,
                 content: content,
                 render: onRenderComplete,
-                buttons: { 
+                buttons: {
                     ok: { icon: "<i class='fas fa-check'></i>", label: "Aceptar" },
-                    delete: { 
-                        icon: "<i class='fas fa-trash'></i>", 
+                    delete: {
+                        icon: "<i class='fas fa-trash'></i>",
                         label: "Aceptar y borrar template",
                         callback: async () => {
                             if (templateDocument && typeof templateDocument.delete === "function") {
