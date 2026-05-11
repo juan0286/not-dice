@@ -143,7 +143,7 @@ async function translateAndUpdate(htmlDesc, targetId) {
 
 // 4. Interceptar la creación
 async function handleAreaCreation(document, userId, tipoLog) {
-    if (userId !== game.user.id) return;
+    if (!game.users.activeGM?.isSelf) return; // Solo el GM activo debe procesar y ver este diálogo
     if (!game.settings.get("not-dice", "enableTemplateIntercept")) return;
 
     const originUuid = document.flags?.dnd5e?.origin;
