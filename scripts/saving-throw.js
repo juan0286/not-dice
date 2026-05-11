@@ -245,14 +245,14 @@ async function handleAreaCreation(document, userId, tipoLog) {
 
     const areaObj = await waitForAreaObject(document);
     const caughtTokens = getTokensInsideArea(areaObj);
-    showCaughtTokensDialog(spellData, caughtTokens);
+    showCaughtTokensDialog(spellData, caughtTokens, document);
 }
 
 Hooks.on("createRegion", async (document, operation, userId) => handleAreaCreation(document, userId, "createRegion"));
 Hooks.on("createMeasuredTemplate", async (document, operation, userId) => handleAreaCreation(document, userId, "createMeasuredTemplate"));
 
 // 5. Mostrar la UI
-const showCaughtTokensDialog = (spellData, tokens) => {
+const showCaughtTokensDialog = (spellData, tokens, templateDocument) => {
     const { name, caster, img, level, saveAbilityKey, saveAbility, saveDC, description, effects } = spellData;
     const enableTranslation = game.settings.get("not-dice", "enableTranslation");
     const uniqueId = "nd-ui-" + Math.random().toString(36).substring(2, 9);
@@ -708,9 +708,19 @@ const showCaughtTokensDialog = (spellData, tokens) => {
             const app = new DialogV2({
                 window: { title: `Área de Efecto detectada` },
                 content: content,
-                position: { width: 420 }, // Ancho aumentado para acomodar los nuevos botones
+                position: { width: 500 }, // Ancho aumentado para acomodar los nuevos botones
                 buttons: [
-                    { action: "ok", icon: "fa-solid fa-check", label: "Aceptar", default: true }
+                    { action: "ok", icon: "fa-solid fa-check", label: "Aceptar", default: true },
+                    { 
+                        action: "delete", 
+                        icon: "fa-solid fa-trash", 
+                        label: "Aceptar y borrar template", 
+                        callback: async () => {
+                            if (templateDocument && typeof templateDocument.delete === "function") {
+                                await templateDocument.delete();
+                            }
+                        }
+                    }
                 ]
             });
             app.render(true).then(onRenderComplete);
@@ -719,9 +729,20 @@ const showCaughtTokensDialog = (spellData, tokens) => {
                 title: `Área de Efecto detectada`,
                 content: content,
                 render: onRenderComplete,
-                buttons: { ok: { icon: "<i class='fas fa-check'></i>", label: "Aceptar" } },
+                buttons: { 
+                    ok: { icon: "<i class='fas fa-check'></i>", label: "Aceptar" },
+                    delete: { 
+                        icon: "<i class='fas fa-trash'></i>", 
+                        label: "Aceptar y borrar template",
+                        callback: async () => {
+                            if (templateDocument && typeof templateDocument.delete === "function") {
+                                await templateDocument.delete();
+                            }
+                        }
+                    }
+                },
                 default: "ok"
-            }, { width: 420 }).render(true);
+            }, { width: 500 }).render(true);
         }
     } catch (error) {
         console.error("Not Dice | Error crítico al intentar mostrar la ventana de diálogo:", error);
