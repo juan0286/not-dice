@@ -172,7 +172,12 @@ async function handleAreaCreation(document, userId, tipoLog) {
             spellData.name = actualItem.name || spellData.name;
             spellData.caster = actualItem.actor?.name || "Desconocido";
             spellData.img = actualItem.img || spellData.img;
-            spellData.description = actualItem.system?.description?.value || "<p>Sin descripción.</p>";
+            
+            if (globalThis.notDiceEnrichDescription) {
+                spellData.description = await globalThis.notDiceEnrichDescription(actualItem);
+            } else {
+                spellData.description = actualItem.system?.description?.value || "<p>Sin descripción.</p>";
+            }
 
             if (actualItem.type === "spell") {
                 spellData.level = actualItem.system?.level === 0 ? "Truco" : `Nivel ${actualItem.system?.level}`;
