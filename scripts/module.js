@@ -653,8 +653,41 @@ Hooks.once("ready", () => {
                  temphp: { color: "inherit", icon: "🛡️" }
             };
 
+            const hasSavageAttacker = actor?.items?.some(i => {
+                const n = (i.name || "").toLowerCase();
+                return i.type === "feat" && (n.includes("savage attacker") || n.includes("atacante salvaje"));
+            }) || false;
+
+            const hasGreatWeaponFighting = actor?.items?.some(i => {
+                const n = (i.name || "").toLowerCase();
+                const sysId = i.system?.identifier || "";
+                return i.type === "feat" && (
+                    n.includes("great weapon fighting") || 
+                    n.includes("armas a dos manos") || 
+                    n.includes("arma a dos manos") ||
+                    sysId === "great-weapon-fighting"
+                );
+            }) || false;
+
             let damageInputsHtml = "";
             for (const part of damageParts) {
+                let specialModsHtml = "";
+                if (hasSavageAttacker) {
+                    specialModsHtml += `
+                    <div style="display:flex; justify-content:center; align-items:center; gap:6px; margin-bottom: 4px; padding: 4px 8px; background: rgba(197,34,31,0.08); border: 1px solid rgba(197,34,31,0.3); border-radius: 4px; width: 100%;" title="ATACANTE SALVAJE">
+                        <input type="checkbox" id="savage-${part.index}" class="savage-attacker-cb" data-index="${part.index}" style="margin:0; cursor:pointer;" checked>
+                        <label for="savage-${part.index}" style="font-size:0.85em; color:#ff5252; cursor:pointer; font-weight:bold; letter-spacing: 0.5px; margin:0;"><i class="fas fa-paw"></i> Atacante Salvaje</label>
+                    </div>`;
+                }
+                if (hasGreatWeaponFighting) {
+                    specialModsHtml += `
+                    <div style="display:flex; justify-content:center; align-items:center; gap:6px; margin-bottom: 4px; padding: 4px 8px; background: rgba(26,115,232,0.08); border: 1px solid rgba(26,115,232,0.3); border-radius: 4px; width: 100%;" title="ESTILO: COMBATE CON ARMAS A DOS MANOS">
+                        <input type="checkbox" id="gwf-${part.index}" class="gwf-cb" data-index="${part.index}" style="margin:0; cursor:pointer;" checked>
+                        <label for="gwf-${part.index}" style="font-size:0.85em; color:#1a73e8; cursor:pointer; font-weight:bold; letter-spacing: 0.5px; margin:0;"><i class="fas fa-gavel"></i> Armas a Dos Manos</label>
+                    </div>`;
+                }
+                
+                if (specialModsHtml) specialModsHtml = `<div style="margin-bottom:8px;">${specialModsHtml}</div>`;
                 let labelHtml = part.label;
                 let currentDamageType = part.type;
                 
@@ -696,12 +729,14 @@ Hooks.once("ready", () => {
                         </div>` : ""}
                     </div>
                     
+                    ${specialModsHtml}
+                    
                     <div style="display:flex; gap:10px; align-items:flex-end;">
                         <div style="flex:1;">
                             <label style="font-size:0.85em; color:inherit; opacity:0.7;">Total Daño:</label>
                             <input type="number" name="total-${part.index}" value="${rollConfig.options?.notDicePreCalculatedTotals?.[part.index] !== undefined ? rollConfig.options.notDicePreCalculatedTotals[part.index] : '0'}" style="width: 100%; height: 38px; font-size:1.6em; font-weight:bold; text-align:center; padding:4px; border:1px solid var(--color-border-light-2, #aaa); border-radius:4px; color:#ff5252; background:rgba(128,128,128,0.1);"/>
                         </div>
-                        <div style="display:flex; gap:4px; padding-bottom:1px;">
+                        <div style="display:flex; gap:4px; padding-bottom:1px; align-items:center;">
                             <button type="button" class="roll-damage-btn" data-index="${part.index}" style="width:38px; height:38px; border:1px solid var(--color-border-light-2, #bbb); border-radius:4px; background:var(--color-bg-option, rgba(127,127,127,0.1)); color:inherit; cursor:pointer;" title="Tirar Daño Normal"><i class="fas fa-dice" style="color:inherit; opacity:0.8;"></i></button>
                             <button type="button" class="roll-damage-crit-btn" data-index="${part.index}" style="width:38px; height:38px; border:1px solid #d32f2f; border-radius:4px; background:rgba(197,34,31,0.1); color:#ff5252; cursor:pointer;" title="Tirar Daño Crítico"><i class="fas fa-dice-d20"></i></button>
                         </div>
@@ -1001,6 +1036,43 @@ Hooks.once("ready", () => {
                     });
                 };
 
+                const applyGwf = (f) => f.replace(/(\d+)d(\d+)/g, "$1d$2min3");
+
+                const executeDamageRoll = async (baseFormula, isCrit, idx) => {
+                    let formula = baseFormula;
+                    if (isCrit) formula = doubleDice(formula);
+                    
+                    const isSavage = root.querySelector(`#savage-${idx}`)?.checked;
+                    const isGwf = root.querySelector(`#gwf-${idx}`)?.checked;
+                    
+                    if (isGwf) {
+                        formula = applyGwf(formula);
+                    }
+
+                    const flavorBase = isCrit ? "Daño Crítico" : "Daño Normal";
+                    const actorSpeaker = ChatMessage.getSpeaker({ actor: item?.actor });
+                    
+                    let extraMods = [];
+                    if (isSavage) extraMods.push("Salvaje");
+                    if (isGwf) extraMods.push("Armas a Dos Manos");
+                    
+                    const modsString = extraMods.length > 0 ? ` (${extraMods.join(" | ")})` : "";
+                    
+                    if (isSavage) {
+                        const r1 = await new Roll(formula).evaluate();
+                        const r2 = await new Roll(formula).evaluate();
+                        
+                        await r1.toMessage({ flavor: `${flavorBase}${modsString.replace(")", " - Tirada 1)")}`, speaker: actorSpeaker });
+                        await r2.toMessage({ flavor: `${flavorBase}${modsString.replace(")", " - Tirada 2)")}`, speaker: actorSpeaker });
+                        
+                        return Math.max(r1.total, r2.total);
+                    } else {
+                        const r = await new Roll(formula).evaluate();
+                        await r.toMessage({ flavor: `${flavorBase}${modsString}`, speaker: actorSpeaker });
+                        return r.total;
+                    }
+                };
+
                 root.querySelectorAll(".roll-damage-btn").forEach(btn => {
                     btn.addEventListener("click", async (ev) => {
                         ev.preventDefault();
@@ -1008,12 +1080,9 @@ Hooks.once("ready", () => {
                         const formula = damageParts.find(p => p.index == idx)?.formula;
                         if (formula) {
                             try {
-                                const r = await new Roll(formula).evaluate();
-                                if (game.dice3d) game.dice3d.showForRoll(r, game.user, true);
-                                else if (game.settings.get("not-dice", "enableSound")) AudioHelper.play({src: "sounds/dice.wav"});
-                                
+                                const total = await executeDamageRoll(formula, false, idx);
                                 const inputTotal = root.querySelector(`[name='total-${idx}']`);
-                                if (inputTotal) inputTotal.value = r.total;
+                                if (inputTotal) inputTotal.value = total;
                             } catch (err) { console.error("Not Dice | Error rolling normal damage", err); }
                         }
                     });
@@ -1026,13 +1095,9 @@ Hooks.once("ready", () => {
                         const formula = damageParts.find(p => p.index == idx)?.formula;
                         if (formula) {
                             try {
-                                const critFormula = doubleDice(formula);
-                                const r = await new Roll(critFormula).evaluate();
-                                if (game.dice3d) game.dice3d.showForRoll(r, game.user, true);
-                                else if (game.settings.get("not-dice", "enableSound")) AudioHelper.play({src: "sounds/dice.wav"});
-                                
+                                const total = await executeDamageRoll(formula, true, idx);
                                 const inputTotal = root.querySelector(`[name='total-${idx}']`);
-                                if (inputTotal) inputTotal.value = r.total;
+                                if (inputTotal) inputTotal.value = total;
                             } catch (err) { console.error("Not Dice | Error rolling crit damage", err); }
                         }
                     });
