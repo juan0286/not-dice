@@ -478,9 +478,14 @@ const showCaughtTokensDialog = (spellData, tokens, templateDocument) => {
             ${descriptionHtml}
             <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #ccc; padding-bottom: 4px; margin-bottom: 10px;">
                 <h3 style="margin: 0; border: none; padding: 0;">Objetivos Atrapados (${tokens.length}):</h3>
-                <button id="${uniqueId}-epic-btn" style="background: #9c27b0; color: white; border: 1px solid #7b1fa2; padding: 4px 12px; border-radius: 4px; cursor: pointer; font-weight: bold; font-family: inherit; font-size: 0.85em; display:flex; align-items:center; gap:4px; box-shadow: 0 1px 2px rgba(0,0,0,0.2);">
-                    <i class="fas fa-meteor"></i> Epic
-                </button>
+                <div style="display:flex; gap:8px;">
+                    <button id="${uniqueId}-req-saves-btn" style="background: #1a73e8; color: white; border: 1px solid #0b57d0; padding: 4px 12px; border-radius: 4px; cursor: pointer; font-weight: bold; font-family: inherit; font-size: 0.85em; display:flex; align-items:center; gap:4px; box-shadow: 0 1px 2px rgba(0,0,0,0.2);" title="Solicitar Salvaciones a Jugadores">
+                        <i class="fas fa-bullhorn"></i> Solicitar
+                    </button>
+                    <button id="${uniqueId}-epic-btn" style="background: #9c27b0; color: white; border: 1px solid #7b1fa2; padding: 4px 12px; border-radius: 4px; cursor: pointer; font-weight: bold; font-family: inherit; font-size: 0.85em; display:flex; align-items:center; gap:4px; box-shadow: 0 1px 2px rgba(0,0,0,0.2);">
+                        <i class="fas fa-meteor"></i> Epic
+                    </button>
+                </div>
             </div>
             <div style="max-height: 250px; overflow-y: auto; padding-right: 4px;">
                 ${targetsHtml}
@@ -842,6 +847,79 @@ const showCaughtTokensDialog = (spellData, tokens, templateDocument) => {
                 reqBtn.style.cursor = "not-allowed";
             });
         }
+
+        // 9. Botón solicitar salvaciones a jugadores
+        const reqSavesBtn = document.getElementById(`${uniqueId}-req-saves-btn`);
+        if (reqSavesBtn) {
+            reqSavesBtn.addEventListener("click", async (e) => {
+                e.preventDefault();
+                if (!spellData.saveAbilityKey) {
+                    ui.notifications.warn("Not Dice | Este hechizo no tiene una tirada de salvación configurada.");
+                    return;
+                }
+
+                const tokensByPlayer = {};
+                for (const t of tokens) {
+                    const cb = container.querySelector(`.${uniqueId}-cb[data-token-id="${t.id}"]`);
+                    if (!cb || !cb.checked) continue;
+
+                    const owner = game.users.find(u => !u.isGM && u.active && t.actor?.testUserPermission(u, "OWNER"));
+                    if (owner) {
+                        if (!tokensByPlayer[owner.id]) tokensByPlayer[owner.id] = [];
+                        tokensByPlayer[owner.id].push(t);
+                    }
+                }
+
+                if (Object.keys(tokensByPlayer).length === 0) {
+                    ui.notifications.warn("Not Dice | No se encontraron tokens marcados con un jugador propietario activo.");
+                    return;
+                }
+
+                for (const [userId, playerTokens] of Object.entries(tokensByPlayer)) {
+                    const tokenNames = playerTokens.map(t => t.name).join(", ");
+                    const tokenIds = playerTokens.map(t => t.id).join(",");
+
+                    ChatMessage.create({
+                        whisper: [userId],
+                        content: `
+                            <div class="not-dice-save-request" style="text-align:center; padding:10px;">
+                                <h3 style="margin-bottom:5px;">Salvación: ${spellData.name}</h3>
+                                <p style="font-size:0.9em; margin-bottom:10px;">El GM solicita tiradas de salvación (${spellData.saveAbilityKey.toUpperCase()} - CD ${spellData.saveDC || '?'}) para: <strong>${tokenNames}</strong></p>
+                                <button class="not-dice-roll-save" data-ability="${spellData.saveAbilityKey}" data-dc="${spellData.saveDC || ''}" data-targets="${tokenIds}" data-source-id="${uniqueId}" style="background: rgba(26,115,232,0.1); border: 1px solid #1a73e8; color: #1a73e8; font-weight: bold; padding: 6px; border-radius:4px; cursor:pointer; width:100%;">
+                                    <i class="fas fa-shield-alt"></i> Lanzar Salvación
+                                </button>
+                            </div>
+                        `
+                    });
+                }
+
+                reqSavesBtn.innerHTML = "<i class='fas fa-check'></i> Solicitudes Enviadas";
+                reqSavesBtn.disabled = true;
+                reqSavesBtn.style.opacity = "0.6";
+                reqSavesBtn.style.cursor = "not-allowed";
+                ui.notifications.info("Not Dice | Solicitudes de salvación enviadas a los jugadores.");
+            });
+        }
+
+        // 10. Hook para recibir resultados de salvaciones
+        const localSaveHookId = Hooks.on("notDiceSaveResult", (data) => {
+            if (data.sourceId === uniqueId) {
+                let updated = 0;
+                for (const [tokenId, res] of Object.entries(data.results)) {
+                    if (res.isSuccess !== undefined) {
+                        const newState = res.isSuccess ? 'pass' : 'fail';
+                        if (tokenStates[tokenId] !== newState) {
+                            setSaveState(tokenId, newState);
+                            updated++;
+                        }
+                    }
+                }
+                if (updated > 0) {
+                    ui.notifications.info(`Not Dice | ${updated} objetivos actualizados (Salvación de ${data.senderName}).`);
+                }
+            }
+        });
+        setTimeout(() => Hooks.off("notDiceSaveResult", localSaveHookId), 3600000);
     };
 
     try {
@@ -892,6 +970,67 @@ const showCaughtTokensDialog = (spellData, tokens, templateDocument) => {
 };
 
 Hooks.on("renderChatMessage", (message, html) => {
+    html.find(".not-dice-roll-save").click(async (ev) => {
+        ev.preventDefault();
+        const btn = ev.currentTarget;
+        const abilityId = btn.dataset.ability;
+        const dc = btn.dataset.dc;
+        const targetIdsStr = btn.dataset.targets;
+        const sourceId = btn.dataset.sourceId;
+        
+        btn.disabled = true;
+        btn.innerHTML = "<i class='fas fa-spinner fa-spin'></i> Tirando...";
+        btn.style.opacity = "0.7";
+        btn.style.cursor = "not-allowed";
+        
+        try {
+            const targetIds = targetIdsStr ? targetIdsStr.split(",") : [];
+            const results = {};
+            
+            for (const tId of targetIds) {
+                const token = canvas.tokens.get(tId);
+                if (!token || !token.actor) continue;
+                
+                const rolls = await token.actor.rollSavingThrow({ ability: abilityId });
+                
+                if (rolls) {
+                    const roll = Array.isArray(rolls) ? rolls[0] : rolls;
+                    
+                    results[tId] = {
+                        total: roll.total,
+                        isSuccess: dc ? roll.total >= parseInt(dc) : undefined
+                    };
+                }
+            }
+            
+            const targetUserId = game.users.find(u => u.isGM && u.active)?.id;
+            
+            if (!targetUserId || !game.socket) {
+                ui.notifications.warn("Not Dice | No hay un GM activo para recibir la salvación.");
+                btn.disabled = false;
+                btn.innerHTML = "Error. GM desconectado.";
+                return;
+            }
+            
+            const payload = {
+                type: "not-dice.show-spell-save-result",
+                sourceId: sourceId,
+                results: results,
+                senderName: game.user.name,
+                targetUserId: targetUserId
+            };
+            
+            game.socket.emit("module.not-dice", payload);
+            ui.notifications.info("Not Dice | Resultado de salvación enviado al GM.");
+            
+            btn.innerHTML = `<i class='fas fa-check'></i> Salvaciones Enviadas`;
+        } catch(e) {
+            console.error("Not Dice | Error tirando salvación", e);
+            btn.disabled = false;
+            btn.innerHTML = "Error. Reintentar";
+        }
+    });
+
     html.find(".not-dice-roll-spell-damage").click(async (ev) => {
         ev.preventDefault();
         const btn = ev.currentTarget;
@@ -904,19 +1043,45 @@ Hooks.on("renderChatMessage", (message, html) => {
         btn.style.cursor = "not-allowed";
         
         try {
-            const formulaParts = formulas.split("||");
+            const item = await fromUuid(uuid);
+            const actualItem = item?.item || item;
+            
+            if (!actualItem) {
+                ui.notifications.warn("Not Dice | No se pudo encontrar el objeto origen para el daño.");
+                btn.disabled = false;
+                btn.innerHTML = "Error. Reintentar";
+                return;
+            }
+
+            const dmgAct = actualItem.system.activities?.contents?.find(a => a.type === "damage" || a.type === "attack" || a.type === "save");
+
+            let rolls;
+            if (dmgAct && typeof dmgAct.rollDamage === "function") {
+                rolls = await dmgAct.rollDamage({ event: ev, options: { notDiceBypass: true } });
+            } else if (typeof actualItem.rollDamage === "function") {
+                rolls = await actualItem.rollDamage({ event: ev, options: { notDiceBypass: true } });
+            } else {
+                ui.notifications.warn("Not Dice | Este hechizo no tiene un bloque de daño configurado.");
+                btn.disabled = false;
+                btn.innerHTML = "Error. Reintentar";
+                return;
+            }
+
+            if (!rolls) {
+                // El jugador canceló el diálogo o cerró la ventana
+                btn.disabled = false;
+                btn.innerHTML = "<i class='fas fa-dice-d20'></i> Lanzar Daño";
+                btn.style.opacity = "1";
+                btn.style.cursor = "pointer";
+                return;
+            }
+
             const totals = [];
             let grandTotal = 0;
-            
-            for (const f of formulaParts) {
-                const roll = await new Roll(f.trim()).evaluate();
-                if (game.dice3d) {
-                    await game.dice3d.showForRoll(roll, game.user, true);
-                } else if (game.settings.get("not-dice", "enableSound")) {
-                    AudioHelper.play({src: "sounds/dice.wav"});
-                }
-                totals.push(roll.total);
-                grandTotal += roll.total;
+            const rollArray = Array.isArray(rolls) ? rolls : [rolls];
+            for (const r of rollArray) {
+                totals.push(r.total);
+                grandTotal += r.total;
             }
             
             const targetUserId = game.users.find(u => u.isGM && u.active)?.id;

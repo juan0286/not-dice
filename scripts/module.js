@@ -74,6 +74,11 @@ const notDiceHandleAttackSocket = async (data) => {
     // Respeta destinatario específico si viene indicado
     if (data.targetUserId && data.targetUserId !== game.user.id) return;
 
+    if (data.type === "not-dice.show-spell-save-result") {
+        Hooks.callAll("notDiceSaveResult", data);
+        return;
+    }
+
     // Solo log sencillo cuando un jugador inicia ataque
     if (data.type === "not-dice.attack-log") {
         console.log(`Not Dice | Ataque de ${data.userName || "Jugador"}: ${data.attacker} con ${data.itemName} -> Objetivos: ${data.targets}`);
@@ -1157,11 +1162,16 @@ Hooks.once("ready", () => {
 
         DamageRoll.buildConfigure = async function(config, dialog, message) {
            console.log("Not Dice | Damage buildConfigure intercepted", config);
-           dialog = foundry.utils.mergeObject(dialog ?? {}, { configure: false });
+           if (!config?.options?.notDiceBypass) {
+               dialog = foundry.utils.mergeObject(dialog ?? {}, { configure: false });
+           }
            return originalDamageBuildConfigure.call(this, config, dialog, message);
         };
 
         DamageRoll.buildEvaluate = async function(rolls, rollConfig, messageConfig) {
+            if (rollConfig?.options?.notDiceBypass) {
+                 return originalDamageBuildEvaluate.call(this, rolls, rollConfig, messageConfig);
+            }
             if (!game.user.isGM) return [];
             return notDiceEvaluateDamageRoll(rolls, rollConfig, messageConfig);
         };
