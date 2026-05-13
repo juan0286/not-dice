@@ -174,6 +174,21 @@ Hooks.once("ready", () => {
                 console.log("Not Dice | Skipping system dialog and chat message for Attack.");
                 dialog = foundry.utils.mergeObject(dialog ?? {}, { configure: false });
                 if (message) message.create = false;
+
+                // Log the damage effects if available
+                if (globalThis.notDiceGetDamageEffects) {
+                    const actor = config.subject?.actor || config.subject?.item?.actor;
+                    if (actor) {
+                        const damageEffects = globalThis.notDiceGetDamageEffects(actor);
+                        console.groupCollapsed(`%c Not Dice | Analizando Efectos de Daño para: ${actor.name}`, "color: #e040fb; font-weight: bold; font-size: 1.1em;");
+                        if (damageEffects.length > 0) {
+                            console.table(damageEffects);
+                        } else {
+                            console.log("-> No se detectaron efectos que aumenten el daño.");
+                        }
+                        console.groupEnd();
+                    }
+                }
             }
             return originalBuildConfigure.call(this, config, dialog, message);
         };

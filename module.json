@@ -1,14 +1,15 @@
 {
   "id": "not-dice",
   "title": "Not Dice",
-  "version": "2.4.5",
+  "version": "2.4.7",
   "compatibility": {
     "minimum": "13",
     "verified": "14"
   },
   "esmodules": [
     "scripts/module.js",
-    "scripts/saving-throw.js"
+    "scripts/saving-throw.js",
+    "scripts/damage-effects.js"
   ],
   "styles": [
     "styles/not-dice.css"
