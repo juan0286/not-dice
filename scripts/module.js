@@ -504,15 +504,30 @@ Hooks.once("ready", () => {
                         if (isAdvantage) formula = `2d20kh`;
                         else if (isDisadvantage) formula = `2d20kl`;
                         
+                        let parts = [];
                         if (toHit) {
                             let cleanToHit = toHit.trim();
                             if (cleanToHit && !cleanToHit.startsWith("+") && !cleanToHit.startsWith("-")) {
                                 cleanToHit = "+ " + cleanToHit;
                             }
-                            formula += ` ${cleanToHit}`;
+                            parts.push(cleanToHit);
+                        }
+
+                        const actionType = item.system?.actionType || rollConfig.subject?.actionType;
+                        if (actionType && item.actor) {
+                            const globalBonus = item.actor.system?.bonuses?.[actionType]?.attack;
+                            if (globalBonus) parts.push(globalBonus);
+                            
+                            const allBonus = item.actor.system?.bonuses?.All?.attack || item.actor.system?.bonuses?.all?.attack;
+                            if (allBonus) parts.push(allBonus);
+                        }
+
+                        if (parts.length > 0) {
+                            formula += ` ${parts.join(" + ")}`;
                         }
                         
-                        const r = await new Roll(formula).evaluate();
+                        const rollData = item.getRollData();
+                        const r = await new Roll(formula, rollData).evaluate();
                         
                         if (game.dice3d) {
                             game.dice3d.showForRoll(r, game.user, true);
@@ -536,11 +551,29 @@ Hooks.once("ready", () => {
                         if (isAdvantage) advLabel = "<span style='color:#4fc3f7; font-size:0.85em; font-weight:bold; margin-right:6px;'><i class='fas fa-arrow-up'></i> Ventaja</span>";
                         else if (isDisadvantage) advLabel = "<span style='color:#ff5252; font-size:0.85em; font-weight:bold; margin-right:6px;'><i class='fas fa-arrow-down'></i> Desventaja</span>";
 
-                        const modifierTotal = total - d20;
-                        const modSign = modifierTotal >= 0 ? "+" : "-";
+                        let breakdown = "";
+                        for (let i = 1; i < r.terms.length; i++) {
+                            const term = r.terms[i];
+                            if (term instanceof foundry.dice.terms.OperatorTerm) {
+                                breakdown += ` ${term.operator} `;
+                            } else if (term instanceof foundry.dice.terms.DiceTerm) {
+                                breakdown += `<span title="${term.formula}" style="color:#ba68c8; font-weight:bold;">${term.total}</span>`;
+                            } else if (term instanceof foundry.dice.terms.NumericTerm) {
+                                breakdown += term.total;
+                            } else {
+                                breakdown += term.total || "";
+                            }
+                        }
+
+                        // Si no se construyó un desglose limpio (ej. porque todo era estático), hacemos fallback
+                        if (!breakdown.trim() && r.terms.length > 1) {
+                            const modifierTotal = total - d20;
+                            const modSign = modifierTotal >= 0 ? "+" : "-";
+                            breakdown = ` ${modSign} ${Math.abs(modifierTotal)}`;
+                        }
 
                         attackRollHtml = `<div style="font-size: 1.1em; line-height:1.2;">
-                            ${advLabel}<span style="color:inherit; opacity:0.7;">d20:</span> <span style="font-weight:bold;">${d20}</span> ${modSign} ${Math.abs(modifierTotal)} = <span style="font-size: 1.4em; font-weight:900;">${total}</span>
+                            ${advLabel}<span style="color:inherit; opacity:0.7;">d20:</span> <span style="font-weight:bold;">${d20}</span>${breakdown} = <span style="font-size: 1.4em; font-weight:900;">${total}</span>
                         </div>`;
                         attackRollBoxStyle = `margin-bottom: 12px; color: ${rollTextColor}; text-align: center; border: 1px solid ${rollBoxBorder}; background: ${rollBoxBg}; border-radius: 6px; padding: 8px; box-shadow: inset 0 1px 3px rgba(0,0,0,0.05);`;
                     } catch (err) {
