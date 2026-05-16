@@ -850,7 +850,9 @@ Hooks.once("ready", () => {
                 if (isDamage) {
                     const targetsLocal = resolveTargets();
 
-                    if (activeMastery && activeMastery.id !== "nick") {
+                    const isToppleMastery = activeMastery && (activeMastery.id === "topple" || activeMastery.label.toLowerCase().includes("topple") || activeMastery.label.toLowerCase().includes("derribar"));
+                    
+                    if (activeMastery && activeMastery.id !== "nick" && !isToppleMastery) {
                         for (const t of targetsLocal) {
                              if (t.actor) {
                                  const effectData = {
@@ -953,6 +955,23 @@ Hooks.once("ready", () => {
                             const conSaveRaw = t.actor.system?.abilities?.con?.save;
                             const conSave = typeof conSaveRaw === "number" ? conSaveRaw : (t.actor.system?.abilities?.con?.mod ?? 0);
                             const conSaveLabel = conSave >= 0 ? `+${conSave}` : `${conSave}`;
+
+                            const ownerUsers = game.users.filter(u => !u.isGM && t.actor.testUserPermission(u, "OWNER")).map(u => u.id);
+                            const whisperUsers = [...new Set([game.user.id, ...ownerUsers])];
+                            
+                            ChatMessage.create({
+                                whisper: whisperUsers,
+                                content: `
+                                    <div style="text-align:center; padding:10px; font-family:inherit;">
+                                        <h3 style="margin-bottom:5px;">Maestría: Derribar</h3>
+                                        <p style="font-size:0.9em; margin-bottom:10px;"><strong>${t.name}</strong> debe superar una Salvación.</p>
+                                        <div style="font-size: 1.2em; margin-bottom:10px; color:inherit;">CD: <span style="font-size: 1.4em; font-weight: 900; color: #ff5252;">${toppleDC}</span></div>
+                                        <button class="not-dice-topple-save" data-actor-id="${t.actor.id}" data-dc="${toppleDC}" style="background: rgba(197,34,31,0.1); border: 1px solid #d32f2f; color: #ff5252; font-weight: bold; padding: 6px; border-radius:4px; cursor:pointer; width:100%; transition: all 0.2s;">
+                                            <i class="fas fa-shield-alt"></i> Lanzar Salvación de Fuerza
+                                        </button>
+                                    </div>
+                                `
+                            });
 
                             await new Promise(resolveTopple => {
                                 const DialogV2 = foundry?.applications?.api?.DialogV2;
@@ -1345,6 +1364,29 @@ Hooks.once("ready", () => {
 });
 
 Hooks.on("renderChatMessage", (message, html, data) => {
+    html.find(".not-dice-topple-save").click(async (ev) => {
+        ev.preventDefault();
+        const btn = ev.currentTarget;
+        const actorId = btn.dataset.actorId;
+        
+        const actor = game.actors.get(actorId) || canvas.tokens.placeables.find(t => t.actor?.id === actorId)?.actor;
+        if (!actor) return ui.notifications.warn("Not Dice | Actor no encontrado.");
+        
+        try {
+            await actor.rollSavingThrow({ ability: "str", event: ev });
+        } catch(e) {
+            if (typeof actor.rollAbilitySave === "function") {
+                await actor.rollAbilitySave("str", { event: ev });
+            } else {
+                console.error("Not Dice | No se pudo lanzar la salvación", e);
+            }
+        }
+        
+        btn.disabled = true;
+        btn.style.opacity = "0.6";
+        btn.innerHTML = "<i class='fas fa-check'></i> Salvación Realizada";
+    });
+
     html.find(".not-dice-piercer-reroll").click(async (ev) => {
         ev.preventDefault();
         const btn = ev.currentTarget;
