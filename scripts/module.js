@@ -513,15 +513,6 @@ Hooks.once("ready", () => {
                             parts.push(cleanToHit);
                         }
 
-                        const actionType = item.system?.actionType || rollConfig.subject?.actionType;
-                        if (actionType && item.actor) {
-                            const globalBonus = item.actor.system?.bonuses?.[actionType]?.attack;
-                            if (globalBonus) parts.push(globalBonus);
-                            
-                            const allBonus = item.actor.system?.bonuses?.All?.attack || item.actor.system?.bonuses?.all?.attack;
-                            if (allBonus) parts.push(allBonus);
-                        }
-
                         if (parts.length > 0) {
                             formula += ` ${parts.join(" + ")}`;
                         }
