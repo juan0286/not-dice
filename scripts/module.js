@@ -487,12 +487,6 @@ Hooks.once("ready", () => {
                 let attackRollBoxStyle = "";
                 if (game.settings.get("not-dice", "enableSimultaneousRoll")) {
                     try {
-                        let mod = 0;
-                        if (toHit) {
-                            const clean = toHit.replace(/[^\d-]/g, "");
-                            if (clean) mod = parseInt(clean);
-                        }
-
                         const keyAdvantage = rollConfig.event && rollConfig.event.shiftKey;
                         const keyDisadvantage = rollConfig.event && rollConfig.event.ctrlKey;
                         const effectAdvantage = hasVexAdvantage || hasGuidingBoltAdvantage;
@@ -506,9 +500,17 @@ Hooks.once("ready", () => {
                         if (totalAdvantage && !totalDisadvantage) isAdvantage = true;
                         else if (totalDisadvantage && !totalAdvantage) isDisadvantage = true;
 
-                        let formula = `1d20 + ${mod}`;
-                        if (isAdvantage) formula = `2d20kh + ${mod}`;
-                        else if (isDisadvantage) formula = `2d20kl + ${mod}`;
+                        let formula = `1d20`;
+                        if (isAdvantage) formula = `2d20kh`;
+                        else if (isDisadvantage) formula = `2d20kl`;
+                        
+                        if (toHit) {
+                            let cleanToHit = toHit.trim();
+                            if (cleanToHit && !cleanToHit.startsWith("+") && !cleanToHit.startsWith("-")) {
+                                cleanToHit = "+ " + cleanToHit;
+                            }
+                            formula += ` ${cleanToHit}`;
+                        }
                         
                         const r = await new Roll(formula).evaluate();
                         
@@ -534,8 +536,11 @@ Hooks.once("ready", () => {
                         if (isAdvantage) advLabel = "<span style='color:#4fc3f7; font-size:0.85em; font-weight:bold; margin-right:6px;'><i class='fas fa-arrow-up'></i> Ventaja</span>";
                         else if (isDisadvantage) advLabel = "<span style='color:#ff5252; font-size:0.85em; font-weight:bold; margin-right:6px;'><i class='fas fa-arrow-down'></i> Desventaja</span>";
 
+                        const modifierTotal = total - d20;
+                        const modSign = modifierTotal >= 0 ? "+" : "-";
+
                         attackRollHtml = `<div style="font-size: 1.1em; line-height:1.2;">
-                            ${advLabel}<span style="color:inherit; opacity:0.7;">d20:</span> <span style="font-weight:bold;">${d20}</span> + ${mod} = <span style="font-size: 1.4em; font-weight:900;">${total}</span>
+                            ${advLabel}<span style="color:inherit; opacity:0.7;">d20:</span> <span style="font-weight:bold;">${d20}</span> ${modSign} ${Math.abs(modifierTotal)} = <span style="font-size: 1.4em; font-weight:900;">${total}</span>
                         </div>`;
                         attackRollBoxStyle = `margin-bottom: 12px; color: ${rollTextColor}; text-align: center; border: 1px solid ${rollBoxBorder}; background: ${rollBoxBg}; border-radius: 6px; padding: 8px; box-shadow: inset 0 1px 3px rgba(0,0,0,0.05);`;
                     } catch (err) {
