@@ -241,7 +241,30 @@ Hooks.once("ready", () => {
                 rolls.push(huntersMarkRoll);
             }
 
-            const item = rollConfig.subject.item;
+            const item = rollConfig.subject?.item || rollConfig.subject;
+
+            // --- Great Weapon Master / Maestro en Armas Pesadas ---
+            if (item && item.type === "weapon" && actor) {
+                const hasGWM = actor.items?.some(i => {
+                    const name = (i.name || "").toLowerCase();
+                    return i.type === "feat" && (name.includes("great weapon master") || name.includes("maestro de armas pesadas") || name.includes("maestro en armas pesadas"));
+                });
+                
+                const isHeavy = item.system?.properties?.has("hvy");
+                const actionType = rollConfig.subject?.actionType || item.system?.actionType;
+                const isMelee = actionType === "mwak";
+
+                if (hasGWM && isHeavy && isMelee) {
+                    const profBonus = actor.system?.attributes?.prof || 0;
+                    if (profBonus > 0 && rolls.length > 0) {
+                        const originalRoll = rolls[0];
+                        const newFormula = `${originalRoll.formula} + ${profBonus}[GWM]`;
+                        const newRoll = new DamageRoll(newFormula, originalRoll.data, originalRoll.options);
+                        rolls[0] = newRoll;
+                        console.log(`Not Dice | Great Weapon Master detectado: Fórmula base modificada a ${newFormula}`);
+                    }
+                }
+            }
 
             // --- Detect Mastery ---
             let activeMastery = null;
