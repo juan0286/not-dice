@@ -669,6 +669,12 @@ Hooks.once("ready", () => {
                 );
             }) || false;
 
+            const hasPiercer = actor?.items?.some(i => {
+                const n = (i.name || "").toLowerCase();
+                return i.type === "feat" && (n.includes("piercer") || n.includes("perforador"));
+            }) || false;
+
+
             let damageInputsHtml = "";
             for (const part of damageParts) {
                 let specialModsHtml = "";
@@ -1044,6 +1050,7 @@ Hooks.once("ready", () => {
                     
                     const isSavage = root.querySelector(`#savage-${idx}`)?.checked;
                     const isGwf = root.querySelector(`#gwf-${idx}`)?.checked;
+                    const selectedType = root.querySelector(`[name='type-${idx}']`)?.value || damageParts.find(p => p.index == idx)?.type;
                     
                     if (isGwf) {
                         formula = applyGwf(formula);
@@ -1055,20 +1062,34 @@ Hooks.once("ready", () => {
                     let extraMods = [];
                     if (isSavage) extraMods.push("Salvaje");
                     if (isGwf) extraMods.push("Armas a Dos Manos");
+                    if (hasPiercer && selectedType === "piercing") extraMods.push("Perforador");
                     
                     const modsString = extraMods.length > 0 ? ` (${extraMods.join(" | ")})` : "";
+                    
+                    const buildPiercerButtons = (r, dmgIdx) => {
+                        if (!hasPiercer || selectedType !== "piercing") return "";
+                        let buttonsHtml = '<div style="display: flex; gap: 4px; flex-wrap: wrap; margin-top: 8px;">';
+                        buttonsHtml += '<div style="width: 100%; font-size: 0.9em; font-weight: bold; margin-bottom: 4px; color: inherit;">Perforador:</div>';
+                        r.dice.forEach(die => {
+                            die.results.forEach(res => {
+                                buttonsHtml += `<button type="button" class="not-dice-piercer-reroll" data-uuid="${item.uuid}" data-idx="${dmgIdx}" data-faces="${die.faces}" data-original="${res.result}" style="width: 28px; height: 28px; padding: 0; font-weight: bold; border: 1px solid var(--color-border-light-2, #ccc); border-radius: 4px; background: rgba(127,127,127,0.1); color: inherit; cursor: pointer; display: flex; align-items: center; justify-content: center; font-size: 1.1em;" title="d${die.faces}">${res.result}</button>`;
+                            });
+                        });
+                        buttonsHtml += '</div>';
+                        return buttonsHtml;
+                    };
                     
                     if (isSavage) {
                         const r1 = await new Roll(formula).evaluate();
                         const r2 = await new Roll(formula).evaluate();
                         
-                        await r1.toMessage({ flavor: `${flavorBase}${modsString.replace(")", " - Tirada 1)")}`, speaker: actorSpeaker });
-                        await r2.toMessage({ flavor: `${flavorBase}${modsString.replace(")", " - Tirada 2)")}`, speaker: actorSpeaker });
+                        await r1.toMessage({ flavor: `${flavorBase}${modsString.replace(")", " - Tirada 1)")}${buildPiercerButtons(r1, idx)}`, speaker: actorSpeaker });
+                        await r2.toMessage({ flavor: `${flavorBase}${modsString.replace(")", " - Tirada 2)")}${buildPiercerButtons(r2, idx)}`, speaker: actorSpeaker });
                         
                         return Math.max(r1.total, r2.total);
                     } else {
                         const r = await new Roll(formula).evaluate();
-                        await r.toMessage({ flavor: `${flavorBase}${modsString}`, speaker: actorSpeaker });
+                        await r.toMessage({ flavor: `${flavorBase}${modsString}${buildPiercerButtons(r, idx)}`, speaker: actorSpeaker });
                         return r.total;
                     }
                 };
@@ -1116,6 +1137,20 @@ Hooks.once("ready", () => {
                         reqBtn.innerHTML = "<i class='fas fa-check'></i> Daño Recibido";
                     }
                     return true;
+                };
+
+                globalThis._notDiceUpdatePiercerTotal = globalThis._notDiceUpdatePiercerTotal || {};
+                globalThis._notDiceUpdatePiercerTotal[item.uuid] = (targetIdx, oldResult, newResult) => {
+                    if (!document.body.contains(root)) return false;
+                    const inputTotal = root.querySelector(`[name='total-${targetIdx}']`);
+                    if (inputTotal) {
+                        let current = parseInt(inputTotal.value) || 0;
+                        let previous = current;
+                        current = current - oldResult + newResult;
+                        inputTotal.value = current;
+                        return { previous, current };
+                    }
+                    return false;
                 };
 
                 const reqBtn = root.querySelector(`#not-dice-btn-request-damage-attack`);
@@ -1308,3 +1343,51 @@ Hooks.once("ready", () => {
         }
     });
 });
+
+Hooks.on("renderChatMessage", (message, html, data) => {
+    html.find(".not-dice-piercer-reroll").click(async (ev) => {
+        ev.preventDefault();
+        const btn = ev.currentTarget;
+        const faces = btn.dataset.faces;
+        const original = parseInt(btn.dataset.original);
+        const uuid = btn.dataset.uuid;
+        const idx = btn.dataset.idx;
+        
+        if (!faces) return;
+        
+        const rDie = await new Roll(`1d${faces}`).evaluate();
+        const newDieResult = rDie.total;
+        
+        let newTotal = newDieResult;
+        let modifier = 0;
+
+        if (uuid && idx !== undefined && globalThis._notDiceUpdatePiercerTotal && globalThis._notDiceUpdatePiercerTotal[uuid]) {
+            const resultObj = globalThis._notDiceUpdatePiercerTotal[uuid](idx, original, newDieResult);
+            if (resultObj) {
+                newTotal = resultObj.current;
+                modifier = resultObj.previous - original;
+            }
+        }
+        
+        let displayRoll;
+        if (modifier !== 0) {
+            const sign = modifier >= 0 ? "+" : "-";
+            displayRoll = await new Roll(`1d${faces} ${sign} ${Math.abs(modifier)}`).evaluate();
+            displayRoll.terms[0].results[0].result = rDie.terms[0].results[0].result;
+            displayRoll._total = newTotal;
+        } else {
+            displayRoll = rDie;
+        }
+
+        await displayRoll.toMessage({
+            speaker: message.speaker,
+            flavor: `<strong>Perforador</strong>: Relanzando d${faces}<br>Original: ${original} <i class="fas fa-arrow-right"></i> <strong style="font-size:1.2em;">${newDieResult}</strong>`
+        });
+        
+        // Deshabilitar botón para evitar multiclips y dar feedback
+        btn.disabled = true;
+        btn.style.opacity = "0.5";
+        btn.style.textDecoration = "line-through";
+        btn.style.color = "#ff5252";
+    });
+});
