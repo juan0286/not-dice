@@ -6,40 +6,6 @@
 // y aplicación de Efectos Activos.
 // ============================================================
 
-Hooks.once("init", () => {
-    console.log("Not Dice | Módulo inicializado (Traducción y UI Interactiva Activas).");
-
-    // Configuración para activar/desactivar la intercepción de áreas
-    game.settings.register("not-dice", "enableTemplateIntercept", {
-        name: "Detectar Área de Efecto",
-        hint: "Muestra un diálogo con los tokens afectados al colocar una plantilla.",
-        scope: "client",
-        config: true,
-        type: Boolean,
-        default: true
-    });
-
-    // Configuración para habilitar/deshabilitar la traducción
-    game.settings.register("not-dice", "enableTranslation", {
-        name: "Habilitar Traducción de Descripciones",
-        hint: "Traduce automáticamente la descripción de los hechizos al español usando MyMemory.",
-        scope: "client",
-        config: true,
-        type: Boolean,
-        default: true
-    });
-
-    // Configuración para el email de MyMemory (aumenta límite de palabras)
-    game.settings.register("not-dice", "myMemoryEmail", {
-        name: "Email para MyMemory (Opcional)",
-        hint: "Ingresa tu email para aumentar el límite de uso diario de la API gratuita de MyMemory.",
-        scope: "client",
-        config: true,
-        type: String,
-        default: ""
-    });
-});
-
 // 1. Espera a que el objeto visual se cargue en el canvas
 const waitForAreaObject = (document) => {
     return new Promise((resolve) => {
@@ -369,23 +335,7 @@ const showCaughtTokensDialog = (spellData, tokens, templateDocument) => {
 
     let damageBadge = "";
     if (spellData.damageLabels && spellData.damageLabels.length > 0) {
-        const damageStyle = {
-             acid: { color: "#aeea00", bg: "rgba(174, 234, 0, 0.15)", border: "rgba(174, 234, 0, 0.4)" },
-             bludgeoning: { color: "inherit", bg: "rgba(128, 128, 128, 0.15)", border: "var(--color-border-light-2, #ccc)" },
-             cold: { color: "#4fc3f7", bg: "rgba(79, 195, 247, 0.15)", border: "rgba(79, 195, 247, 0.4)" },
-             fire: { color: "#ff5252", bg: "rgba(255, 82, 82, 0.15)", border: "rgba(255, 82, 82, 0.4)" },
-             force: { color: "#e040fb", bg: "rgba(224, 64, 251, 0.15)", border: "rgba(224, 64, 251, 0.4)" }, 
-             lightning: { color: "#ffd600", bg: "rgba(255, 214, 0, 0.15)", border: "rgba(255, 214, 0, 0.4)" },
-             necrotic: { color: "#b0bec5", bg: "rgba(176, 190, 197, 0.15)", border: "rgba(176, 190, 197, 0.4)" },
-             piercing: { color: "inherit", bg: "rgba(128, 128, 128, 0.15)", border: "var(--color-border-light-2, #ccc)" },
-             poison: { color: "#69f0ae", bg: "rgba(105, 240, 174, 0.15)", border: "rgba(105, 240, 174, 0.4)" },
-             psychic: { color: "#ff4081", bg: "rgba(255, 64, 129, 0.15)", border: "rgba(255, 64, 129, 0.4)" },
-             radiant: { color: "#ffca28", bg: "rgba(255, 202, 40, 0.15)", border: "rgba(255, 202, 40, 0.4)" },
-             slashing: { color: "inherit", bg: "rgba(128, 128, 128, 0.15)", border: "var(--color-border-light-2, #ccc)" },
-             thunder: { color: "#7c4dff", bg: "rgba(124, 77, 255, 0.15)", border: "rgba(124, 77, 255, 0.4)" },
-             healing: { color: "#69f0ae", bg: "rgba(105, 240, 174, 0.15)", border: "rgba(105, 240, 174, 0.4)" },
-             temphp: { color: "inherit", bg: "rgba(128, 128, 128, 0.15)", border: "var(--color-border-light-2, #ccc)" }
-        };
+        const damageStyle = globalThis.notDiceConstants.damageStyle;
 
         damageBadge = spellData.damageLabels.map(d => {
             const style = damageStyle[d.type] || { color: "inherit", bg: "rgba(128,128,128,0.15)", border: "var(--color-border-light-2, #ccc)" };

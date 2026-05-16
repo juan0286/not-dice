@@ -5,36 +5,6 @@
 // Compatible dinámicamente con Modo Claro y Modo Oscuro.
 // ============================================================
 
-Hooks.once("init", () => {
-    game.settings.register("not-dice", "enableModule", {
-        name: "Habilitar Módulo",
-        hint: "Activa o desactiva la funcionalidad completa del módulo. Requiere recargar.",
-        scope: "client",
-        config: true,
-        type: Boolean,
-        default: true,
-        onChange: () => window.location.reload()
-    });
-
-    game.settings.register("not-dice", "enableSimultaneousRoll", {
-        name: "Tirada de Ataque Simultánea",
-        hint: "Realiza la tirada de ataque automáticamente al abrir el diálogo de daño.",
-        scope: "client",
-        config: true,
-        type: Boolean,
-        default: true
-    });
-
-    game.settings.register("not-dice", "enableSound", {
-        name: "Sonido de Dados",
-        hint: "Reproducir sonido si Dice So Nice no está activo.",
-        scope: "client",
-        config: true,
-        type: Boolean,
-        default: true
-    });
-});
-
 // Helpers --------------------------------------------------------------
 const notDiceIsAttack = (subject) => {
     return subject && (subject.type === "attack" || subject.constructor?.name === "AttackActivity");
@@ -354,14 +324,7 @@ Hooks.once("ready", () => {
                 });
             }
                 
-            const multiplierOptions = [
-                { val: -1, label: "Curar (-1)" },
-                { val: 0, label: "x0" },
-                { val: 0.25, label: "x1/4" },
-                { val: 0.5, label: "x1/2" },
-                { val: 1, label: "x1 (Normal)" },
-                { val: 2, label: "x2" }
-            ];
+            const multiplierOptions = globalThis.notDiceConstants.multiplierOptions;
 
             // Helper to resolve targets
             const resolveTargets = () => {
@@ -424,14 +387,7 @@ Hooks.once("ready", () => {
                     });
                     if (hasHAM) badgesHtml += `<span style="display:inline-block; font-size:0.75em; background:rgba(106,27,154,0.15); color:#ba68c8; padding:2px 6px; border-radius:8px; border:1px solid rgba(106,27,154,0.3); margin-top:4px; margin-right:4px;"><i class="fas fa-chess-rook"></i> Armadura Pesada (-Prof)</span>`;
 
-                    const notDiceStatusES = {
-                        blinded: "Cegado", charmed: "Encantado", deafened: "Ensordecido", diseased: "Enfermo",
-                        exhaustion: "Agotamiento", frightened: "Asustado", grappled: "Aferrado", incapacitated: "Incapacitado",
-                        invisible: "Invisible", paralyzed: "Paralizado", petrified: "Petrificado", poisoned: "Envenenado",
-                        prone: "Derribado", restrained: "Restringido", stunned: "Aturdido", unconscious: "Inconsciente",
-                        concentrating: "Concentrado", dead: "Muerto", dodging: "Esquivando", hiding: "Ocultado",
-                        sleeping: "Dormido", surprised: "Sorprendido", silenced: "Silenciado", transformed: "Transformado"
-                    };
+                    const notDiceStatusES = globalThis.notDiceConstants.statusES;
                     const activeStatuses = t.actor?.statuses ?? new Set();
                     const conditionLabels = [];
                     for (const statusId of activeStatuses) { conditionLabels.push(notDiceStatusES[statusId] || statusId); }

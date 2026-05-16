@@ -1,12 +1,14 @@
 {
   "id": "not-dice",
   "title": "Not Dice",
-  "version": "2.7.0",
+  "version": "2.7.2",
   "compatibility": {
     "minimum": "13",
     "verified": "14"
   },
   "esmodules": [
+    "scripts/settings.js",
+    "scripts/constants.js",
     "scripts/module.js",
     "scripts/saving-throw.js",
     "scripts/damage-effects.js",
