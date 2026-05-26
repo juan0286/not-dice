@@ -455,6 +455,53 @@ Hooks.once("ready", () => {
             let isNickActive = false;
             let nickWeaponName = "";
             let nickWeaponItem = null;
+            let attackRollState = null;
+
+            const getAttackRollVisualState = (selectedD20, total) => {
+                const targetAC = targets.length > 0 ? (targets[0].actor?.system?.attributes?.ac?.value ?? null) : null;
+                if (selectedD20 === 1) return { bg: "rgba(197,34,31,0.1)", border: "rgba(197,34,31,0.4)", text: "#ff5252" };
+                if (selectedD20 === 20) return { bg: "rgba(19,115,51,0.1)", border: "rgba(19,115,51,0.4)", text: "#4caf50" };
+                if (targetAC !== null && total >= targetAC) return { bg: "rgba(19,115,51,0.1)", border: "rgba(19,115,51,0.4)", text: "#4caf50" };
+                if (targetAC !== null && total < targetAC) return { bg: "rgba(197,34,31,0.1)", border: "rgba(197,34,31,0.4)", text: "#ff5252" };
+                return { bg: "rgba(127,127,127,0.1)", border: "var(--color-border-light-2, #ddd)", text: "inherit" };
+            };
+
+            const buildAttackRollDisplay = (state) => {
+                if (!state) return { contentHtml: "", boxStyle: "" };
+
+                const selectedD20 = state.mode === "advantage"
+                    ? Math.max(state.originalD20, state.extraD20 ?? state.originalD20)
+                    : state.mode === "disadvantage"
+                        ? Math.min(state.originalD20, state.extraD20 ?? state.originalD20)
+                        : state.originalD20;
+                const total = selectedD20 + state.bonus;
+                const visual = getAttackRollVisualState(selectedD20, total);
+
+                let modeBadge = "";
+                if (state.mode === "advantage") modeBadge = "<span style='color:#4fc3f7; font-size:0.85em; font-weight:bold; margin-right:6px;'><i class='fas fa-arrow-up'></i> Ventaja</span>";
+                else if (state.mode === "disadvantage") modeBadge = "<span style='color:#ff5252; font-size:0.85em; font-weight:bold; margin-right:6px;'><i class='fas fa-arrow-down'></i> Desventaja</span>";
+
+                const modSign = state.bonus >= 0 ? "+" : "-";
+                const modifierHtml = ` ${modSign} ${Math.abs(state.bonus)}`;
+
+                let diceHtml = `<span style="font-weight:bold;">${state.originalD20}</span>`;
+                if (state.mode !== "normal" && state.extraD20 != null) {
+                    const originalStyle = selectedD20 === state.originalD20 ? "font-weight:900; text-decoration:underline;" : "opacity:0.65;";
+                    const extraStyle = selectedD20 === state.extraD20 ? "font-weight:900; text-decoration:underline;" : "opacity:0.65;";
+                    diceHtml = `<span style="${originalStyle}">${state.originalD20}</span> / <span style="${extraStyle}">${state.extraD20}</span>`;
+                }
+
+                const contentHtml = `<div style="display:flex; align-items:center; justify-content:center; gap:8px;">
+                    <button type="button" class="not-dice-attack-disadvantage-btn" title="Convertir a Desventaja" style="width:34px; height:34px; border:1px solid rgba(197,34,31,0.4); border-radius:6px; background:rgba(197,34,31,0.1); color:#ff5252; cursor:pointer; flex-shrink:0;"><i class="fas fa-arrow-down"></i></button>
+                    <div class="not-dice-attack-roll-result" style="flex:1; min-width:0; font-size: 1.1em; line-height:1.2;">
+                        ${modeBadge}<span style="color:inherit; opacity:0.7;">d20:</span> ${diceHtml}${modifierHtml} = <span style="font-size: 1.4em; font-weight:900;">${total}</span>
+                    </div>
+                    <button type="button" class="not-dice-attack-advantage-btn" title="Convertir a Ventaja" style="width:34px; height:34px; border:1px solid rgba(19,115,51,0.4); border-radius:6px; background:rgba(19,115,51,0.1); color:#4caf50; cursor:pointer; flex-shrink:0;"><i class="fas fa-arrow-up"></i></button>
+                </div>`;
+                const boxStyle = `margin-bottom: 12px; color: ${visual.text}; text-align: center; border: 1px solid ${visual.border}; background: ${visual.bg}; border-radius: 6px; padding: 8px; box-shadow: inset 0 1px 3px rgba(0,0,0,0.05);`;
+
+                return { contentHtml, boxStyle, selectedD20, total };
+            };
 
             if (rollConfig.subject.type === "attack") {
                 const toHit = item.labels?.toHit || "";
@@ -510,23 +557,7 @@ Hooks.once("ready", () => {
                 let attackRollBoxStyle = "";
                 if (game.settings.get("not-dice", "enableSimultaneousRoll")) {
                     try {
-                        const keyAdvantage = rollConfig.event && rollConfig.event.shiftKey;
-                        const keyDisadvantage = rollConfig.event && rollConfig.event.ctrlKey;
-                        const effectAdvantage = hasVexAdvantage || hasGuidingBoltAdvantage;
-                        const effectDisadvantage = hasSapEffect;
-
-                        const totalAdvantage = keyAdvantage || effectAdvantage;
-                        const totalDisadvantage = keyDisadvantage || effectDisadvantage;
-
-                        let isAdvantage = false;
-                        let isDisadvantage = false;
-                        if (totalAdvantage && !totalDisadvantage) isAdvantage = true;
-                        else if (totalDisadvantage && !totalAdvantage) isDisadvantage = true;
-
                         let formula = `1d20`;
-                        if (isAdvantage) formula = `2d20kh`;
-                        else if (isDisadvantage) formula = `2d20kl`;
-                        
                         let parts = [];
                         if (toHit) {
                             let cleanToHit = toHit.trim();
@@ -545,52 +576,18 @@ Hooks.once("ready", () => {
 
                         // Publicar la tirada de ataque en el chat para vista de todos (esto reproduce automáticamente la animación 3D y el sonido nativo)
                         const actorSpeaker = ChatMessage.getSpeaker({ actor: item?.actor });
-                        let attackFlavor = `<strong>Tirada de Ataque: ${item?.name || "Ataque"}</strong>`;
-                        if (isAdvantage) attackFlavor += ` (Ventaja)`;
-                        else if (isDisadvantage) attackFlavor += ` (Desventaja)`;
-                        await r.toMessage({ speaker: actorSpeaker, flavor: attackFlavor });
+                        await r.toMessage({ speaker: actorSpeaker, flavor: `<strong>Tirada de Ataque: ${item?.name || "Ataque"}</strong>` });
 
-                        const d20 = r.terms[0].total; 
-                        const total = r.total;
+                        attackRollState = {
+                            mode: "normal",
+                            originalD20: r.terms?.[0]?.total ?? 0,
+                            extraD20: null,
+                            bonus: r.total - (r.terms?.[0]?.total ?? 0)
+                        };
 
-                        const targetAC = targets.length > 0 ? (targets[0].actor?.system?.attributes?.ac?.value ?? null) : null;
-                        let rollBoxBg, rollBoxBorder, rollTextColor;
-                        
-                        if (d20 === 1) { rollBoxBg = "rgba(197,34,31,0.1)"; rollBoxBorder = "rgba(197,34,31,0.4)"; rollTextColor = "#ff5252"; }
-                        else if (d20 === 20) { rollBoxBg = "rgba(19,115,51,0.1)"; rollBoxBorder = "rgba(19,115,51,0.4)"; rollTextColor = "#4caf50"; }
-                        else if (targetAC !== null && total >= targetAC) { rollBoxBg = "rgba(19,115,51,0.1)"; rollBoxBorder = "rgba(19,115,51,0.4)"; rollTextColor = "#4caf50"; }
-                        else if (targetAC !== null && total < targetAC) { rollBoxBg = "rgba(197,34,31,0.1)"; rollBoxBorder = "rgba(197,34,31,0.4)"; rollTextColor = "#ff5252"; }
-                        else { rollBoxBg = "rgba(127,127,127,0.1)"; rollBoxBorder = "var(--color-border-light-2, #ddd)"; rollTextColor = "inherit"; }
-                        
-                        let advLabel = "";
-                        if (isAdvantage) advLabel = "<span style='color:#4fc3f7; font-size:0.85em; font-weight:bold; margin-right:6px;'><i class='fas fa-arrow-up'></i> Ventaja</span>";
-                        else if (isDisadvantage) advLabel = "<span style='color:#ff5252; font-size:0.85em; font-weight:bold; margin-right:6px;'><i class='fas fa-arrow-down'></i> Desventaja</span>";
-
-                        let breakdown = "";
-                        for (let i = 1; i < r.terms.length; i++) {
-                            const term = r.terms[i];
-                            if (term instanceof foundry.dice.terms.OperatorTerm) {
-                                breakdown += ` ${term.operator} `;
-                            } else if (term instanceof foundry.dice.terms.DiceTerm) {
-                                breakdown += `<span title="${term.formula}" style="color:#ba68c8; font-weight:bold;">${term.total}</span>`;
-                            } else if (term instanceof foundry.dice.terms.NumericTerm) {
-                                breakdown += term.total;
-                            } else {
-                                breakdown += term.total || "";
-                            }
-                        }
-
-                        // Si no se construyó un desglose limpio (ej. porque todo era estático), hacemos fallback
-                        if (!breakdown.trim() && r.terms.length > 1) {
-                            const modifierTotal = total - d20;
-                            const modSign = modifierTotal >= 0 ? "+" : "-";
-                            breakdown = ` ${modSign} ${Math.abs(modifierTotal)}`;
-                        }
-
-                        attackRollHtml = `<div style="font-size: 1.1em; line-height:1.2;">
-                            ${advLabel}<span style="color:inherit; opacity:0.7;">d20:</span> <span style="font-weight:bold;">${d20}</span>${breakdown} = <span style="font-size: 1.4em; font-weight:900;">${total}</span>
-                        </div>`;
-                        attackRollBoxStyle = `margin-bottom: 12px; color: ${rollTextColor}; text-align: center; border: 1px solid ${rollBoxBorder}; background: ${rollBoxBg}; border-radius: 6px; padding: 8px; box-shadow: inset 0 1px 3px rgba(0,0,0,0.05);`;
+                        const display = buildAttackRollDisplay(attackRollState);
+                        attackRollHtml = display.contentHtml;
+                        attackRollBoxStyle = display.boxStyle;
                     } catch (err) {
                         console.error("Not Dice | Failed simultaneous roll", err);
                     }
@@ -610,7 +607,7 @@ Hooks.once("ready", () => {
                 </div>`;
                 
                 if (attackRollHtml) {
-                    attackHtml += `<div style="${attackRollBoxStyle}">${attackRollHtml}</div>`;
+                    attackHtml += `<div class="not-dice-attack-roll-box" style="${attackRollBoxStyle}">${attackRollHtml}</div>`;
                 }
             }
 
@@ -1038,6 +1035,69 @@ Hooks.once("ready", () => {
             const onRenderComplete = (element) => {
                 const root = element instanceof HTMLElement ? element : element[0];
 
+                const attackRollBoxNode = root.querySelector(".not-dice-attack-roll-box");
+
+                const setAttackButtonsDisabled = (isDisabled) => {
+                    const buttons = root.querySelectorAll(".not-dice-attack-disadvantage-btn, .not-dice-attack-advantage-btn");
+                    buttons.forEach(btn => {
+                        btn.disabled = isDisabled;
+                        btn.style.opacity = isDisabled ? "0.6" : "1";
+                        btn.style.cursor = isDisabled ? "not-allowed" : "pointer";
+                    });
+                };
+
+                const rerenderAttackRollState = () => {
+                    if (!attackRollBoxNode || !attackRollState) return;
+                    const display = buildAttackRollDisplay(attackRollState);
+                    attackRollBoxNode.innerHTML = display.contentHtml;
+                    attackRollBoxNode.setAttribute("style", display.boxStyle);
+                };
+
+                const applyManualAttackMode = async (mode) => {
+                    if (!attackRollState || !attackRollBoxNode) return;
+                    setAttackButtonsDisabled(true);
+                    try {
+                        const extraRoll = await new Roll("1d20").evaluate();
+                        const extraD20 = extraRoll.total;
+                        const selectedD20 = mode === "advantage"
+                            ? Math.max(attackRollState.originalD20, extraD20)
+                            : Math.min(attackRollState.originalD20, extraD20);
+                        const total = selectedD20 + attackRollState.bonus;
+                        const actorSpeaker = ChatMessage.getSpeaker({ actor: item?.actor });
+                        const modeLabel = mode === "advantage" ? "Ventaja" : "Desventaja";
+
+                        await extraRoll.toMessage({
+                            speaker: actorSpeaker,
+                            flavor: `<strong>Tirada de Ataque: ${item?.name || "Ataque"}</strong> (${modeLabel})<br>Original: ${attackRollState.originalD20} | Nuevo: ${extraD20} | Elegido: <strong>${selectedD20}</strong> | Total: <strong>${total}</strong>`
+                        });
+
+                        attackRollState = {
+                            ...attackRollState,
+                            mode,
+                            extraD20
+                        };
+                        rerenderAttackRollState();
+                    } catch (err) {
+                        console.error("Not Dice | Error applying manual advantage/disadvantage", err);
+                    } finally {
+                        setAttackButtonsDisabled(false);
+                    }
+                };
+
+                if (attackRollState && attackRollBoxNode) {
+                    root.addEventListener("click", async (ev) => {
+                        const disBtn = ev.target.closest(".not-dice-attack-disadvantage-btn");
+                        const advBtn = ev.target.closest(".not-dice-attack-advantage-btn");
+                        if (disBtn) {
+                            ev.preventDefault();
+                            await applyManualAttackMode("disadvantage");
+                        } else if (advBtn) {
+                            ev.preventDefault();
+                            await applyManualAttackMode("advantage");
+                        }
+                    });
+                }
+
                 root.querySelectorAll("select[name^='type-']").forEach(select => {
                     select.addEventListener("change", (ev) => {
                         const newType = ev.currentTarget.value;
@@ -1441,4 +1501,4 @@ Hooks.on("renderChatMessage", (message, html, data) => {
         btn.style.textDecoration = "line-through";
         btn.style.color = "#ff5252";
     });
-});
+});
