@@ -6,6 +6,13 @@
     "minimum": "13",
     "verified": "14"
   },
+  "media": [
+    {
+      "type": "setup",
+      "url": "modules/not-dice/icons/not-dice-icon.webp",
+      "thumbnail": "modules/not-dice/icons/not-dice-icon.webp"
+    }
+  ],
   "esmodules": [
     "scripts/settings.js",
     "scripts/constants.js",
@@ -28,6 +35,6 @@
   },
   "socket": true,
   "url": "https://github.com/juan0286/not-dice",
-  "manifest": "https://github.com/juan0286/not-dice/releases/download/relsease3/module.json",
-  "download": "https://github.com/juan0286/not-dice/releases/download/relsease3/not-dice.zip"
+  "manifest": "https://github.com/juan0286/not-dice/releases/download/6/module.json",
+  "download": "https://github.com/juan0286/not-dice/releases/download/6/not-dice.zip"
 }

@@ -542,12 +542,13 @@ Hooks.once("ready", () => {
                         
                         const rollData = item.getRollData();
                         const r = await new Roll(formula, rollData).evaluate();
-                        
-                        if (game.dice3d) {
-                            game.dice3d.showForRoll(r, game.user, true);
-                        } else if (game.settings.get("not-dice", "enableSound")) {
-                            AudioHelper.play({src: "sounds/dice.wav"}); 
-                        }
+
+                        // Publicar la tirada de ataque en el chat para vista de todos (esto reproduce automáticamente la animación 3D y el sonido nativo)
+                        const actorSpeaker = ChatMessage.getSpeaker({ actor: item?.actor });
+                        let attackFlavor = `<strong>Tirada de Ataque: ${item?.name || "Ataque"}</strong>`;
+                        if (isAdvantage) attackFlavor += ` (Ventaja)`;
+                        else if (isDisadvantage) attackFlavor += ` (Desventaja)`;
+                        await r.toMessage({ speaker: actorSpeaker, flavor: attackFlavor });
 
                         const d20 = r.terms[0].total; 
                         const total = r.total;
