@@ -758,7 +758,8 @@ Hooks.once("ready", () => {
 
             let requestDamageBtnHtml = "";
             const senderUserId = rollConfig?.event?.senderUserId;
-            if (senderUserId && senderUserId !== game.user.id && damageParts.length > 0) {
+            const canRequestPlayerDamage = senderUserId && senderUserId !== game.user.id && damageParts.length > 0;
+            if (canRequestPlayerDamage) {
                 requestDamageBtnHtml = `
                     <div style="text-align: center; margin-top: 10px; margin-bottom: 5px;">
                         <button type="button" id="not-dice-btn-request-damage-attack" data-user="${senderUserId}" data-uuid="${item.uuid}" style="background: rgba(26,115,232,0.1); border: 1px solid rgba(26,115,232,0.4); color: #1a73e8; font-weight: bold; border-radius: 4px; padding: 6px 12px; cursor: pointer; transition: all 0.2s;">
@@ -1029,6 +1030,92 @@ Hooks.once("ready", () => {
                 return { total: totalValues.reduce((acc, curr) => acc + curr.value, 0) };
             };
 
+            const getDamageRequestTargets = (root, forcedTargetIds = null) => {
+                const targetIds = [];
+                const targetMultipliers = {};
+                const forcedSet = forcedTargetIds ? new Set(forcedTargetIds) : null;
+
+                root.querySelectorAll("select[name^='target-multiplier-']").forEach(select => {
+                    const tId = select.name.replace("target-multiplier-", "");
+                    if (forcedSet && !forcedSet.has(tId)) return;
+
+                    const mult = parseFloat(select.value);
+                    if (mult > 0 || mult === -1) {
+                        targetIds.push(tId);
+                        targetMultipliers[tId] = mult;
+                    }
+                });
+
+                if (targetIds.length === 0) return null;
+                return { targetIds, targetMultipliers };
+            };
+
+            const getHitTargetIds = () => {
+                if (!attackRollState || targets.length === 0) return [];
+
+                const selectedD20 = attackRollState.mode === "advantage"
+                    ? Math.max(attackRollState.originalD20, attackRollState.extraD20 ?? attackRollState.originalD20)
+                    : attackRollState.mode === "disadvantage"
+                        ? Math.min(attackRollState.originalD20, attackRollState.extraD20 ?? attackRollState.originalD20)
+                        : attackRollState.originalD20;
+                const total = selectedD20 + attackRollState.bonus;
+
+                const hitIds = [];
+                for (const target of targets) {
+                    const targetAC = target.actor?.system?.attributes?.ac?.value;
+
+                    if (selectedD20 === 1) continue;
+                    if (selectedD20 === 20) {
+                        hitIds.push(target.id);
+                        continue;
+                    }
+
+                    if (typeof targetAC === "number" && total >= targetAC) {
+                        hitIds.push(target.id);
+                    }
+                }
+
+                return hitIds;
+            };
+
+            const sendDamageRequestToPlayer = async (root, forcedTargetIds = null) => {
+                if (!canRequestPlayerDamage) return false;
+
+                const reqBtn = root.querySelector("#not-dice-btn-request-damage-attack");
+                if (!reqBtn || reqBtn.dataset.sent === "true") return false;
+
+                const reqUserId = reqBtn.dataset.user;
+                const reqUuid = reqBtn.dataset.uuid;
+                const formulas = damageParts.map(p => p.formula).join("||");
+
+                const requestTargets = getDamageRequestTargets(root, forcedTargetIds);
+                if (!requestTargets) return false;
+
+                const targetIdsStr = requestTargets.targetIds.join(",");
+                const multipliersStr = JSON.stringify(requestTargets.targetMultipliers).replace(/"/g, '&quot;');
+
+                await ChatMessage.create({
+                    whisper: [reqUserId],
+                    content: `
+                        <div class="not-dice-damage-request" style="text-align:center; padding:10px;">
+                            <h3 style="margin-bottom:5px;">Daño de ${item.name}</h3>
+                            <p style="font-size:0.9em; margin-bottom:10px;">El GM solicita tu tirada de daño.</p>
+                            <button class="not-dice-roll-spell-damage" data-uuid="${reqUuid}" data-formulas="${formulas}" data-targets="${targetIdsStr}" data-multipliers="${multipliersStr}" style="background: rgba(197,34,31,0.1); border: 1px solid #d32f2f; color: #ff5252; font-weight: bold; padding: 6px; border-radius:4px; cursor:pointer; width:100%;">
+                                <i class="fas fa-dice-d20"></i> Lanzar Daño
+                            </button>
+                        </div>
+                    `
+                });
+
+                reqBtn.innerHTML = "<i class='fas fa-check'></i> Solicitud Enviada";
+                reqBtn.disabled = true;
+                reqBtn.dataset.sent = "true";
+                reqBtn.style.opacity = "0.6";
+                reqBtn.style.cursor = "not-allowed";
+
+                return true;
+            };
+
             const notDiceVersion = game.modules.get("not-dice")?.version || "";
             
             // --- Handlers for interactive UI ---
@@ -1245,48 +1332,28 @@ Hooks.once("ready", () => {
                 if (reqBtn) {
                     reqBtn.addEventListener("click", async (ev) => {
                         ev.preventDefault();
-                        const uId = reqBtn.dataset.user;
-                        const uuid = reqBtn.dataset.uuid;
-                        
-                        const formulas = damageParts.map(p => p.formula).join("||");
-                        
-                        const targetIds = [];
-                        const targetMultipliers = {};
-                        root.querySelectorAll("select[name^='target-multiplier-']").forEach(select => {
-                            const tId = select.name.replace("target-multiplier-", "");
-                            const mult = parseFloat(select.value);
-                            if (mult > 0 || mult === -1) { 
-                                targetIds.push(tId);
-                                targetMultipliers[tId] = mult;
-                            }
-                        });
-                        
-                        if (targetIds.length === 0) {
+                        const requestTargets = getDamageRequestTargets(root);
+                        if (!requestTargets) {
                             ui.notifications.warn("Not Dice | No hay objetivos válidos para solicitar daño.");
                             return;
                         }
 
-                        const targetIdsStr = targetIds.join(",");
-                        const multipliersStr = JSON.stringify(targetMultipliers).replace(/"/g, '&quot;');
-                        
-                        ChatMessage.create({
-                            whisper: [uId],
-                            content: `
-                                <div class="not-dice-damage-request" style="text-align:center; padding:10px;">
-                                    <h3 style="margin-bottom:5px;">Daño de ${item.name}</h3>
-                                    <p style="font-size:0.9em; margin-bottom:10px;">El GM solicita tu tirada de daño.</p>
-                                    <button class="not-dice-roll-spell-damage" data-uuid="${uuid}" data-formulas="${formulas}" data-targets="${targetIdsStr}" data-multipliers="${multipliersStr}" style="background: rgba(197,34,31,0.1); border: 1px solid #d32f2f; color: #ff5252; font-weight: bold; padding: 6px; border-radius:4px; cursor:pointer; width:100%;">
-                                        <i class="fas fa-dice-d20"></i> Lanzar Daño
-                                    </button>
-                                </div>
-                            `
-                        });
-                        
-                        reqBtn.innerHTML = "<i class='fas fa-check'></i> Solicitud Enviada";
-                        reqBtn.disabled = true;
-                        reqBtn.style.opacity = "0.6";
-                        reqBtn.style.cursor = "not-allowed";
+                        await sendDamageRequestToPlayer(root);
                     });
+                }
+
+                const autoRequestOnHit = game.settings.get("not-dice", "enableAutoDamageRequestOnHit");
+                if (autoRequestOnHit && canRequestPlayerDamage && attackRollState && reqBtn) {
+                    const hitTargetIds = getHitTargetIds();
+                    if (hitTargetIds.length > 0) {
+                        sendDamageRequestToPlayer(root, hitTargetIds).then((sent) => {
+                            if (sent) {
+                                ui.notifications.info("Not Dice | Solicitud de daño enviada automáticamente al jugador (ataque acertado).");
+                            }
+                        }).catch(err => {
+                            console.error("Not Dice | Error en solicitud automática de daño", err);
+                        });
+                    }
                 }
             };
 

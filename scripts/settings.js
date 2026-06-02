@@ -26,6 +26,15 @@ Hooks.once("init", () => {
         default: true
     });
 
+    game.settings.register("not-dice", "enableAutoDamageRequestOnHit", {
+        name: "Auto Solicitar Daño al Acertar",
+        hint: "Si un jugador acierta un ataque, el GM envía automáticamente al jugador el botón para lanzar daño.",
+        scope: "client",
+        config: true,
+        type: Boolean,
+        default: false
+    });
+
     game.settings.register("not-dice", "enableSound", {
         name: "Sonido de Dados",
         hint: "Reproducir sonido si Dice So Nice no está activo.",
