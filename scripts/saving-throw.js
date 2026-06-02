@@ -990,7 +990,6 @@ Hooks.on("renderChatMessage", (message, html) => {
         ev.preventDefault();
         const btn = ev.currentTarget;
         const uuid = btn.dataset.uuid;
-        const formulas = btn.dataset.formulas;
         
         btn.disabled = true;
         btn.innerHTML = "<i class='fas fa-spinner fa-spin'></i> Tirando...";
@@ -1005,6 +1004,47 @@ Hooks.on("renderChatMessage", (message, html) => {
                 ui.notifications.warn("Not Dice | No se pudo encontrar el objeto origen para el daño.");
                 btn.disabled = false;
                 btn.innerHTML = "Error. Reintentar";
+                return;
+            }
+
+            const targetIds = btn.dataset.targets ? btn.dataset.targets.split(",").filter(Boolean) : Array.from(game.user.targets).map(t => t.id);
+            const targetUserId = game.users.find(u => u.isGM && u.active)?.id;
+            const notDiceMultipliers = btn.dataset.multipliers ? JSON.parse(btn.dataset.multipliers) : {};
+            let requestedDamageParts = [];
+
+            if (btn.dataset.damageParts) {
+                try {
+                    const parsed = JSON.parse(btn.dataset.damageParts);
+                    if (Array.isArray(parsed)) {
+                        requestedDamageParts = parsed;
+                    }
+                } catch (err) {
+                    console.warn("Not Dice | No se pudo parsear data-damage-parts", err);
+                }
+            }
+
+            // Fallback legacy: data-formulas separado por ||.
+            if ((!Array.isArray(requestedDamageParts) || requestedDamageParts.length === 0) && btn.dataset.formulas) {
+                requestedDamageParts = btn.dataset.formulas
+                    .split("||")
+                    .map(f => ({ formula: String(f || "").trim(), type: "", availableTypes: [] }))
+                    .filter(p => p.formula.length > 0);
+            }
+
+            if (typeof globalThis.notDiceOpenDamageDialog === "function") {
+                const sent = await globalThis.notDiceOpenDamageDialog({
+                    uuid,
+                    itemName: actualItem.name,
+                    targetIds,
+                    notDiceMultipliers,
+                    targetUserId,
+                    senderName: game.user.name,
+                    requestedDamageParts
+                });
+                btn.disabled = !sent;
+                btn.innerHTML = sent ? "<i class='fas fa-check'></i> Daño Enviado" : "<i class='fas fa-dice-d20'></i> Lanzar Daño";
+                btn.style.opacity = sent ? "0.8" : "1";
+                btn.style.cursor = sent ? "default" : "pointer";
                 return;
             }
 
@@ -1039,8 +1079,6 @@ Hooks.on("renderChatMessage", (message, html) => {
                 grandTotal += r.total;
             }
             
-            const targetUserId = game.users.find(u => u.isGM && u.active)?.id;
-            
             if (!targetUserId || !game.socket) {
                 ui.notifications.warn("Not Dice | No hay un GM activo para recibir el daño.");
                 btn.disabled = false;
@@ -1051,8 +1089,8 @@ Hooks.on("renderChatMessage", (message, html) => {
             const payload = {
                 type: "not-dice.show-spell-damage",
                 itemUuid: uuid,
-                targetIds: btn.dataset.targets ? btn.dataset.targets.split(",") : Array.from(game.user.targets).map(t => t.id),
-                notDiceMultipliers: btn.dataset.multipliers ? JSON.parse(btn.dataset.multipliers) : {},
+                targetIds,
+                notDiceMultipliers,
                 senderName: game.user.name,
                 targetUserId: targetUserId,
                 preCalculatedTotals: totals

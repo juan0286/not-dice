@@ -27,6 +27,393 @@ const notDiceBuildAttackPayload = (rollConfig) => {
     };
 };
 
+const notDiceGetDamageTypeOptionsHtml = (selectedType = "", availableTypes = null) => {
+    const damageTypes = CONFIG.DND5E?.damageTypes ?? {};
+    const sourceEntries = Array.isArray(availableTypes) && availableTypes.length > 0
+        ? availableTypes.map(typeKey => [typeKey, damageTypes[typeKey] || { label: typeKey }])
+        : Object.entries(damageTypes);
+
+    return sourceEntries.map(([typeKey, typeData]) => {
+        const label = typeData?.label || typeKey;
+        const selected = typeKey === selectedType ? "selected" : "";
+        return `<option value="${typeKey}" ${selected} style="color:#1f2937; background:#f3f4f6;">${label}</option>`;
+    }).join("");
+};
+
+const notDiceExtractDamageRows = (actualItem) => {
+    const rows = [];
+    const rollData = typeof actualItem?.getRollData === "function"
+        ? actualItem.getRollData()
+        : (typeof actualItem?.actor?.getRollData === "function" ? actualItem.actor.getRollData() : {});
+
+    const resolveFormula = (formula = "") => {
+        let resolved = String(formula || "").trim();
+        if (!resolved) return "";
+
+        try {
+            if (typeof Roll?.replaceFormulaData === "function") {
+                resolved = Roll.replaceFormulaData(resolved, rollData, { missing: 0, warn: false });
+            }
+        } catch (err) {
+            console.warn("Not Dice | No se pudo resolver la fórmula de daño", err);
+        }
+
+        // Normaliza casos como "d8 + 4" a "1d8 + 4" para que se vea claro y sea evaluable.
+        resolved = resolved.replace(/(^|[+\-*/(]\s*)d(\d+)/gi, "$11d$2");
+        return resolved.replace(/\s+/g, " ").trim();
+    };
+
+    const pushPart = (formula = "", type = "", availableTypes = []) => {
+        const cleanFormula = resolveFormula(formula);
+        if (!cleanFormula) return;
+        rows.push({
+            formula: cleanFormula,
+            type: String(type || "").trim().toLowerCase(),
+            availableTypes: Array.isArray(availableTypes) ? availableTypes.map(t => String(t || "").trim().toLowerCase()).filter(Boolean) : []
+        });
+    };
+
+    if (actualItem?.system?.activities) {
+        for (const activity of actualItem.system.activities.values()) {
+            const parts = activity?.damage?.parts || [];
+            for (const part of parts) {
+                if (Array.isArray(part)) {
+                    pushPart(part[0], part[1], part[1] ? [part[1]] : []);
+                } else {
+                    const formula = part?.formula || (part?.number && part?.denomination ? `${part.number}d${part.denomination}${part.bonus ? `+${part.bonus}` : ""}` : part?.custom?.formula) || "";
+                    const typeList = part?.types instanceof Set ? Array.from(part.types) : (Array.isArray(part?.types) ? part.types : []);
+                    const type = typeList.length > 0 ? typeList[0] : "";
+                    pushPart(formula, type, typeList);
+                }
+            }
+        }
+    } else if (actualItem?.system?.damage?.parts?.length > 0) {
+        for (const part of actualItem.system.damage.parts) {
+            if (Array.isArray(part)) {
+                pushPart(part[0], part[1], part[1] ? [part[1]] : []);
+            }
+        }
+    }
+
+    if (!rows.length && actualItem?.labels?.damage) {
+        pushPart(actualItem.labels.damage, "", []);
+    }
+
+    return rows.length > 0 ? rows : [{ formula: "1d8", type: "", availableTypes: [] }];
+};
+
+globalThis.notDiceOpenDamageDialog = async ({
+    uuid,
+    itemName,
+    targetIds = [],
+    notDiceMultipliers = {},
+    targetUserId = null,
+    senderName = game.user.name,
+    requestedDamageParts = null
+} = {}) => {
+    const item = uuid ? await fromUuid(uuid) : null;
+    const actualItem = item?.item || item;
+
+    if (!actualItem) {
+        ui.notifications?.warn("Not Dice | No se pudo encontrar el objeto origen para el daño.");
+        return false;
+    }
+
+    const speaker = ChatMessage.getSpeaker({ actor: actualItem.actor });
+    const damageTypeLabels = CONFIG.DND5E?.damageTypes ?? {};
+    const rowFaces = [4, 6, 8, 10, 12, 20];
+    const dialogId = `not-dice-damage-${Math.random().toString(36).slice(2, 10)}`;
+    let isCritical = false;
+    const normalizedRequestedParts = Array.isArray(requestedDamageParts)
+        ? requestedDamageParts.map((part, index) => ({
+            formula: String(part?.formula || "").trim(),
+            type: String(part?.type || "").trim().toLowerCase(),
+            availableTypes: Array.isArray(part?.availableTypes)
+                ? part.availableTypes.map(t => String(t || "").trim().toLowerCase()).filter(Boolean)
+                : []
+        })).filter(part => part.formula.length > 0)
+        : [];
+
+    const sourceRows = normalizedRequestedParts.length > 0
+        ? normalizedRequestedParts
+        : notDiceExtractDamageRows(actualItem);
+
+    let rows = sourceRows.map((row, index) => ({
+        id: `${dialogId}-${index}`,
+        formula: row.formula,
+        type: row.type,
+        availableTypes: Array.isArray(row.availableTypes) ? row.availableTypes : []
+    }));
+
+    const doubleDice = (formula) => formula.replace(/(\d+)d(\d+)/g, (match, quantity, faces) => `${parseInt(quantity, 10) * 2}d${faces}`);
+
+    const buildRowHtml = (row, index) => {
+        const typeOptions = notDiceGetDamageTypeOptionsHtml(row.type, row.availableTypes);
+        return `
+            <div class="not-dice-damage-row" data-row-id="${row.id}" style="display:flex; gap:10px; align-items:flex-start; padding:10px; border:1px solid var(--color-border-light-2, #ddd); border-radius:6px; background: rgba(128,128,128,0.08); margin-bottom:8px;">
+                <div style="flex:1; min-width:0;">
+                    <label style="display:block; font-size:0.75em; color:inherit; opacity:0.7; margin-bottom:3px;">Fórmula</label>
+                    <input type="text" class="not-dice-damage-formula" value="${row.formula}" style="width:100%; padding:5px 7px; border:1px solid var(--color-border-light-2, #ccc); border-radius:4px; background:rgba(128,128,128,0.1); color:inherit; font-family:monospace; font-size:0.98em;" />
+                </div>
+                <div style="width:150px; flex-shrink:0;">
+                    <label style="display:block; font-size:0.75em; color:inherit; opacity:0.7; margin-bottom:3px;">Tipo de Daño</label>
+                    <select class="not-dice-damage-type" style="width:100%; padding:5px 7px; border:1px solid #9ca3af; border-radius:4px; background:#f3f4f6; color:#111827; font-size:0.9em; font-weight:600;">
+                        <option value="" style="color:#1f2937; background:#f3f4f6;">Sin tipo</option>
+                        ${typeOptions}
+                    </select>
+                </div>
+                <button type="button" class="not-dice-damage-remove-row" title="Eliminar fila" style="margin-top:22px; width:32px; height:32px; border:1px solid rgba(197,34,31,0.3); border-radius:4px; background:rgba(197,34,31,0.08); color:#ff5252; cursor:pointer; flex-shrink:0;">×</button>
+            </div>
+        `;
+    };
+
+    const buildContent = () => `
+        <div style="font-family:inherit; padding:4px 2px;">
+            <div style="display:flex; align-items:center; gap:12px; margin-bottom:12px; padding:10px; border:1px solid var(--color-border-light-2, #ddd); border-radius:6px; background:rgba(127,127,127,0.1); box-shadow: 0 1px 3px rgba(0,0,0,0.1);">
+                <img src="${actualItem.img || "icons/svg/sword.svg"}" style="width:44px; height:44px; border:1px solid var(--color-border-light-2, #aaa); border-radius:6px; object-fit:cover; flex-shrink:0;">
+                <div style="flex:1; min-width:0;">
+                    <div style="font-size:1.03em; font-weight:bold; color:inherit; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">Tirada de Daño</div>
+                    <div style="font-size:0.82em; color:inherit; opacity:0.8; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">${itemName || actualItem.name || "Daño"} • ${senderName || game.user.name}</div>
+                </div>
+            </div>
+
+            <div style="display:flex; align-items:center; justify-content:space-between; gap:8px; margin-bottom:8px; padding:7px 9px; border:1px solid var(--color-border-light-2, #ddd); border-radius:6px; background:rgba(128,128,128,0.08);">
+                <div style="font-weight:bold; color:inherit; opacity:0.9; font-size:0.9em;">Modo de Tirada</div>
+                <div style="display:flex; gap:6px; flex-wrap:wrap;">
+                    <button type="button" class="not-dice-damage-mode-btn" data-mode="normal" style="padding:6px 10px; border:1px solid rgba(26,115,232,0.4); border-radius:6px; background:${isCritical ? "rgba(128,128,128,0.1)" : "#1a73e8"}; color:${isCritical ? "inherit" : "white"}; font-weight:bold; cursor:pointer; font-size:0.86em;">Normal</button>
+                    <button type="button" class="not-dice-damage-mode-btn" data-mode="critical" style="padding:6px 10px; border:1px solid rgba(211,47,47,0.4); border-radius:6px; background:${isCritical ? "#d32f2f" : "rgba(128,128,128,0.1)"}; color:${isCritical ? "white" : "inherit"}; font-weight:bold; cursor:pointer; font-size:0.86em;">Golpe Crítico</button>
+                </div>
+            </div>
+
+            <div id="${dialogId}-rows" style="display:flex; flex-direction:column; gap:8px; max-height:320px; overflow-y:auto; padding-right:4px;">
+                ${rows.map((row, index) => buildRowHtml(row, index)).join("")}
+            </div>
+
+            <div style="display:flex; align-items:center; gap:6px; flex-wrap:wrap; margin-top:8px; padding:8px 10px; border:1px solid var(--color-border-light-2, #ddd); border-radius:6px; background:rgba(128,128,128,0.08);">
+                <span style="font-size:0.8em; font-weight:bold; opacity:0.85; margin-right:4px;">Agregar daño:</span>
+                ${rowFaces.map(faces => `<button type="button" class="not-dice-damage-add-row" data-faces="${faces}" style="padding:4px 8px; border:1px solid var(--color-border-light-2, #bbb); border-radius:4px; background:rgba(127,127,127,0.1); color:inherit; cursor:pointer; font-size:0.8em;">d${faces}</button>`).join("")}
+            </div>
+
+            <div style="margin-top:10px; display:flex; justify-content:flex-end; gap:8px; font-size:0.78em; opacity:0.8;">
+                <span>Selecciona un botón de dado para añadir una nueva fila.</span>
+            </div>
+        </div>
+    `;
+
+    const syncRowsFromDom = (root) => {
+        rows = rows.map(row => {
+            const rowNode = root.querySelector(`[data-row-id="${row.id}"]`);
+            if (!rowNode) return row;
+            return {
+                ...row,
+                formula: rowNode.querySelector(".not-dice-damage-formula")?.value?.trim() || "",
+                type: rowNode.querySelector(".not-dice-damage-type")?.value || ""
+            };
+        });
+    };
+
+    const renderRows = (root) => {
+        const rowsContainer = root.querySelector(`#${dialogId}-rows`);
+        if (!rowsContainer) return;
+        rowsContainer.innerHTML = rows.map((row, index) => buildRowHtml(row, index)).join("");
+
+        root.querySelectorAll(".not-dice-damage-mode-btn").forEach(btn => {
+            const mode = btn.dataset.mode;
+            const isSelected = (mode === "critical" && isCritical) || (mode === "normal" && !isCritical);
+            btn.style.background = isSelected ? (mode === "critical" ? "#d32f2f" : "#1a73e8") : "rgba(128,128,128,0.1)";
+            btn.style.color = isSelected ? "white" : "inherit";
+        });
+    };
+
+    const collectDamageRows = (root) => {
+        syncRowsFromDom(root);
+        return rows
+            .map(row => ({
+                formula: String(row.formula || "").trim(),
+                type: String(row.type || "").trim()
+            }))
+            .filter(row => row.formula.length > 0);
+    };
+
+    const executeDamageRoll = async (baseFormula, damageType) => {
+        let formula = baseFormula;
+        if (isCritical) formula = doubleDice(formula);
+
+        const roll = await new Roll(formula, actualItem.getRollData()).evaluate();
+        const damageLabel = damageType ? (damageTypeLabels[damageType]?.label || damageType) : "Sin tipo";
+        await roll.toMessage({
+            speaker,
+            flavor: `<strong>${isCritical ? "Daño Crítico" : "Daño"}</strong> • ${actualItem.name || itemName || "Daño"} <span style="opacity:0.75;">(${damageLabel})</span>`
+        });
+        return roll.total;
+    };
+
+    const sendDamageToGM = async (root) => {
+        const damageRows = collectDamageRows(root);
+        if (damageRows.length === 0) {
+            ui.notifications?.warn("Not Dice | Agrega al menos una fila de daño.");
+            return false;
+        }
+
+        const gmUserId = targetUserId || game.users.find(u => u.isGM && u.active)?.id;
+        if (!gmUserId || !game.socket) {
+            ui.notifications?.warn("Not Dice | No hay un GM activo para recibir el daño.");
+            return false;
+        }
+
+        const totals = [];
+        for (const row of damageRows) {
+            const total = await executeDamageRoll(row.formula, row.type);
+            totals.push(total);
+        }
+
+        game.socket.emit("module.not-dice", {
+            type: "not-dice.show-spell-damage",
+            itemUuid: uuid,
+            targetIds,
+            notDiceMultipliers,
+            senderName: game.user.name,
+            targetUserId: gmUserId,
+            preCalculatedTotals: totals,
+            preCalculatedParts: damageRows
+        });
+
+        ui.notifications?.info("Not Dice | Resultado de daño enviado al GM.");
+        return true;
+    };
+
+    const openDialog = () => new Promise(resolve => {
+        const DialogV2 = foundry?.applications?.api?.DialogV2;
+        if (DialogV2) {
+            const app = new DialogV2({
+                window: { title: `Tirada de Daño - ${actualItem.name || itemName || "Daño"}` },
+                content: buildContent(),
+                position: { width: 520 },
+                buttons: [
+                    { action: "send", icon: "fa-solid fa-dice-d20", label: "Lanzar Daño", default: true },
+                    { action: "cancel", icon: "fa-solid fa-xmark", label: "Cancelar" }
+                ],
+                submit: async (result) => {
+                    if (result === "send") {
+                        const sent = await sendDamageToGM(app.element);
+                        resolve(sent);
+                        return;
+                    }
+                    resolve(false);
+                },
+                close: () => resolve(false)
+            });
+
+            app.render(true).then(() => {
+                const root = app.element;
+                const bindEvents = () => {
+                    root.addEventListener("click", async (ev) => {
+                        const modeBtn = ev.target.closest(".not-dice-damage-mode-btn");
+                        if (modeBtn) {
+                            ev.preventDefault();
+                            isCritical = modeBtn.dataset.mode === "critical";
+                            renderRows(root);
+                            return;
+                        }
+
+                        const addBtn = ev.target.closest(".not-dice-damage-add-row");
+                        if (addBtn) {
+                            ev.preventDefault();
+                            syncRowsFromDom(root);
+                            const sourceRow = rows[rows.length - 1];
+                            const faces = addBtn.dataset.faces || "8";
+                            const newRow = {
+                                id: `${dialogId}-${Math.random().toString(36).slice(2, 8)}`,
+                                formula: `1d${faces}`,
+                                type: sourceRow?.type || "",
+                                availableTypes: Array.isArray(sourceRow?.availableTypes) ? sourceRow.availableTypes : []
+                            };
+                            rows.push(newRow);
+                            renderRows(root);
+                            return;
+                        }
+
+                        const removeBtn = ev.target.closest(".not-dice-damage-remove-row");
+                        if (removeBtn) {
+                            ev.preventDefault();
+                            if (rows.length <= 1) return;
+                            syncRowsFromDom(root);
+                            const rowNode = removeBtn.closest(".not-dice-damage-row");
+                            const rowId = rowNode?.dataset?.rowId;
+                            rows = rows.filter(row => row.id !== rowId);
+                            renderRows(root);
+                        }
+                    });
+                };
+
+                bindEvents();
+                renderRows(root);
+            });
+            return;
+        }
+
+        const legacyDialog = new Dialog({
+            title: `Tirada de Daño - ${actualItem.name || itemName || "Daño"}`,
+            content: buildContent(),
+            buttons: {
+                send: {
+                    label: "Lanzar Daño",
+                    callback: async html => {
+                        resolve(await sendDamageToGM(html[0] || html));
+                    }
+                },
+                cancel: { label: "Cancelar", callback: () => resolve(false) }
+            },
+            default: "send",
+            render: html => {
+                const root = html[0] || html;
+                root.addEventListener("click", async (ev) => {
+                    const modeBtn = ev.target.closest(".not-dice-damage-mode-btn");
+                    if (modeBtn) {
+                        ev.preventDefault();
+                        isCritical = modeBtn.dataset.mode === "critical";
+                        renderRows(root);
+                        return;
+                    }
+
+                    const addBtn = ev.target.closest(".not-dice-damage-add-row");
+                    if (addBtn) {
+                        ev.preventDefault();
+                        syncRowsFromDom(root);
+                        const sourceRow = rows[rows.length - 1];
+                        const faces = addBtn.dataset.faces || "8";
+                        const newRow = {
+                            id: `${dialogId}-${Math.random().toString(36).slice(2, 8)}`,
+                            formula: `1d${faces}`,
+                            type: sourceRow?.type || "",
+                            availableTypes: Array.isArray(sourceRow?.availableTypes) ? sourceRow.availableTypes : []
+                        };
+                        rows.push(newRow);
+                        renderRows(root);
+                    }
+
+                    const removeBtn = ev.target.closest(".not-dice-damage-remove-row");
+                    if (removeBtn) {
+                        ev.preventDefault();
+                        if (rows.length <= 1) return;
+                        syncRowsFromDom(root);
+                        const rowNode = removeBtn.closest(".not-dice-damage-row");
+                        const rowId = rowNode?.dataset?.rowId;
+                        rows = rows.filter(row => row.id !== rowId);
+                        renderRows(root);
+                    }
+                });
+                renderRows(root);
+            }
+        }, { width: 520 });
+
+        legacyDialog.render(true);
+        resolve(true);
+    });
+
+    return openDialog();
+};
+
 const notDiceHandlePlayerAttack = async (rolls, rollConfig) => {
     const payload = notDiceBuildAttackPayload(rollConfig);
     if (!payload.targetUserId || !game.socket) {
@@ -58,7 +445,7 @@ const notDiceHandleAttackSocket = async (data) => {
     if (data.type === "not-dice.show-spell-damage") {
         try {
             if (globalThis._notDiceActiveAttackDialogs && globalThis._notDiceActiveAttackDialogs[data.itemUuid]) {
-                const wasUpdated = globalThis._notDiceActiveAttackDialogs[data.itemUuid](data.preCalculatedTotals);
+                const wasUpdated = globalThis._notDiceActiveAttackDialogs[data.itemUuid](data.preCalculatedTotals, data.preCalculatedParts);
                 if (wasUpdated) {
                     ui.notifications?.info(`Not Dice | Daño actualizado por ${data.senderName || "jugador"}.`);
                     return;
@@ -74,6 +461,7 @@ const notDiceHandleAttackSocket = async (data) => {
                 event: { targetIds: data.targetIds },
                 options: { 
                     notDicePreCalculatedTotals: data.preCalculatedTotals,
+                    notDicePreCalculatedParts: data.preCalculatedParts,
                     notDiceMultipliers: data.notDiceMultipliers
                 }
             });
@@ -196,6 +584,21 @@ Hooks.once("ready", () => {
             console.log("Not Dice | Damage buildEvaluate intercepted", rolls);
             
             const passedMultipliers = rollConfig?.notDiceMultipliers || rollConfig?.options?.notDiceMultipliers || rollConfig?.event?.notDiceMultipliers || {};
+            const forcedParts = Array.isArray(rollConfig?.options?.notDicePreCalculatedParts) ? rollConfig.options.notDicePreCalculatedParts : [];
+            const hasForcedParts = forcedParts.length > 0;
+
+            if (hasForcedParts) {
+                const rebuiltRolls = [];
+                for (const part of forcedParts) {
+                    const partFormula = String(part?.formula || "0").trim() || "0";
+                    const partType = String(part?.type || "").trim().toLowerCase();
+                    const rebuilt = new DamageRoll(partFormula);
+                    rebuilt.options = rebuilt.options || {};
+                    if (partType) rebuilt.options.type = partType;
+                    rebuiltRolls.push(rebuilt);
+                }
+                rolls = rebuiltRolls;
+            }
             
             // --- Nick Attack Logic ---
             const isNickAttack = rollConfig.isNickAttack;
@@ -208,7 +611,7 @@ Hooks.once("ready", () => {
             const isOffhandWithoutStyle = isNickAttack && !hasTwoWeaponStyle;
             if (isOffhandWithoutStyle) console.log("Not Dice | Offhand Attack without Style - Removing Ability Mod from formula.");
 
-            const hasDivineFavor = actor?.effects?.some(e => {
+            const hasDivineFavor = !hasForcedParts && actor?.effects?.some(e => {
                 const name = (e.name || "").toLowerCase();
                 return name.includes("divine favor") || name.includes("favor divino");
             });
@@ -223,8 +626,11 @@ Hooks.once("ready", () => {
 
             // --- Detect Hunter's Mark / Marca del Cazador on targets ---
             const attackerUuid = actor?.uuid;
-            const huntersMarkTargets = Array.from(game.user.targets ?? []);
-            const hasHuntersMark = attackerUuid && huntersMarkTargets.some(t =>
+            const injectedTargetIds = rollConfig?.event?.targetIds;
+            const huntersMarkTargets = Array.isArray(injectedTargetIds) && injectedTargetIds.length > 0
+                ? injectedTargetIds.map(id => canvas.tokens.get(id)).filter(Boolean)
+                : Array.from(game.user.targets ?? []);
+            const hasHuntersMark = !hasForcedParts && attackerUuid && huntersMarkTargets.some(t =>
                 t.actor?.effects?.some(e => {
                     const eName = (e.name || "").toLowerCase();
                     return (eName.includes("hunter's mark") || eName.includes("marca del cazador"))
@@ -254,7 +660,7 @@ Hooks.once("ready", () => {
                 const actionType = rollConfig.subject?.actionType || item.system?.actionType;
                 const isMelee = actionType === "mwak";
 
-                if (hasGWM && isHeavy && isMelee) {
+                if (!hasForcedParts && hasGWM && isHeavy && isMelee) {
                     const profBonus = actor.system?.attributes?.prof || 0;
                     if (profBonus > 0 && rolls.length > 0) {
                         const originalRoll = rolls[0];
@@ -302,7 +708,8 @@ Hooks.once("ready", () => {
             
             for (let i = 0; i < rolls.length; i++) {
                 const roll = rolls[i];
-                let originalFormula = roll.formula;
+                const forcedPart = hasForcedParts ? forcedParts[i] : null;
+                let originalFormula = forcedPart?.formula ? String(forcedPart.formula) : roll.formula;
                 
                 if (isOffhandWithoutStyle) {
                      // Remove + @mod or + number from end
@@ -314,9 +721,14 @@ Hooks.once("ready", () => {
                     versatileFormula = scaleVersatile(originalFormula);
                 }
 
-                const damageTypeKey = roll.options.type;
+                const damageTypeKey = forcedPart?.type || roll.options.type;
                 const partConfig = activityDamageParts[i];
-                let availableTypes = partConfig?.types ? Array.from(partConfig.types) : [];
+                let availableTypes = [];
+                if (Array.isArray(forcedPart?.availableTypes) && forcedPart.availableTypes.length > 0) {
+                    availableTypes = Array.from(new Set(forcedPart.availableTypes.map(t => String(t || "").trim().toLowerCase()).filter(Boolean)));
+                } else {
+                    availableTypes = partConfig?.types ? Array.from(partConfig.types) : [];
+                }
 
                 if (damageTypeKey) {
                     if(!availableTypes.includes(damageTypeKey)) availableTypes.push(damageTypeKey);
@@ -1087,12 +1499,18 @@ Hooks.once("ready", () => {
                 const reqUserId = reqBtn.dataset.user;
                 const reqUuid = reqBtn.dataset.uuid;
                 const formulas = damageParts.map(p => p.formula).join("||");
+                const damagePartsPayload = damageParts.map(p => ({
+                    formula: p.formula,
+                    type: p.type || "",
+                    availableTypes: Array.isArray(p.availableTypes) ? p.availableTypes : []
+                }));
 
                 const requestTargets = getDamageRequestTargets(root, forcedTargetIds);
                 if (!requestTargets) return false;
 
                 const targetIdsStr = requestTargets.targetIds.join(",");
                 const multipliersStr = JSON.stringify(requestTargets.targetMultipliers).replace(/"/g, '&quot;');
+                const damagePartsStr = JSON.stringify(damagePartsPayload).replace(/"/g, '&quot;');
 
                 await ChatMessage.create({
                     whisper: [reqUserId],
@@ -1100,7 +1518,7 @@ Hooks.once("ready", () => {
                         <div class="not-dice-damage-request" style="text-align:center; padding:10px;">
                             <h3 style="margin-bottom:5px;">Daño de ${item.name}</h3>
                             <p style="font-size:0.9em; margin-bottom:10px;">El GM solicita tu tirada de daño.</p>
-                            <button class="not-dice-roll-spell-damage" data-uuid="${reqUuid}" data-formulas="${formulas}" data-targets="${targetIdsStr}" data-multipliers="${multipliersStr}" style="background: rgba(197,34,31,0.1); border: 1px solid #d32f2f; color: #ff5252; font-weight: bold; padding: 6px; border-radius:4px; cursor:pointer; width:100%;">
+                            <button class="not-dice-roll-spell-damage" data-uuid="${reqUuid}" data-formulas="${formulas}" data-damage-parts="${damagePartsStr}" data-targets="${targetIdsStr}" data-multipliers="${multipliersStr}" style="background: rgba(197,34,31,0.1); border: 1px solid #d32f2f; color: #ff5252; font-weight: bold; padding: 6px; border-radius:4px; cursor:pointer; width:100%;">
                                 <i class="fas fa-dice-d20"></i> Lanzar Daño
                             </button>
                         </div>
@@ -1300,16 +1718,186 @@ Hooks.once("ready", () => {
                 });
 
                 globalThis._notDiceActiveAttackDialogs = globalThis._notDiceActiveAttackDialogs || {};
-                globalThis._notDiceActiveAttackDialogs[item.uuid] = (totals) => {
+                globalThis._notDiceActiveAttackDialogs[item.uuid] = (totals, parts = null) => {
                     const reqBtn = root.querySelector(`#not-dice-btn-request-damage-attack`);
                     if (!document.body.contains(root)) return false; // El DOM del dialog ya no existe
-                    
-                    for (let i = 0; i < totals.length; i++) {
-                        const inputTotal = root.querySelector(`[name='total-${damageParts[i].index}']`);
-                        if (inputTotal) inputTotal.value = totals[i];
+
+                    const safeTotals = Array.isArray(totals) ? totals : [];
+                    const safeParts = Array.isArray(parts) ? parts : [];
+                    const assigned = new Set();
+                    let createdRows = 0;
+                    const normalize = (text) => String(text || "").replace(/\s+/g, "").toLowerCase();
+
+                    const findRowContainer = () => {
+                        const first = root.querySelector(".damage-part-container");
+                        return first?.parentElement || null;
+                    };
+
+                    const applyValueAtIndex = (partIdx, value) => {
+                        const part = damageParts[partIdx];
+                        if (!part) return false;
+                        const inputTotal = root.querySelector(`[name='total-${part.index}']`);
+                        if (!inputTotal) return false;
+                        inputTotal.value = Number.isFinite(value) ? value : 0;
+                        assigned.add(partIdx);
+                        return true;
+                    };
+
+                    const applyTypeAtIndex = (partIdx, incomingType) => {
+                        const part = damageParts[partIdx];
+                        if (!part) return false;
+
+                        const normalizedType = String(incomingType || "").trim().toLowerCase();
+                        if (!normalizedType) return false;
+
+                        const select = root.querySelector(`select[name='type-${part.index}']`);
+                        if (select) {
+                            const hasOption = Array.from(select.options).some(o => o.value === normalizedType);
+                            if (!hasOption) {
+                                return false;
+                            }
+                            select.value = normalizedType;
+                            select.dispatchEvent(new Event("change", { bubbles: true }));
+                            part.type = normalizedType;
+                            if (part.roll?.options) part.roll.options.type = normalizedType;
+                            return true;
+                        }
+
+                        const hidden = root.querySelector(`input[type='hidden'][name='type-${part.index}']`);
+                        if (hidden) {
+                            hidden.value = normalizedType;
+                            part.type = normalizedType;
+                            if (part.roll?.options) part.roll.options.type = normalizedType;
+                            return true;
+                        }
+
+                        return false;
+                    };
+
+                    const addIncomingPartRow = (incomingPart, totalVal) => {
+                        const formula = String(incomingPart?.formula || "0").trim() || "0";
+                        const type = String(incomingPart?.type || "").trim().toLowerCase();
+                        const availableTypes = Array.isArray(incomingPart?.availableTypes)
+                            ? incomingPart.availableTypes.map(t => String(t || "").trim().toLowerCase()).filter(Boolean)
+                            : (type ? [type] : []);
+
+                        const newIndex = damageParts.reduce((max, part) => Math.max(max, Number(part.index) || 0), -1) + 1;
+                        const damageConfig = type ? CONFIG.DND5E.damageTypes[type] : null;
+                        let label = damageConfig?.label || type || "Extra";
+                        if (damageConfig?.icon) {
+                            label = `<img src="${damageConfig.icon}" style="width: 16px; height: 16px; vertical-align: text-bottom; margin-right: 4px; border: none; filter: drop-shadow(0px 1px 1px rgba(0,0,0,0.3));" /> ${label}`;
+                        }
+
+                        const newRoll = new DamageRoll(formula);
+                        newRoll.options = newRoll.options || {};
+                        if (type) newRoll.options.type = type;
+
+                        damageParts.push({
+                            index: newIndex,
+                            roll: newRoll,
+                            formula,
+                            versatileFormula: null,
+                            label,
+                            type,
+                            availableTypes,
+                            isOffhandWithoutStyle: false
+                        });
+
+                        const style = type ? (damageStyle[type] || { color: "inherit", icon: "" }) : { color: "inherit", icon: "" };
+                        const hiddenTypeInput = `<input type="hidden" name="type-${newIndex}" value="${type}">`;
+                        const newRowHtml = `
+                        <div class="damage-part-container" data-index="${newIndex}" style="margin-bottom: 12px; padding: 12px; border: 1px solid rgba(26,115,232,0.4); border-radius: 6px; background: rgba(26,115,232,0.08); box-shadow: 0 1px 2px rgba(0,0,0,0.1);">
+                            <div style="margin-bottom: 8px; border-bottom: 1px solid var(--color-border-light-2, #ddd); padding-bottom: 4px; color:${style.color}; font-weight:bold;">${label} <span style="font-size:0.85em; opacity:0.75; margin-left:6px;">(Agregado por jugador)</span>${hiddenTypeInput}</div>
+                            <div style="display:flex; gap:10px; margin-bottom: 8px;">
+                                <div style="flex:1;">
+                                    <label style="font-size:0.85em; color:inherit; opacity:0.7;">Fórmula:</label>
+                                    <input type="text" value="${formula}" readonly style="width: 100%; padding:4px 6px; border:1px solid var(--color-border-light-2, #ccc); border-radius:4px; background:rgba(128,128,128,0.1); color:inherit; font-family:monospace; font-size:1.1em;"/>
+                                </div>
+                            </div>
+                            <div style="display:flex; gap:10px; align-items:flex-end;">
+                                <div style="flex:1;">
+                                    <label style="font-size:0.85em; color:inherit; opacity:0.7;">Total Daño:</label>
+                                    <input type="number" name="total-${newIndex}" value="${Number(totalVal) || 0}" style="width: 100%; height: 38px; font-size:1.6em; font-weight:bold; text-align:center; padding:4px; border:1px solid var(--color-border-light-2, #aaa); border-radius:4px; color:#ff5252; background:rgba(128,128,128,0.1);"/>
+                                </div>
+                            </div>
+                        </div>`;
+
+                        const rowContainer = findRowContainer();
+                        if (rowContainer) {
+                            rowContainer.insertAdjacentHTML("beforeend", newRowHtml);
+                        }
+                        createdRows += 1;
+                        if (type) allDamageTypes.add(type);
+                    };
+
+                    if (safeParts.length === safeTotals.length && safeParts.length > 0) {
+                        for (let i = 0; i < safeTotals.length; i++) {
+                            const totalVal = Number(safeTotals[i]) || 0;
+                            const incoming = safeParts[i] || {};
+                            const incomingFormula = normalize(incoming.formula);
+                            const incomingType = normalize(incoming.type);
+                            const incomingAvailable = Array.isArray(incoming.availableTypes)
+                                ? incoming.availableTypes.map(t => normalize(t)).filter(Boolean)
+                                : [];
+
+                            let matchedIdx = -1;
+                            for (let j = 0; j < damageParts.length; j++) {
+                                if (assigned.has(j)) continue;
+                                const current = damageParts[j] || {};
+                                const currentFormula = normalize(current.formula);
+                                const currentType = normalize(current.type);
+                                if (incomingFormula === currentFormula && incomingType === currentType) {
+                                    matchedIdx = j;
+                                    break;
+                                }
+                            }
+
+                            // Same damage part with switched type (e.g. contundente -> fuerza)
+                            if (matchedIdx < 0) {
+                                for (let j = 0; j < damageParts.length; j++) {
+                                    if (assigned.has(j)) continue;
+                                    const current = damageParts[j] || {};
+                                    const currentFormula = normalize(current.formula);
+                                    if (incomingFormula !== currentFormula) continue;
+
+                                    const currentAvailable = Array.isArray(current.availableTypes)
+                                        ? current.availableTypes.map(t => normalize(t)).filter(Boolean)
+                                        : [];
+
+                                    const compatible = incomingType && (
+                                        currentAvailable.includes(incomingType) ||
+                                        incomingAvailable.includes(normalize(current.type))
+                                    );
+
+                                    if (compatible) {
+                                        matchedIdx = j;
+                                        break;
+                                    }
+                                }
+                            }
+
+                            if (matchedIdx >= 0) {
+                                applyTypeAtIndex(matchedIdx, incomingType);
+                                applyValueAtIndex(matchedIdx, totalVal);
+                            } else {
+                                addIncomingPartRow(incoming, totalVal);
+                            }
+                        }
+                    } else {
+                        for (let i = 0; i < safeTotals.length; i++) {
+                            const totalVal = Number(safeTotals[i]) || 0;
+                            if (i < damageParts.length) {
+                                applyValueAtIndex(i, totalVal);
+                            } else {
+                                addIncomingPartRow(safeParts[i] || { formula: "0", type: "" }, totalVal);
+                            }
+                        }
                     }
+
                     if (reqBtn) {
-                        reqBtn.innerHTML = "<i class='fas fa-check'></i> Daño Recibido";
+                        reqBtn.innerHTML = createdRows > 0
+                            ? "<i class='fas fa-check'></i> Daño Recibido (+nuevos tipos)"
+                            : "<i class='fas fa-check'></i> Daño Recibido";
                     }
                     return true;
                 };
