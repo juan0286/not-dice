@@ -1268,6 +1268,7 @@ Hooks.once("ready", () => {
                 // Apply Damage
                 if (isDamage) {
                     const targetsLocal = resolveTargets();
+                    const damageSummaryLines = [];
 
                     const isToppleMastery = activeMastery && (activeMastery.id === "topple" || activeMastery.label.toLowerCase().includes("topple") || activeMastery.label.toLowerCase().includes("derribar"));
                     
@@ -1330,6 +1331,7 @@ Hooks.once("ready", () => {
 
                     for (const t of targetsLocal) {
                         if (t.actor) {
+                            const hpBefore = Number(t.actor.system?.attributes?.hp?.value ?? 0);
                             const targetMultRaw = root.querySelector(`[name='target-multiplier-${t.id}']`)?.value || "1";
                             let targetMult = parseFloat(targetMultRaw);
                             if (isNaN(targetMult)) targetMult = 1;
@@ -1355,7 +1357,36 @@ Hooks.once("ready", () => {
                             }
 
                             await t.actor.applyDamage(finalValues, { ignore: true });
+
+                            const hpAfter = Number(t.actor.system?.attributes?.hp?.value ?? 0);
+                            const totalApplied = finalValues.reduce((acc, entry) => acc + (Number(entry?.value) || 0), 0);
+                            const hasHealingType = finalValues.some(entry => String(entry?.type || "").toLowerCase() === "healing");
+                            const operator = hasHealingType ? "+" : "-";
+                            const amount = Math.abs(totalApplied);
+                            const palette = hasHealingType
+                                ? { fg: "#166534", accent: "#16a34a", bg: "rgba(22,101,52,0.12)", border: "rgba(22,101,52,0.35)" }
+                                : { fg: "#991b1b", accent: "#dc2626", bg: "rgba(153,27,27,0.12)", border: "rgba(153,27,27,0.35)" };
+
+                            damageSummaryLines.push(`
+                                <div style="display:flex; align-items:center; justify-content:space-between; gap:8px; padding:4px 8px; margin-bottom:4px; border:1px solid ${palette.border}; border-radius:6px; background:${palette.bg}; font-size:0.84em; line-height:1.2;">
+                                    <span style="font-weight:700; color:${palette.fg}; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${t.name}</span>
+                                    <span style="color:inherit; opacity:0.9; white-space:nowrap;">${hpBefore} pv</span>
+                                    <span style="color:${palette.accent}; font-weight:800; white-space:nowrap;">${operator} ${amount} pv</span>
+                                    <span style="color:inherit; opacity:0.9; white-space:nowrap;">${hpAfter} pv</span>
+                                </div>
+                            `);
                         }
+                    }
+
+                    if (damageSummaryLines.length > 0) {
+                        const gmWhisper = game.users.filter(u => u.isGM).map(u => u.id);
+                        ChatMessage.create({
+                            style: CONST.CHAT_MESSAGE_STYLES.OTHER,
+                            whisper: gmWhisper,
+                            speaker: { alias: " " },
+                            flags: { "not-dice": { hideHeader: true } },
+                            content: `<div style="font-size:0.88em; line-height:1.2; padding:2px 2px;">${damageSummaryLines.join("")}</div>`
+                        });
                     }
 
                     // --- Topple / Derribar Mastery ---
@@ -2085,6 +2116,15 @@ Hooks.once("ready", () => {
             }
         }
     });
+});
+
+Hooks.on("renderChatMessageHTML", (message, html) => {
+    if (message.getFlag("not-dice", "hideHeader")) {
+        const header = html.querySelector(".message-header");
+        if (header) header.style.display = "none";
+        const sender = html.querySelector(".message-sender, .whisper-to, header");
+        if (sender) sender.style.display = "none";
+    }
 });
 
 Hooks.on("renderChatMessage", (message, html, data) => {
