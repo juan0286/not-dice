@@ -158,7 +158,6 @@ globalThis.notDiceOpenDamageDialog = async ({
                 <div style="width:150px; flex-shrink:0;">
                     <label style="display:block; font-size:0.75em; color:inherit; opacity:0.7; margin-bottom:3px;">Tipo de Daño</label>
                     <select class="not-dice-damage-type" style="width:100%; padding:5px 7px; border:1px solid #9ca3af; border-radius:4px; background:#f3f4f6; color:#111827; font-size:0.9em; font-weight:600;">
-                        <option value="" style="color:#1f2937; background:#f3f4f6;">Sin tipo</option>
                         ${typeOptions}
                     </select>
                 </div>
@@ -174,14 +173,6 @@ globalThis.notDiceOpenDamageDialog = async ({
                 <div style="flex:1; min-width:0;">
                     <div style="font-size:1.03em; font-weight:bold; color:inherit; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">Tirada de Daño</div>
                     <div style="font-size:0.82em; color:inherit; opacity:0.8; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">${itemName || actualItem.name || "Daño"} • ${senderName || game.user.name}</div>
-                </div>
-            </div>
-
-            <div style="display:flex; align-items:center; justify-content:space-between; gap:8px; margin-bottom:8px; padding:7px 9px; border:1px solid var(--color-border-light-2, #ddd); border-radius:6px; background:rgba(128,128,128,0.08);">
-                <div style="font-weight:bold; color:inherit; opacity:0.9; font-size:0.9em;">Modo de Tirada</div>
-                <div style="display:flex; gap:6px; flex-wrap:wrap;">
-                    <button type="button" class="not-dice-damage-mode-btn" data-mode="normal" style="padding:6px 10px; border:1px solid rgba(26,115,232,0.4); border-radius:6px; background:${isCritical ? "rgba(128,128,128,0.1)" : "#1a73e8"}; color:${isCritical ? "inherit" : "white"}; font-weight:bold; cursor:pointer; font-size:0.86em;">Normal</button>
-                    <button type="button" class="not-dice-damage-mode-btn" data-mode="critical" style="padding:6px 10px; border:1px solid rgba(211,47,47,0.4); border-radius:6px; background:${isCritical ? "#d32f2f" : "rgba(128,128,128,0.1)"}; color:${isCritical ? "white" : "inherit"}; font-weight:bold; cursor:pointer; font-size:0.86em;">Golpe Crítico</button>
                 </div>
             </div>
 
@@ -216,13 +207,6 @@ globalThis.notDiceOpenDamageDialog = async ({
         const rowsContainer = root.querySelector(`#${dialogId}-rows`);
         if (!rowsContainer) return;
         rowsContainer.innerHTML = rows.map((row, index) => buildRowHtml(row, index)).join("");
-
-        root.querySelectorAll(".not-dice-damage-mode-btn").forEach(btn => {
-            const mode = btn.dataset.mode;
-            const isSelected = (mode === "critical" && isCritical) || (mode === "normal" && !isCritical);
-            btn.style.background = isSelected ? (mode === "critical" ? "#d32f2f" : "#1a73e8") : "rgba(128,128,128,0.1)";
-            btn.style.color = isSelected ? "white" : "inherit";
-        });
     };
 
     const collectDamageRows = (root) => {
@@ -290,11 +274,18 @@ globalThis.notDiceOpenDamageDialog = async ({
                 content: buildContent(),
                 position: { width: 520 },
                 buttons: [
-                    { action: "send", icon: "fa-solid fa-dice-d20", label: "Lanzar Daño", default: true },
-                    { action: "cancel", icon: "fa-solid fa-xmark", label: "Cancelar" }
+                    { action: "send", icon: "fa-solid fa-dice-d20", label: "Daño Normal", default: true },
+                    { action: "critical", icon: "fa-solid fa-skull", label: "Daño Crítico" }
                 ],
                 submit: async (result) => {
                     if (result === "send") {
+                        isCritical = false;
+                        const sent = await sendDamageToGM(app.element);
+                        resolve(sent);
+                        return;
+                    }
+                    if (result === "critical") {
+                        isCritical = true;
                         const sent = await sendDamageToGM(app.element);
                         resolve(sent);
                         return;
@@ -308,25 +299,16 @@ globalThis.notDiceOpenDamageDialog = async ({
                 const root = app.element;
                 const bindEvents = () => {
                     root.addEventListener("click", async (ev) => {
-                        const modeBtn = ev.target.closest(".not-dice-damage-mode-btn");
-                        if (modeBtn) {
-                            ev.preventDefault();
-                            isCritical = modeBtn.dataset.mode === "critical";
-                            renderRows(root);
-                            return;
-                        }
-
                         const addBtn = ev.target.closest(".not-dice-damage-add-row");
                         if (addBtn) {
                             ev.preventDefault();
                             syncRowsFromDom(root);
-                            const sourceRow = rows[rows.length - 1];
                             const faces = addBtn.dataset.faces || "8";
                             const newRow = {
                                 id: `${dialogId}-${Math.random().toString(36).slice(2, 8)}`,
                                 formula: `1d${faces}`,
-                                type: sourceRow?.type || "",
-                                availableTypes: Array.isArray(sourceRow?.availableTypes) ? sourceRow.availableTypes : []
+                                type: rows[0]?.type || "",
+                                availableTypes: []
                             };
                             rows.push(newRow);
                             renderRows(root);
@@ -357,36 +339,34 @@ globalThis.notDiceOpenDamageDialog = async ({
             content: buildContent(),
             buttons: {
                 send: {
-                    label: "Lanzar Daño",
+                    label: "Daño Normal",
                     callback: async html => {
+                        isCritical = false;
                         resolve(await sendDamageToGM(html[0] || html));
                     }
                 },
-                cancel: { label: "Cancelar", callback: () => resolve(false) }
+                critical: {
+                    label: "Daño Crítico",
+                    callback: async html => {
+                        isCritical = true;
+                        resolve(await sendDamageToGM(html[0] || html));
+                    }
+                }
             },
             default: "send",
             render: html => {
                 const root = html[0] || html;
                 root.addEventListener("click", async (ev) => {
-                    const modeBtn = ev.target.closest(".not-dice-damage-mode-btn");
-                    if (modeBtn) {
-                        ev.preventDefault();
-                        isCritical = modeBtn.dataset.mode === "critical";
-                        renderRows(root);
-                        return;
-                    }
-
                     const addBtn = ev.target.closest(".not-dice-damage-add-row");
                     if (addBtn) {
                         ev.preventDefault();
                         syncRowsFromDom(root);
-                        const sourceRow = rows[rows.length - 1];
                         const faces = addBtn.dataset.faces || "8";
                         const newRow = {
                             id: `${dialogId}-${Math.random().toString(36).slice(2, 8)}`,
                             formula: `1d${faces}`,
-                            type: sourceRow?.type || "",
-                            availableTypes: Array.isArray(sourceRow?.availableTypes) ? sourceRow.availableTypes : []
+                            type: rows[0]?.type || "",
+                            availableTypes: []
                         };
                         rows.push(newRow);
                         renderRows(root);
