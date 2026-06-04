@@ -422,6 +422,25 @@ const notDiceHandleAttackSocket = async (data) => {
         return;
     }
 
+    if (data.type === "not-dice.chat-attack-mode") {
+        try {
+            const handlers = globalThis._notDiceAttackModeHandlers || {};
+            const messageHandler = data.messageId ? handlers[`msg:${data.messageId}`] : null;
+            const itemHandler = data.itemUuid ? handlers[data.itemUuid] : null;
+            const handler = messageHandler || itemHandler;
+
+            if (!handler) {
+                ui.notifications?.warn("Not Dice | No se encontro una caja de ataque activa para aplicar ventaja/desventaja.");
+                return;
+            }
+
+            await handler(data.mode === "disadvantage" ? "disadvantage" : "advantage");
+        } catch (err) {
+            console.error("Not Dice | Error aplicando modo de ataque desde chat", err);
+        }
+        return;
+    }
+
     if (data.type === "not-dice.show-spell-damage") {
         try {
             if (globalThis._notDiceActiveAttackDialogs && globalThis._notDiceActiveAttackDialogs[data.itemUuid]) {
@@ -848,6 +867,7 @@ Hooks.once("ready", () => {
             let nickWeaponName = "";
             let nickWeaponItem = null;
             let attackRollState = null;
+            let attackRollMessageId = null;
 
             const getAttackRollVisualState = (selectedD20, total) => {
                 const targetAC = targets.length > 0 ? (targets[0].actor?.system?.attributes?.ac?.value ?? null) : null;
@@ -968,7 +988,17 @@ Hooks.once("ready", () => {
 
                         // Publicar la tirada de ataque en el chat para vista de todos (esto reproduce automáticamente la animación 3D y el sonido nativo)
                         const actorSpeaker = ChatMessage.getSpeaker({ actor: item?.actor });
-                        await r.toMessage({ speaker: actorSpeaker, flavor: `<strong>Tirada de Ataque: ${item?.name || "Ataque"}</strong>` });
+                        const attackChatMessage = await r.toMessage({
+                            speaker: actorSpeaker,
+                            flavor: `<strong>Tirada de Ataque: ${item?.name || "Ataque"}</strong>`,
+                            flags: {
+                                "not-dice": {
+                                    attackRoll: true,
+                                    itemUuid: item?.uuid || null
+                                }
+                            }
+                        });
+                        attackRollMessageId = attackChatMessage?.id || null;
 
                         attackRollState = {
                             mode: "normal",
@@ -1600,6 +1630,12 @@ Hooks.once("ready", () => {
                     }
                 };
 
+                const registerChatAttackModeHandler = () => {
+                    globalThis._notDiceAttackModeHandlers = globalThis._notDiceAttackModeHandlers || {};
+                    if (item?.uuid) globalThis._notDiceAttackModeHandlers[item.uuid] = applyManualAttackMode;
+                    if (attackRollMessageId) globalThis._notDiceAttackModeHandlers[`msg:${attackRollMessageId}`] = applyManualAttackMode;
+                };
+
                 if (attackRollState && attackRollBoxNode) {
                     root.addEventListener("click", async (ev) => {
                         const disBtn = ev.target.closest(".not-dice-attack-disadvantage-btn");
@@ -1612,6 +1648,7 @@ Hooks.once("ready", () => {
                             await applyManualAttackMode("advantage");
                         }
                     });
+                    registerChatAttackModeHandler();
                 }
 
                 root.querySelectorAll("select[name^='type-']").forEach(select => {
@@ -1956,6 +1993,13 @@ Hooks.once("ready", () => {
                 }
             };
 
+            const unregisterChatAttackModeHandler = () => {
+                const handlers = globalThis._notDiceAttackModeHandlers;
+                if (!handlers) return;
+                if (item?.uuid && handlers[item.uuid]) delete handlers[item.uuid];
+                if (attackRollMessageId && handlers[`msg:${attackRollMessageId}`]) delete handlers[`msg:${attackRollMessageId}`];
+            };
+
             const result = await new Promise(resolve => {
                 const DialogV2 = foundry?.applications?.api?.DialogV2;
                 if (DialogV2) {
@@ -1971,6 +2015,11 @@ Hooks.once("ready", () => {
                             const container = app.element;
                             if (res === "damage") await applyAndResolve(container, true);
                             else if (res === "ok") await applyAndResolve(container, false);
+                            unregisterChatAttackModeHandler();
+                            resolve(rolls);
+                        },
+                        close: () => {
+                            unregisterChatAttackModeHandler();
                             resolve(rolls);
                         }
                     });
@@ -1985,6 +2034,7 @@ Hooks.once("ready", () => {
                                 icon: "<i class='fas fa-skull'></i>",
                                 callback: async html => {
                                     await applyAndResolve(html, true);
+                                    unregisterChatAttackModeHandler();
                                     resolve(rolls); 
                                 }
                             },
@@ -1993,13 +2043,17 @@ Hooks.once("ready", () => {
                                 icon: "<i class='fas fa-check'></i>",
                                 callback: async html => {
                                     await applyAndResolve(html, false);
+                                    unregisterChatAttackModeHandler();
                                     resolve(rolls);
                                 }
                             }
                         },
                         default: "damage",
                         render: (html) => onRenderComplete(html),
-                        close: () => resolve(rolls)
+                        close: () => {
+                            unregisterChatAttackModeHandler();
+                            resolve(rolls);
+                        }
                     }, { width: 440 }).render(true);
                 }
             });
@@ -2105,9 +2159,90 @@ Hooks.on("renderChatMessageHTML", (message, html) => {
         const sender = html.querySelector(".message-sender, .whisper-to, header");
         if (sender) sender.style.display = "none";
     }
+
+    if (message.getFlag("not-dice", "attackRoll") && !html.querySelector(".not-dice-chat-attack-mode")) {
+        const host = html.querySelector(".message-content") || html;
+        const btnDiv = document.createElement("div");
+        btnDiv.className = "not-dice-chat-attack-mode";
+        btnDiv.style.cssText = "display:flex; gap:6px; margin-top:6px; padding:6px 4px 2px; border-top:1px solid rgba(128,128,128,0.25);";
+        btnDiv.innerHTML = `
+            <button type="button" class="not-dice-chat-disadvantage" style="flex:1; padding:5px 8px; border:1px solid rgba(197,34,31,0.4); border-radius:6px; background:rgba(197,34,31,0.1); color:#ff5252; cursor:pointer; font-size:0.85em; font-weight:bold;">
+                <i class="fas fa-arrow-down"></i> Desventaja
+            </button>
+            <button type="button" class="not-dice-chat-advantage" style="flex:1; padding:5px 8px; border:1px solid rgba(19,115,51,0.4); border-radius:6px; background:rgba(19,115,51,0.1); color:#4caf50; cursor:pointer; font-size:0.85em; font-weight:bold;">
+                <i class="fas fa-arrow-up"></i> Ventaja
+            </button>
+        `;
+        host.appendChild(btnDiv);
+    }
 });
 
+const notDiceApplyChatAttackMode = async (message, mode) => {
+    const itemUuid = message.getFlag("not-dice", "itemUuid");
+    const handlers = globalThis._notDiceAttackModeHandlers || {};
+    const messageHandler = message?.id ? handlers[`msg:${message.id}`] : null;
+    const itemHandler = itemUuid ? handlers[itemUuid] : null;
+    const handler = messageHandler || itemHandler;
+
+    if (handler) {
+        await handler(mode);
+        return;
+    }
+
+    if (game.user.isGM) {
+        ui.notifications?.warn("Not Dice | La caja de ataque del GM no esta abierta para sincronizar ventaja/desventaja.");
+        return;
+    }
+
+    const gmId = notDiceFirstActiveGmId();
+    if (!gmId || !game.socket) {
+        ui.notifications?.warn("Not Dice | No hay GM activo para aplicar ventaja/desventaja.");
+        return;
+    }
+
+    game.socket.emit("module.not-dice", {
+        type: "not-dice.chat-attack-mode",
+        mode: mode === "disadvantage" ? "disadvantage" : "advantage",
+        itemUuid,
+        messageId: message?.id || null,
+        targetUserId: gmId,
+        senderUserId: game.user.id,
+        senderName: game.user.name
+    });
+
+    ui.notifications?.info(`Not Dice | Solicitud de ${mode === "advantage" ? "Ventaja" : "Desventaja"} enviada al GM.`);
+};
+
 Hooks.on("renderChatMessage", (message, html, data) => {
+    if (message.getFlag("not-dice", "attackRoll") && html.find(".not-dice-chat-attack-mode").length === 0) {
+        const btnHtml = `
+            <div class="not-dice-chat-attack-mode" style="display:flex; gap:6px; margin-top:6px; padding:6px 4px 2px; border-top:1px solid rgba(128,128,128,0.25);">
+                <button type="button" class="not-dice-chat-disadvantage" style="flex:1; padding:5px 8px; border:1px solid rgba(197,34,31,0.4); border-radius:6px; background:rgba(197,34,31,0.1); color:#ff5252; cursor:pointer; font-size:0.85em; font-weight:bold;">
+                    <i class="fas fa-arrow-down"></i> Desventaja
+                </button>
+                <button type="button" class="not-dice-chat-advantage" style="flex:1; padding:5px 8px; border:1px solid rgba(19,115,51,0.4); border-radius:6px; background:rgba(19,115,51,0.1); color:#4caf50; cursor:pointer; font-size:0.85em; font-weight:bold;">
+                    <i class="fas fa-arrow-up"></i> Ventaja
+                </button>
+            </div>
+        `;
+        const contentNode = html.find(".message-content");
+        if (contentNode.length) contentNode.append(btnHtml);
+        else html.append(btnHtml);
+    }
+
+    html.off("click.notDiceChatAttackMode", ".not-dice-chat-disadvantage");
+    html.off("click.notDiceChatAttackMode", ".not-dice-chat-advantage");
+
+    html.on("click.notDiceChatAttackMode", ".not-dice-chat-disadvantage", async (ev) => {
+        ev.preventDefault();
+        await notDiceApplyChatAttackMode(message, "disadvantage");
+    });
+
+    html.on("click.notDiceChatAttackMode", ".not-dice-chat-advantage", async (ev) => {
+        ev.preventDefault();
+        await notDiceApplyChatAttackMode(message, "advantage");
+    });
+
     html.find(".not-dice-topple-save").click(async (ev) => {
         ev.preventDefault();
         const btn = ev.currentTarget;
