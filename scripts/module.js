@@ -14,17 +14,35 @@ const notDiceFirstActiveGmId = () => {
     return game.users.find(u => u.isGM && u.active)?.id || null;
 };
 
-const notDiceBuildAttackPayload = (rollConfig) => {
+const notDiceMockEvent = (extra = {}) => {
     return {
-        type: "not-dice.show-attack-dialog",
-        itemUuid: rollConfig.subject?.item?.uuid,
-        activityId: rollConfig.subject?.id,
-        targetIds: Array.from(game.user.targets ?? []).map(t => t.id),
-        isNickAttack: rollConfig.isNickAttack,
-        senderName: game.user.name,
-        senderUserId: game.user.id,
-        targetUserId: notDiceFirstActiveGmId()
+        target: { closest: () => null },
+        currentTarget: { closest: () => null },
+        preventDefault: () => {},
+        stopPropagation: () => {},
+        ...extra
     };
+};
+
+const notDiceBuildAttackPayload = (rollConfig, isDamage = false) => {
+    try {
+        const subject = rollConfig?.subject;
+        const item = subject?.item || (subject?.documentName === "Item" ? subject : null);
+        return {
+            type: "not-dice.show-attack-dialog",
+            itemUuid: item?.uuid || null,
+            activityId: (subject && subject !== item) ? subject.id : null,
+            targetIds: Array.from(game.user.targets ?? []).map(t => t.id),
+            isNickAttack: rollConfig?.isNickAttack || false,
+            senderName: game.user?.name || "Jugador",
+            senderUserId: game.user?.id || null,
+            targetUserId: notDiceFirstActiveGmId(),
+            notDiceAutoTriggered: !isDamage
+        };
+    } catch (err) {
+        console.error("Not Dice | Error building payload", err);
+        return null;
+    }
 };
 
 const notDiceGetDamageTypeOptionsHtml = (selectedType = "", availableTypes = null) => {
@@ -457,7 +475,7 @@ const notDiceHandleAttackSocket = async (data) => {
             if (!item || !activity) return ui.notifications?.warn("Not Dice | No se pudo recuperar la actividad para el daño del hechizo.");
 
             await activity.rollDamage({
-                event: { targetIds: data.targetIds },
+                event: notDiceMockEvent({ targetIds: data.targetIds }),
                 options: { 
                     notDicePreCalculatedTotals: data.preCalculatedTotals,
                     notDicePreCalculatedParts: data.preCalculatedParts,
@@ -479,7 +497,8 @@ const notDiceHandleAttackSocket = async (data) => {
         if (!item || !activity) return ui.notifications?.warn("Not Dice | No se pudo recuperar la actividad del ataque.");
 
         await activity.rollDamage({
-            event: { targetIds: data.targetIds, senderUserId: data.senderUserId },
+            event: notDiceMockEvent({ targetIds: data.targetIds, senderUserId: data.senderUserId }),
+            options: { notDiceAutoTriggered: data.notDiceAutoTriggered !== false },
             isNickAttack: data.isNickAttack
         });
         ui.notifications?.info(`Not Dice | Resolviendo daño enviado por ${data.senderName || "jugador"}.`);
@@ -561,6 +580,7 @@ Hooks.once("ready", () => {
                                 console.log("Not Dice | Triggering Auto-Damage Roll (GM)");
                                 rollConfig.subject.rollDamage({
                                     event: rollConfig.event,
+                                    options: { notDiceAutoTriggered: true },
                                     isNickAttack: rollConfig.isNickAttack
                                 });
                             }
@@ -967,7 +987,12 @@ Hooks.once("ready", () => {
                 // --- Simultaneous Attack Roll ---
                 let attackRollHtml = "";
                 let attackRollBoxStyle = "";
-                if (game.settings.get("not-dice", "enableSimultaneousRoll")) {
+                const isAutoTriggered = rollConfig?.notDiceAutoTriggered || 
+                                        rollConfig?.options?.notDiceAutoTriggered || 
+                                        rollConfig?.event?.notDiceAutoTriggered || 
+                                        rollConfig?.options?.event?.notDiceAutoTriggered || 
+                                        false;
+                if (game.settings.get("not-dice", "enableSimultaneousRoll") && isAutoTriggered) {
                     try {
                         let formula = `1d20`;
                         let parts = [];
@@ -2072,6 +2097,7 @@ Hooks.once("ready", () => {
            console.log("Not Dice | Damage buildConfigure intercepted", config);
            if (!config?.options?.notDiceBypass) {
                dialog = foundry.utils.mergeObject(dialog ?? {}, { configure: false });
+               if (message) message.create = false;
            }
            return originalDamageBuildConfigure.call(this, config, dialog, message);
         };
@@ -2080,6 +2106,45 @@ Hooks.once("ready", () => {
             if (rollConfig?.options?.notDiceBypass) {
                  return originalDamageBuildEvaluate.call(this, rolls, rollConfig, messageConfig);
             }
+
+            const isAutoTriggered = rollConfig?.notDiceAutoTriggered || 
+                                    rollConfig?.options?.notDiceAutoTriggered || 
+                                    rollConfig?.event?.notDiceAutoTriggered || 
+                                    rollConfig?.options?.event?.notDiceAutoTriggered || 
+                                    false;
+
+            const hasPreCalculated = rollConfig?.notDicePreCalculatedTotals ||
+                                     rollConfig?.options?.notDicePreCalculatedTotals ||
+                                     rollConfig?.event?.options?.notDicePreCalculatedTotals ||
+                                     false;
+
+            // Si es una tirada manual de daño (no auto-disparada y sin totales precalculados), abrimos el diálogo de daño personalizado en la pantalla del usuario
+            if (!isAutoTriggered && !hasPreCalculated) {
+                const subject = rollConfig?.subject;
+                const item = subject?.item || (subject?.documentName === "Item" ? subject : null);
+                
+                if (item && typeof globalThis.notDiceOpenDamageDialog === "function") {
+                    const requestedDamageParts = rolls.map(r => ({
+                        formula: r.formula,
+                        type: r.options?.type || "",
+                        availableTypes: r.options?.availableTypes || []
+                    }));
+                    
+                    globalThis.notDiceOpenDamageDialog({
+                        uuid: item.uuid,
+                        itemName: item.name,
+                        targetIds: Array.from(game.user.targets ?? []).map(t => t.id),
+                        targetUserId: notDiceFirstActiveGmId(),
+                        senderName: game.user?.name || "Jugador",
+                        requestedDamageParts: requestedDamageParts
+                    });
+                } else {
+                    ui.notifications?.warn("Not Dice | No se pudo abrir el diálogo de daño personalizado.");
+                }
+                return [];
+            }
+
+            // Si es auto-disparada o precalculada, la resolución final recae en el GM
             if (!game.user.isGM) return [];
             return notDiceEvaluateDamageRoll(rolls, rollConfig, messageConfig);
         };
