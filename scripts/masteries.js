@@ -23,7 +23,9 @@ globalThis.notDiceMasteries = {
      */
     hasSapEffect(actor) {
         if (!actor) return false;
-        const effects = actor.appliedEffects || actor.effects || [];
+        const effects = typeof globalThis.notDiceGetActorEffects === "function"
+            ? globalThis.notDiceGetActorEffects(actor)
+            : Array.from(actor.appliedEffects || actor.effects || []);
         return effects.some(e => {
             const name = (e.name || "").toLowerCase();
             return (name.includes("maestría:") || name.includes("maestria:") || name.includes("mastery:")) &&
@@ -40,22 +42,6 @@ globalThis.notDiceMasteries = {
         // Verificar si ya tiene el efecto (no acumulable de ningún oponente)
         if (this.hasSapEffect(targetActor)) {
             ui.notifications?.warn(`Not Dice | ${targetActor.name} ya tiene un efecto de Debilitar (Sap) activo.`);
-            return false;
-        }
-
-        // Límite de aplicación: una vez por turno
-        const masteryFlagKey = `lastMastery-sap-${attackerActor.id}`;
-        const lastTurn = targetActor.getFlag("not-dice", masteryFlagKey);
-        const currentTurn = game.combat
-            ? `${game.combat.id}-${game.combat.round ?? 0}-${game.combat.turn ?? 0}`
-            : Date.now();
-
-        const alreadyApplied = game.combat
-            ? lastTurn === currentTurn
-            : (typeof lastTurn === "number" && (Date.now() - lastTurn) < 6000);
-
-        if (alreadyApplied) {
-            ui.notifications?.warn(`Not Dice | Ya se aplicó Debilitar (Sap) a ${targetActor.name} este turno.`);
             return false;
         }
 
@@ -76,7 +62,6 @@ globalThis.notDiceMasteries = {
 
         const created = await targetActor.createEmbeddedDocuments("ActiveEffect", [effectData]);
         if (created.length > 0) {
-            await targetActor.setFlag("not-dice", masteryFlagKey, currentTurn);
             return true;
         }
         return false;

@@ -6,6 +6,17 @@
 // ============================================================
 
 // Helpers --------------------------------------------------------------
+globalThis.notDiceGetActorEffects = (act) => {
+    if (!act) return [];
+    let effs = [];
+    if (act.appliedEffects) {
+        effs = Array.from(act.appliedEffects);
+    } else if (act.effects) {
+        effs = Array.from(act.effects.contents || act.effects.values() || act.effects);
+    }
+    return effs.map(e => Array.isArray(e) ? e[1] : e).filter(Boolean);
+};
+
 const notDiceIsAttack = (subject) => {
     return subject && (subject.type === "attack" || subject.constructor?.name === "AttackActivity");
 };
@@ -987,16 +998,7 @@ Hooks.once("ready", () => {
             let attackRollState = null;
             let attackRollMessageId = null;
 
-            const getActorEffects = (act) => {
-                if (!act) return [];
-                let effs = [];
-                if (act.appliedEffects) {
-                    effs = Array.from(act.appliedEffects);
-                } else if (act.effects) {
-                    effs = Array.from(act.effects.contents || act.effects.values() || act.effects);
-                }
-                return effs.map(e => Array.isArray(e) ? e[1] : e).filter(Boolean);
-            };
+            const getActorEffects = globalThis.notDiceGetActorEffects;
 
             const attackerName = item?.actor?.name || "";
             const attackerEffects = getActorEffects(item?.actor || actor);
@@ -1252,7 +1254,6 @@ Hooks.once("ready", () => {
                 let flagKey = "";
                 if (activeMastery.id === "cleave") flagKey = `lastCleave-${actor.id}`;
                 else if (activeMastery.id === "nick") flagKey = `lastNick-${actor.id}`;
-                else flagKey = `lastMastery-${activeMastery.id}-${actor.id}`;
 
                 if (flagKey) {
                     const lastTurn = actor.getFlag("not-dice", flagKey);
@@ -1529,28 +1530,12 @@ Hooks.once("ready", () => {
                         } else if (activeMastery.id !== "nick") {
                             for (const t of targetsLocal) {
                                 if (t.actor) {
-                                    // Evitar aplicar la marca más de una vez por turno para el mismo atacante y maestría
-                                    const masteryFlagKey = `lastMastery-${activeMastery.id}-${item.actor.id}`;
-                                    const lastTurn = t.actor.getFlag("not-dice", masteryFlagKey);
-                                    const currentTurn = game.combat
-                                        ? `${game.combat.id}-${game.combat.round ?? 0}-${game.combat.turn ?? 0}`
-                                        : Date.now();
-
-                                    const alreadyApplied = game.combat
-                                        ? lastTurn === currentTurn
-                                        : (typeof lastTurn === "number" && (Date.now() - lastTurn) < 6000);
-
-                                    if (alreadyApplied) {
-                                        console.log(`Not Dice | La marca de maestría ${activeMastery.label} ya fue aplicada a ${t.name} este turno.`);
-                                        continue;
-                                    }
-
                                     let effectName = `Maestría: ${activeMastery.label} (${item.actor.name})`;
                                     if (activeMastery.id === "vex" || activeMastery.label.toLowerCase().includes("molestar")) {
                                         effectName = `Maestría: Molestar (${item.actor.name})`;
                                     }
 
-                                    const existingEffects = t.actor.appliedEffects || t.actor.effects || [];
+                                    const existingEffects = globalThis.notDiceGetActorEffects(t.actor);
                                     const hasExisting = existingEffects.some(e => e.name === effectName || e.name === `Maestría: Vex (${item.actor.name})`);
                                     if (hasExisting) {
                                         console.log(`Not Dice | ${t.name} ya tiene el efecto ${effectName}.`);
@@ -1562,11 +1547,21 @@ Hooks.once("ready", () => {
                                         img: item.img || "icons/svg/aura.svg",
                                         icon: item.img || "icons/svg/aura.svg",
                                         origin: item.uuid,
-                                        duration: { rounds: 1 }
+                                        duration: {},
+                                        flags: {
+                                            "not-dice": {
+                                                isVexEffect: (activeMastery.id === "vex" || activeMastery.label.toLowerCase().includes("molestar")),
+                                                appliedRound: game.combat?.round ?? 0,
+                                                appliedTurn: game.combat?.turn ?? 0,
+                                                appliedActorId: item.actor.id
+                                            }
+                                        }
                                     };
 
                                     if (activeMastery.id === "vex" || activeMastery.label.toLowerCase().includes("molestar")) {
-                                        effectData.duration.turns = 1;
+                                        effectData.duration.rounds = 99; // Evitar expiración prematura por el turno del objetivo
+                                    } else {
+                                        effectData.duration.rounds = 1;
                                     }
 
                                     if (activeMastery.id === "slow" || activeMastery.label.toLowerCase().includes("ralentizar")) {
@@ -1584,10 +1579,10 @@ Hooks.once("ready", () => {
                                         effectData.duration.startTurn = game.combat.turn;
                                     } else {
                                         effectData.duration.startTime = game.time.worldTime;
+                                        effectData.duration.seconds = 6;
                                     }
 
                                     await t.actor.createEmbeddedDocuments("ActiveEffect", [effectData]);
-                                    await t.actor.setFlag("not-dice", masteryFlagKey, currentTurn);
                                     ui.notifications.info(`Not Dice | Maestría Aplicada: ${activeMastery.label} -> ${t.name}`);
                                 }
                             }
@@ -2328,7 +2323,6 @@ Hooks.once("ready", () => {
                         let flagKey = "";
                         if (activeMastery.id === "cleave") flagKey = `lastCleave-${actor.id}`;
                         else if (activeMastery.id === "nick") flagKey = `lastNick-${actor.id}`;
-                        else flagKey = `lastMastery-${activeMastery.id}-${actor.id}`;
 
                         if (flagKey) {
                             const lastTurn = actor.getFlag("not-dice", flagKey);
@@ -2678,3 +2672,97 @@ Hooks.on("renderChatMessage", (message, html, data) => {
         }
     });
 });
+
+Hooks.on("preUpdateCombat", (combat, updateData, options, userId) => {
+    // Solo actuar si el turno o la ronda están a punto de cambiar
+    const turnChanging = updateData.hasOwnProperty("turn");
+    const roundChanging = updateData.hasOwnProperty("round");
+    if (turnChanging || roundChanging) {
+        combat._notDiceEndingCombatState = {
+            actorId: combat.combatant?.actor?.id || null,
+            actorName: combat.combatant?.actor?.name || null,
+            round: combat.round,
+            turn: combat.turn
+        };
+    }
+});
+
+Hooks.on("updateCombat", async (combat, changed, options, userId) => {
+    if (!game.user.isGM) return;
+
+    const endingState = combat._notDiceEndingCombatState;
+    if (!endingState || !endingState.actorName) return;
+    delete combat._notDiceEndingCombatState; // Limpiar
+
+    const attackerName = endingState.actorName;
+    const previousActorId = endingState.actorId;
+    const lowerAttackerName = attackerName.toLowerCase();
+    const endingRound = endingState.round;
+    const endingTurn = endingState.turn;
+
+    // Recorrer los combatientes para buscar y eliminar efectos de Molestar aplicados por este atacante
+    for (const combatant of combat.combatants) {
+        const targetActor = combatant.actor;
+        if (!targetActor) continue;
+
+        const getActorEffects = globalThis.notDiceGetActorEffects;
+        const effects = typeof getActorEffects === "function"
+            ? getActorEffects(targetActor)
+            : Array.from(targetActor.appliedEffects || targetActor.effects || []);
+
+        const vexEffectsToDelete = effects.filter(e => {
+            const eName = (e.name || e.label || "").toLowerCase();
+            const flags = e.flags?.["not-dice"] || e.getFlag?.("not-dice") || {};
+            
+            const isVex = eName.includes("vex") || eName.includes("molestar") || !!flags.isVexEffect;
+            const isFromAttacker = eName.includes(`(${lowerAttackerName})`) || (flags.appliedActorId && flags.appliedActorId === previousActorId);
+            if (!isVex || !isFromAttacker) return false;
+
+            // Obtener el turno de inicio
+            const startRound = flags.appliedRound !== undefined ? flags.appliedRound : e.duration?.startRound;
+            const startTurn = flags.appliedTurn !== undefined ? flags.appliedTurn : e.duration?.startTurn;
+
+            // Si no tiene tracking de inicio, lo hacemos expirar
+            if (startRound == null || startTurn == null) return true;
+
+            const isSameTurn = Number(startRound) === Number(endingRound) && Number(startTurn) === Number(endingTurn);
+
+            // Si es el mismo turno en el que se aplicó, lo conservamos.
+            // Si es un turno/ronda posterior, lo eliminamos.
+            return !isSameTurn;
+        });
+
+        if (vexEffectsToDelete.length > 0) {
+            const idsToDelete = vexEffectsToDelete.map(e => e.id);
+            await targetActor.deleteEmbeddedDocuments("ActiveEffect", idsToDelete);
+            for (const e of vexEffectsToDelete) {
+                ui.notifications?.info(`Not Dice | Molestar Expirado: ${e.name} en ${targetActor.name}`);
+            }
+        }
+    }
+});
+
+Hooks.on("deleteCombat", async (combat, options, userId) => {
+    if (!game.user.isGM) return;
+
+    for (const combatant of combat.combatants) {
+        const targetActor = combatant.actor;
+        if (!targetActor) continue;
+
+        const getActorEffects = globalThis.notDiceGetActorEffects;
+        const effects = typeof getActorEffects === "function"
+            ? getActorEffects(targetActor)
+            : Array.from(targetActor.appliedEffects || targetActor.effects || []);
+
+        const vexEffects = effects.filter(e => {
+            const eName = (e.name || e.label || "").toLowerCase();
+            return eName.includes("vex") || eName.includes("molestar");
+        });
+
+        if (vexEffects.length > 0) {
+            const idsToDelete = vexEffects.map(e => e.id);
+            await targetActor.deleteEmbeddedDocuments("ActiveEffect", idsToDelete);
+        }
+    }
+});
+

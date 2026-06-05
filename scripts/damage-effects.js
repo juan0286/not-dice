@@ -13,7 +13,9 @@ export function getDamageIncreasingEffects(actor) {
         "smite", "castigo"
     ];
     
-    const effects = actor.appliedEffects || actor.effects || [];
+    const effects = typeof globalThis.notDiceGetActorEffects === "function"
+        ? globalThis.notDiceGetActorEffects(actor)
+        : Array.from(actor.appliedEffects || actor.effects || []);
 
     for (const effect of effects) {
         if (effect.disabled || effect.isSuppressed) continue;
