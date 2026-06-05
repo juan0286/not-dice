@@ -17,6 +17,40 @@ globalThis.notDiceGetActorEffects = (act) => {
     return effs.map(e => Array.isArray(e) ? e[1] : e).filter(Boolean);
 };
 
+const notDiceIsSlowEffect = (e) => {
+    if (!e) return false;
+    const name = (e.name || e.label || "").toLowerCase();
+    const flags = e.flags?.["not-dice"] || (typeof e.getFlag === "function" ? e.getFlag("not-dice") : null) || {};
+    return name.includes("slow") || 
+           name.includes("ralentizar") || 
+           name.includes("ralentizacion") || 
+           name.includes("ralentización") || 
+           name.includes("frenar") || 
+           name.includes("freno") || 
+           name.includes("lentitud") || 
+           !!flags.isSlowEffect;
+};
+
+const notDiceIsSapEffect = (e) => {
+    if (!e) return false;
+    const name = (e.name || e.label || "").toLowerCase();
+    const flags = e.flags?.["not-dice"] || (typeof e.getFlag === "function" ? e.getFlag("not-dice") : null) || {};
+    return name.includes("sap") || 
+           name.includes("debilitar") || 
+           name.includes("minar") || 
+           !!flags.isSapEffect;
+};
+
+const notDiceIsVexEffect = (e) => {
+    if (!e) return false;
+    const name = (e.name || e.label || "").toLowerCase();
+    const flags = e.flags?.["not-dice"] || (typeof e.getFlag === "function" ? e.getFlag("not-dice") : null) || {};
+    return name.includes("vex") || 
+           name.includes("molestar") || 
+           name.includes("irritar") || 
+           !!flags.isVexEffect;
+};
+
 const notDiceIsAttack = (subject) => {
     return subject && (subject.type === "attack" || subject.constructor?.name === "AttackActivity");
 };
@@ -1546,6 +1580,12 @@ Hooks.once("ready", () => {
                                         continue;
                                     }
 
+                                    const isVex = (activeMastery.id === "vex" || activeMastery.label.toLowerCase().includes("molestar"));
+                                    const isSlow = (activeMastery.id === "slow" || 
+                                                    activeMastery.label.toLowerCase().includes("ralentizar") || 
+                                                    activeMastery.label.toLowerCase().includes("frenar") || 
+                                                    activeMastery.label.toLowerCase().includes("lentitud"));
+
                                     const effectData = {
                                         name: effectName,
                                         img: item.img || "icons/svg/aura.svg",
@@ -1554,7 +1594,8 @@ Hooks.once("ready", () => {
                                         duration: {},
                                         flags: {
                                             "not-dice": {
-                                                isVexEffect: (activeMastery.id === "vex" || activeMastery.label.toLowerCase().includes("molestar")),
+                                                isVexEffect: isVex,
+                                                isSlowEffect: isSlow,
                                                 appliedRound: game.combat?.round ?? 0,
                                                 appliedTurn: game.combat?.turn ?? 0,
                                                 appliedActorId: item.actor.id
@@ -1562,20 +1603,31 @@ Hooks.once("ready", () => {
                                         }
                                     };
 
-                                    if (activeMastery.id === "vex" || activeMastery.label.toLowerCase().includes("molestar")) {
+                                    if (isVex || isSlow) {
                                         effectData.duration.rounds = 99; // Evitar expiración prematura por el turno del objetivo
+                                        if (activeMastery.id === "slow" || 
+                                            activeMastery.label.toLowerCase().includes("ralentizar") || 
+                                            activeMastery.label.toLowerCase().includes("frenar") || 
+                                            activeMastery.label.toLowerCase().includes("lentitud")) {
+                                            
+                                            const hasExistingSlowWithChanges = existingEffects.some(e => {
+                                                return notDiceIsSlowEffect(e) && e.changes && e.changes.length > 0;
+                                            });
+
+                                            if (!hasExistingSlowWithChanges) {
+                                                effectData.changes = [
+                                                    { key: "system.attributes.movement.walk", mode: 2, value: "-10" },
+                                                    { key: "system.attributes.movement.fly", mode: 2, value: "-10" },
+                                                    { key: "system.attributes.movement.swim", mode: 2, value: "-10" },
+                                                    { key: "system.attributes.movement.climb", mode: 2, value: "-10" },
+                                                    { key: "system.attributes.movement.burrow", mode: 2, value: "-10" }
+                                                ];
+                                            } else {
+                                                effectData.changes = [];
+                                            }
+                                        }
                                     } else {
                                         effectData.duration.rounds = 1;
-                                    }
-
-                                    if (activeMastery.id === "slow" || activeMastery.label.toLowerCase().includes("ralentizar")) {
-                                        effectData.changes = [
-                                            { key: "system.attributes.movement.walk", mode: 2, value: "-10" },
-                                            { key: "system.attributes.movement.fly", mode: 2, value: "-10" },
-                                            { key: "system.attributes.movement.swim", mode: 2, value: "-10" },
-                                            { key: "system.attributes.movement.climb", mode: 2, value: "-10" },
-                                            { key: "system.attributes.movement.burrow", mode: 2, value: "-10" }
-                                        ];
                                     }
 
                                     if (game.combat) {
@@ -2727,18 +2779,15 @@ Hooks.on("updateCombat", async (combat, changed, options, userId) => {
             : Array.from(targetActor.appliedEffects || targetActor.effects || []);
 
         const masteryEffects = effects.filter(e => {
-            const eName = (e.name || e.label || "").toLowerCase();
-            const flags = e.flags?.["not-dice"] || e.getFlag?.("not-dice") || {};
-            const isVex = eName.includes("vex") || eName.includes("molestar") || !!flags.isVexEffect;
-            const isSap = eName.includes("sap") || eName.includes("debilitar") || eName.includes("minar") || !!flags.isSapEffect;
-            return isVex || isSap;
+            return notDiceIsVexEffect(e) || notDiceIsSapEffect(e) || notDiceIsSlowEffect(e);
         });
 
         for (const e of masteryEffects) {
             const eName = (e.name || e.label || "").toLowerCase();
             const flags = e.flags?.["not-dice"] || e.getFlag?.("not-dice") || {};
-            const isVex = eName.includes("vex") || eName.includes("molestar") || !!flags.isVexEffect;
-            const isSap = eName.includes("sap") || eName.includes("debilitar") || eName.includes("minar") || !!flags.isSapEffect;
+            const isVex = notDiceIsVexEffect(e);
+            const isSap = notDiceIsSapEffect(e);
+            const isSlow = notDiceIsSlowEffect(e);
 
             const appliedRound = flags.appliedRound;
             const appliedTurn = flags.appliedTurn;
@@ -2763,7 +2812,10 @@ Hooks.on("updateCombat", async (combat, changed, options, userId) => {
 
             if (roundsExceeded) {
                 await targetActor.deleteEmbeddedDocuments("ActiveEffect", [e.id]);
-                ui.notifications?.info(`Not Dice | ${isVex ? "Molestar" : "Debilitar"} Expirado (más de 1 ronda transcurrida) en ${targetActor.name}`);
+                let effectType = "Molestar";
+                if (isSap) effectType = "Debilitar";
+                else if (isSlow) effectType = "Ralentizar";
+                ui.notifications?.info(`Not Dice | ${effectType} Expirado (más de 1 ronda transcurrida) en ${targetActor.name}`);
                 continue;
             }
 
@@ -2777,12 +2829,12 @@ Hooks.on("updateCombat", async (combat, changed, options, userId) => {
                 }
             }
 
-            // Condición 2 para Debilitar: La próxima vez que el actor que lo aplicó comience un turno
-            if (isSap && startingActorId && (appliedActorId === startingActorId || eName.includes(`(${lowerStartingActorName})`))) {
+            // Condición 2 para Debilitar / Ralentizar: La próxima vez que el actor que lo aplicó comience un turno
+            if ((isSap || isSlow) && startingActorId && (appliedActorId === startingActorId || eName.includes(`(${lowerStartingActorName})`))) {
                 const wasAppliedOnCurrentTurn = Number(appliedRound) === Number(currentRound) && Number(appliedTurn) === Number(currentTurn);
                 if (!wasAppliedOnCurrentTurn) {
                     await targetActor.deleteEmbeddedDocuments("ActiveEffect", [e.id]);
-                    ui.notifications?.info(`Not Dice | Debilitar Expirado: ${e.name} en ${targetActor.name}`);
+                    ui.notifications?.info(`Not Dice | ${isSap ? "Debilitar" : "Ralentizar"} Expirado: ${e.name} en ${targetActor.name}`);
                 }
             }
         }
@@ -2802,11 +2854,7 @@ Hooks.on("deleteCombat", async (combat, options, userId) => {
             : Array.from(targetActor.appliedEffects || targetActor.effects || []);
 
         const masteryEffects = effects.filter(e => {
-            const eName = (e.name || e.label || "").toLowerCase();
-            const flags = e.flags?.["not-dice"] || e.getFlag?.("not-dice") || {};
-            const isVex = eName.includes("vex") || eName.includes("molestar") || !!flags.isVexEffect;
-            const isSap = eName.includes("sap") || eName.includes("debilitar") || eName.includes("minar") || !!flags.isSapEffect;
-            return isVex || isSap;
+            return notDiceIsVexEffect(e) || notDiceIsSapEffect(e) || notDiceIsSlowEffect(e);
         });
 
         if (masteryEffects.length > 0) {
@@ -2824,17 +2872,7 @@ Hooks.on("updateActiveEffect", (effect, changed, options, userId) => {
         const name = (effect.name || effect.label || "").toLowerCase();
         const flags = effect.flags?.["not-dice"] || effect.getFlag?.("not-dice") || {};
         
-        const isMasteryEffect = 
-            name.includes("maestría") || 
-            name.includes("maestria") || 
-            name.includes("mastery") || 
-            name.includes("molestar") || 
-            name.includes("debilitar") || 
-            name.includes("ralentizar") || 
-            name.includes("slow") || 
-            name.includes("sap") || 
-            name.includes("vex") || 
-            !!flags.isVexEffect;
+        const isMasteryEffect = notDiceIsVexEffect(effect) || notDiceIsSapEffect(effect) || notDiceIsSlowEffect(effect);
         
         if (isMasteryEffect) {
             const actor = effect.parent;
@@ -2855,4 +2893,53 @@ Hooks.on("updateActiveEffect", (effect, changed, options, userId) => {
         }
     }
 });
+
+Hooks.on("deleteActiveEffect", async (effect, options, userId) => {
+    if (!game.user.isGM) return;
+
+    const isSlow = notDiceIsSlowEffect(effect);
+
+    if (!isSlow) return;
+
+    const actor = effect.parent;
+    if (!actor || actor.documentName !== "Actor") return;
+
+    // Verificar si el efecto eliminado era el que tenía los cambios de movimiento
+    const hadChanges = effect.changes && effect.changes.some(c => c.key?.startsWith("system.attributes.movement."));
+    if (!hadChanges) return;
+
+    // Obtener los efectos restantes
+    const getActorEffects = globalThis.notDiceGetActorEffects;
+    const effects = typeof getActorEffects === "function"
+        ? getActorEffects(actor)
+        : Array.from(actor.appliedEffects || actor.effects || []);
+
+    const remainingSlows = effects.filter(e => {
+        return e.id !== effect.id && notDiceIsSlowEffect(e);
+    });
+
+    if (remainingSlows.length === 0) return;
+
+    // Verificar si alguno de los restantes ya tiene cambios (por si acaso)
+    const alreadyHasChanges = remainingSlows.some(e => e.changes && e.changes.some(c => c.key?.startsWith("system.attributes.movement.")));
+    if (alreadyHasChanges) return;
+
+    // Transferir los cambios al primer efecto de ralentizar restante
+    const slowToUpdate = remainingSlows[0];
+    const changes = [
+        { key: "system.attributes.movement.walk", mode: 2, value: "-10" },
+        { key: "system.attributes.movement.fly", mode: 2, value: "-10" },
+        { key: "system.attributes.movement.swim", mode: 2, value: "-10" },
+        { key: "system.attributes.movement.climb", mode: 2, value: "-10" },
+        { key: "system.attributes.movement.burrow", mode: 2, value: "-10" }
+    ];
+
+    try {
+        await slowToUpdate.update({ changes });
+        console.log(`Not Dice | Transferred Slow changes to remaining effect: ${slowToUpdate.name} on ${actor.name}`);
+    } catch (err) {
+        console.error("Not Dice | Error transferring Slow changes", err);
+    }
+});
+
 
