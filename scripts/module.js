@@ -138,6 +138,7 @@ globalThis.notDiceOpenDamageDialog = async ({
     }
 
     const speaker = ChatMessage.getSpeaker({ actor: actualItem.actor });
+    const activeMastery = globalThis.notDiceMasteries?.getActiveMastery(actualItem) || null;
     const damageTypeLabels = CONFIG.DND5E?.damageTypes ?? {};
     const rowFaces = [4, 6, 8, 10, 12, 20];
     const dialogId = `not-dice-damage-${Math.random().toString(36).slice(2, 10)}`;
@@ -202,6 +203,15 @@ globalThis.notDiceOpenDamageDialog = async ({
                 <span style="font-size:0.8em; font-weight:bold; opacity:0.85; margin-right:4px;">Agregar daño:</span>
                 ${rowFaces.map(faces => `<button type="button" class="not-dice-damage-add-row" data-faces="${faces}" style="padding:4px 8px; border:1px solid var(--color-border-light-2, #bbb); border-radius:4px; background:rgba(127,127,127,0.1); color:inherit; cursor:pointer; font-size:0.8em;">d${faces}</button>`).join("")}
             </div>
+
+            ${activeMastery?.id === "sap" ? `
+            <div style="display:flex; align-items:center; gap:8px; margin-top:8px; padding:8px 10px; border:1px solid var(--color-border-light-2, #ddd); border-radius:6px; background:rgba(197,34,31,0.08);">
+                <input type="checkbox" id="${dialogId}-sap-cb" class="not-dice-sap-cb" style="margin:0; cursor:pointer;" checked />
+                <label for="${dialogId}-sap-cb" style="font-size:0.85em; font-weight:bold; color:#ff5252; cursor:pointer; margin:0; display:flex; align-items:center; gap:4px;">
+                    <i class="fas fa-crown"></i> Aplicar Debilitar (Sap)
+                </label>
+            </div>
+            ` : ""}
 
             <div style="margin-top:10px; display:flex; justify-content:flex-end; gap:8px; font-size:0.78em; opacity:0.8;">
                 <span>Selecciona un botón de dado para añadir una nueva fila.</span>
@@ -269,6 +279,8 @@ globalThis.notDiceOpenDamageDialog = async ({
             totals.push(total);
         }
 
+        const applySap = root.querySelector(".not-dice-sap-cb")?.checked ?? false;
+
         game.socket.emit("module.not-dice", {
             type: "not-dice.show-spell-damage",
             itemUuid: uuid,
@@ -277,7 +289,8 @@ globalThis.notDiceOpenDamageDialog = async ({
             senderName: game.user.name,
             targetUserId: gmUserId,
             preCalculatedTotals: totals,
-            preCalculatedParts: damageRows
+            preCalculatedParts: damageRows,
+            applySap: applySap
         });
 
         ui.notifications?.info("Not Dice | Resultado de daño enviado al GM.");
@@ -462,7 +475,7 @@ const notDiceHandleAttackSocket = async (data) => {
     if (data.type === "not-dice.show-spell-damage") {
         try {
             if (globalThis._notDiceActiveAttackDialogs && globalThis._notDiceActiveAttackDialogs[data.itemUuid]) {
-                const wasUpdated = globalThis._notDiceActiveAttackDialogs[data.itemUuid](data.preCalculatedTotals, data.preCalculatedParts);
+                const wasUpdated = globalThis._notDiceActiveAttackDialogs[data.itemUuid](data.preCalculatedTotals, data.preCalculatedParts, data.applySap);
                 if (wasUpdated) {
                     ui.notifications?.info(`Not Dice | Daño actualizado por ${data.senderName || "jugador"}.`);
                     return;
@@ -479,7 +492,8 @@ const notDiceHandleAttackSocket = async (data) => {
                 options: { 
                     notDicePreCalculatedTotals: data.preCalculatedTotals,
                     notDicePreCalculatedParts: data.preCalculatedParts,
-                    notDiceMultipliers: data.notDiceMultipliers
+                    notDiceMultipliers: data.notDiceMultipliers,
+                    notDiceApplySap: data.applySap
                 }
             });
             ui.notifications?.info(`Not Dice | Daño de hechizo enviado por ${data.senderName || "jugador"}.`);
@@ -692,17 +706,7 @@ Hooks.once("ready", () => {
             }
 
             // --- Detect Mastery ---
-            let activeMastery = null;
-            if (item) {
-                 const baseItem = item.system.type?.baseItem;
-                 const actorMasteries = item.actor?.system?.traits?.weaponProf?.mastery?.value || new Set();
-                 if (baseItem && actorMasteries.has(baseItem) && item.system.mastery) {
-                     activeMastery = {
-                         id: item.system.mastery,
-                         label: CONFIG.DND5E.weaponMasteries?.[item.system.mastery]?.label || item.system.mastery
-                     };
-                 }
-            }
+            const activeMastery = globalThis.notDiceMasteries?.getActiveMastery(item) || null;
 
             // --- Detect Guiding Bolt / Saeta Guía ---
             let isGuidingBolt = false;
@@ -1131,6 +1135,17 @@ Hooks.once("ready", () => {
             let damageInputsHtml = "";
             for (const part of damageParts) {
                 let specialModsHtml = "";
+                if (part.index === 0 && activeMastery?.id === "sap") {
+                    const initialApplySap = rollConfig.options?.hasOwnProperty("notDiceApplySap")
+                        ? rollConfig.options.notDiceApplySap
+                        : true;
+                    const sapChecked = initialApplySap ? "checked" : "";
+                    specialModsHtml += `
+                    <div style="display:flex; justify-content:center; align-items:center; gap:6px; margin-bottom: 4px; padding: 4px 8px; background: rgba(197,34,31,0.08); border: 1px solid rgba(197,34,31,0.3); border-radius: 4px; width: 100%;" title="MAESTRÍA: DEBILITAR (SAP)">
+                        <input type="checkbox" id="sap-mastery-cb" class="sap-mastery-cb" style="margin:0; cursor:pointer;" ${sapChecked}>
+                        <label for="sap-mastery-cb" style="font-size:0.85em; color:#ff5252; cursor:pointer; font-weight:bold; letter-spacing: 0.5px; margin:0;"><i class="fas fa-crown"></i> Aplicar Debilitar (Sap)</label>
+                    </div>`;
+                }
                 if (hasSavageAttacker) {
                     specialModsHtml += `
                     <div style="display:flex; justify-content:center; align-items:center; gap:6px; margin-bottom: 4px; padding: 4px 8px; background: rgba(197,34,31,0.08); border: 1px solid rgba(197,34,31,0.3); border-radius: 4px; width: 100%;" title="ATACANTE SALVAJE">
@@ -1305,13 +1320,39 @@ Hooks.once("ready", () => {
                     const targetsLocal = resolveTargets();
                     const damageSummaryLines = [];
 
+                    const applySapChecked = root.querySelector("#sap-mastery-cb")?.checked ?? false;
+                    if (applySapChecked && activeMastery?.id === "sap") {
+                        for (const t of targetsLocal) {
+                            if (t.actor) {
+                                await globalThis.notDiceMasteries.applySapEffect(t.actor, item.actor, item);
+                            }
+                        }
+                    }
+
                     const isToppleMastery = activeMastery && (activeMastery.id === "topple" || activeMastery.label.toLowerCase().includes("topple") || activeMastery.label.toLowerCase().includes("derribar"));
                     
-                    if (activeMastery && activeMastery.id !== "nick" && !isToppleMastery) {
+                    if (activeMastery && activeMastery.id !== "nick" && activeMastery.id !== "sap" && !isToppleMastery) {
                         for (const t of targetsLocal) {
                              if (t.actor) {
+                                 // Evitar aplicar la marca más de una vez por turno para el mismo atacante y maestría
+                                 const masteryFlagKey = `lastMastery-${activeMastery.id}-${item.actor.id}`;
+                                 const lastTurn = t.actor.getFlag("not-dice", masteryFlagKey);
+                                 const currentTurn = game.combat 
+                                     ? `${game.combat.id}-${game.combat.round ?? 0}-${game.combat.turn ?? 0}`
+                                     : Date.now();
+
+                                 const alreadyApplied = game.combat 
+                                     ? lastTurn === currentTurn
+                                     : (typeof lastTurn === "number" && (Date.now() - lastTurn) < 6000);
+
+                                 if (alreadyApplied) {
+                                     console.log(`Not Dice | La marca de maestría ${activeMastery.label} ya fue aplicada a ${t.name} este turno.`);
+                                     continue;
+                                 }
+
                                  const effectData = {
                                     name: `Maestría: ${activeMastery.label} (${item.actor.name})`,
+                                    img: item.img || "icons/svg/aura.svg",
                                     icon: item.img || "icons/svg/aura.svg",
                                     origin: item.uuid,
                                     duration: { rounds: 1 }
@@ -1339,6 +1380,7 @@ Hooks.once("ready", () => {
                                  }
 
                                  await t.actor.createEmbeddedDocuments("ActiveEffect", [effectData]);
+                                 await t.actor.setFlag("not-dice", masteryFlagKey, currentTurn);
                                  ui.notifications.info(`Not Dice | Maestría Aplicada: ${activeMastery.label} -> ${t.name}`);
                              }
                         }
@@ -1349,6 +1391,7 @@ Hooks.once("ready", () => {
                             if (t.actor) {
                                 const gbEffectData = {
                                     name: `Saeta Guía (${item.actor.name})`,
+                                    img: item.img || "icons/svg/sun.svg",
                                     icon: item.img || "icons/svg/sun.svg",
                                     origin: item.uuid,
                                     duration: { rounds: 1 }
@@ -1401,13 +1444,20 @@ Hooks.once("ready", () => {
                             const palette = hasHealingType
                                 ? { fg: "#166534", accent: "#16a34a", bg: "rgba(22,101,52,0.12)", border: "rgba(22,101,52,0.35)" }
                                 : { fg: "#991b1b", accent: "#dc2626", bg: "rgba(153,27,27,0.12)", border: "rgba(153,27,27,0.35)" };
+                            
+                            let debilitadoLabel = "";
+                            if (activeMastery?.id === "sap" && applySapChecked) {
+                                debilitadoLabel = ` <span style="font-size:0.75em; background:rgba(197,34,31,0.15); color:#ff5252; padding:2px 6px; border-radius:8px; border:1px solid rgba(197,34,31,0.3); font-weight:bold; margin-left:4px;">Debilitado</span>`;
+                            }
 
                             damageSummaryLines.push(`
-                                <div style="display:flex; align-items:center; justify-content:space-between; gap:8px; padding:4px 8px; margin-bottom:4px; border:1px solid ${palette.border}; border-radius:6px; background:${palette.bg}; font-size:0.84em; line-height:1.2;">
-                                    <span style="font-weight:700; color:${palette.fg}; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${t.name}</span>
-                                    <span style="color:inherit; opacity:0.9; white-space:nowrap;">${hpBefore} pv</span>
-                                    <span style="color:${palette.accent}; font-weight:800; white-space:nowrap;">${operator} ${amount} pv</span>
-                                    <span style="color:inherit; opacity:0.9; white-space:nowrap;">${hpAfter} pv</span>
+                                <div style="display:flex; flex-direction:column; padding:6px 8px; margin-bottom:4px; border:1px solid ${palette.border}; border-radius:6px; background:${palette.bg}; font-size:0.84em; line-height:1.2;">
+                                    <div style="display:flex; align-items:center; justify-content:space-between; gap:8px;">
+                                        <span style="font-weight:700; color:${palette.fg}; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${t.name}${debilitadoLabel}</span>
+                                        <span style="color:inherit; opacity:0.9; white-space:nowrap;">${hpBefore} pv</span>
+                                        <span style="color:${palette.accent}; font-weight:800; white-space:nowrap;">${operator} ${amount} pv</span>
+                                        <span style="color:inherit; opacity:0.9; white-space:nowrap;">${hpAfter} pv</span>
+                                    </div>
                                 </div>
                             `);
                         }
@@ -1606,6 +1656,7 @@ Hooks.once("ready", () => {
             const onRenderComplete = (element) => {
                 const root = element instanceof HTMLElement ? element : element[0];
 
+
                 const attackRollBoxNode = root.querySelector(".not-dice-attack-roll-box");
 
                 const setAttackButtonsDisabled = (isDisabled) => {
@@ -1791,9 +1842,14 @@ Hooks.once("ready", () => {
                 });
 
                 globalThis._notDiceActiveAttackDialogs = globalThis._notDiceActiveAttackDialogs || {};
-                globalThis._notDiceActiveAttackDialogs[item.uuid] = (totals, parts = null) => {
+                globalThis._notDiceActiveAttackDialogs[item.uuid] = (totals, parts = null, applySap = null) => {
                     const reqBtn = root.querySelector(`#not-dice-btn-request-damage-attack`);
                     if (!document.body.contains(root)) return false; // El DOM del dialog ya no existe
+
+                    if (applySap !== null) {
+                        const sapCb = root.querySelector("#sap-mastery-cb");
+                        if (sapCb) sapCb.checked = !!applySap;
+                    }
 
                     const safeTotals = Array.isArray(totals) ? totals : [];
                     const safeParts = Array.isArray(parts) ? parts : [];
@@ -2307,6 +2363,7 @@ Hooks.on("renderChatMessage", (message, html, data) => {
         ev.preventDefault();
         await notDiceApplyChatAttackMode(message, "advantage");
     });
+
 
     html.find(".not-dice-topple-save").click(async (ev) => {
         ev.preventDefault();
