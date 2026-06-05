@@ -24,6 +24,67 @@ const notDiceMockEvent = (extra = {}) => {
     };
 };
 
+/**
+ * Extrae solo la parte de dados (NdX) de un arma o fórmula.
+ * Para Mellar (Nick) y Hender (Cleave): solo se aplica el dado, sin modificador de característica.
+ * Si el modifier es negativo, se conserva (regla de D&D5e).
+ * @param {Item} item  - El item de arma (puede ser null).
+ * @param {string} formula - La fórmula resuelta del roll (fallback).
+ * @param {number} negativeMod - Si el mod es negativo, se añade al resultado.
+ * @returns {string} Fórmula con solo los dados (y mod negativo si aplica).
+ */
+const notDiceExtractDiceOnly = (item, formula, negativeMod = 0) => {
+    // Intento 1: leer el dado directamente de las damage parts del item
+    if (item) {
+        try {
+            const activities = item.system?.activities;
+            if (activities) {
+                for (const activity of activities.values()) {
+                    const parts = activity?.damage?.parts || [];
+                    if (parts.length > 0) {
+                        const part = parts[0];
+                        let diceFormula = "";
+                        if (part?.number && part?.denomination) {
+                            diceFormula = `${part.number}d${part.denomination}`;
+                        } else if (typeof part?.formula === "string" && part.formula) {
+                            // Extraer solo la parte NdX de la formula del part
+                            const diceMatch = part.formula.match(/(\d+)d(\d+)/i);
+                            if (diceMatch) diceFormula = `${diceMatch[1]}d${diceMatch[2]}`;
+                        }
+                        if (diceFormula) {
+                            return negativeMod < 0 ? `${diceFormula} - ${Math.abs(negativeMod)}` : diceFormula;
+                        }
+                    }
+                }
+            }
+            // Fallback a system.damage.parts (formato legado)
+            const legacyParts = item.system?.damage?.parts;
+            if (Array.isArray(legacyParts) && legacyParts.length > 0) {
+                const rawFormula = Array.isArray(legacyParts[0]) ? legacyParts[0][0] : legacyParts[0]?.formula;
+                if (rawFormula) {
+                    const diceMatch = String(rawFormula).match(/(\d+)d(\d+)/i);
+                    if (diceMatch) {
+                        const diceFormula = `${diceMatch[1]}d${diceMatch[2]}`;
+                        return negativeMod < 0 ? `${diceFormula} - ${Math.abs(negativeMod)}` : diceFormula;
+                    }
+                }
+            }
+        } catch (e) {
+            console.warn("Not Dice | notDiceExtractDiceOnly: error reading item parts", e);
+        }
+    }
+    // Intento 2: extraer todos los NdX de la fórmula resuelta y concatenarlos
+    if (formula) {
+        const matches = [...String(formula).matchAll(/(\d+)d(\d+)/gi)];
+        if (matches.length > 0) {
+            const diceFormula = matches.map(m => `${m[1]}d${m[2]}`).join(" + ");
+            return negativeMod < 0 ? `${diceFormula} - ${Math.abs(negativeMod)}` : diceFormula;
+        }
+    }
+    // Ultimo fallback: devolver la formula original sin tocar
+    return formula || "";
+};
+
 const notDiceBuildAttackPayload = (rollConfig, isDamage = false) => {
     try {
         const subject = rollConfig?.subject;
@@ -33,8 +94,8 @@ const notDiceBuildAttackPayload = (rollConfig, isDamage = false) => {
             itemUuid: item?.uuid || null,
             activityId: (subject && subject !== item) ? subject.id : null,
             targetIds: Array.from(game.user.targets ?? []).map(t => t.id),
-            isNickAttack: rollConfig?.isNickAttack || false,
-            isCleaveAttack: rollConfig?.isCleaveAttack || rollConfig?.options?.isCleaveAttack || false,
+            isNickAttack: rollConfig?.isNickAttack || rollConfig?.options?.isNickAttack || rollConfig?.event?.isNickAttack || false,
+            isCleaveAttack: rollConfig?.isCleaveAttack || rollConfig?.options?.isCleaveAttack || rollConfig?.event?.isCleaveAttack || false,
             senderName: game.user?.name || "Jugador",
             senderUserId: game.user?.id || null,
             targetUserId: notDiceFirstActiveGmId(),
@@ -129,7 +190,9 @@ globalThis.notDiceOpenDamageDialog = async ({
     targetUserId = null,
     senderName = game.user.name,
     requestedDamageParts = null,
-    isCleaveAttack = false
+    isCleaveAttack = false,
+    isNickAttack = false,
+    masteryAlreadyUsed = false
 } = {}) => {
     const item = uuid ? await fromUuid(uuid) : null;
     const actualItem = item?.item || item;
@@ -206,11 +269,11 @@ globalThis.notDiceOpenDamageDialog = async ({
                 ${rowFaces.map(faces => `<button type="button" class="not-dice-damage-add-row" data-faces="${faces}" style="padding:4px 8px; border:1px solid var(--color-border-light-2, #bbb); border-radius:4px; background:rgba(127,127,127,0.1); color:inherit; cursor:pointer; font-size:0.8em;">d${faces}</button>`).join("")}
             </div>
 
-            ${activeMastery && !isCleaveAttack ? `
+            ${activeMastery && !isCleaveAttack && !isNickAttack ? `
             <div style="display:flex; align-items:center; gap:8px; margin-top:8px; padding:8px 10px; border:1px solid var(--color-border-light-2, #ddd); border-radius:6px; background:rgba(106,27,154,0.08);">
-                <input type="checkbox" id="${dialogId}-mastery-cb" class="not-dice-mastery-cb" style="margin:0; cursor:pointer;" checked />
-                <label for="${dialogId}-mastery-cb" style="font-size:0.85em; font-weight:bold; color:#ba68c8; cursor:pointer; margin:0; display:flex; align-items:center; gap:4px;">
-                    <i class="fas fa-crown"></i> Aplicar Maestría: ${activeMastery.label}
+                <input type="checkbox" id="${dialogId}-mastery-cb" class="not-dice-mastery-cb" style="margin:0; cursor:pointer;" ${masteryAlreadyUsed ? 'disabled' : 'checked'} />
+                <label for="${dialogId}-mastery-cb" style="font-size:0.85em; font-weight:bold; color:#ba68c8; cursor:pointer; margin:0; display:flex; align-items:center; gap:4px; ${masteryAlreadyUsed ? 'opacity:0.65;' : ''}">
+                    <i class="fas fa-crown"></i> Aplicar Maestría: ${activeMastery.label}${masteryAlreadyUsed ? " (Ya Usada)" : ""}
                 </label>
             </div>
             ` : ""}
@@ -293,7 +356,8 @@ globalThis.notDiceOpenDamageDialog = async ({
             preCalculatedTotals: totals,
             preCalculatedParts: damageRows,
             applyMastery: applyMastery,
-            isCleaveAttack: isCleaveAttack
+            isCleaveAttack: isCleaveAttack,
+            isNickAttack: isNickAttack
         });
 
         ui.notifications?.info("Not Dice | Resultado de daño enviado al GM.");
@@ -498,7 +562,8 @@ const notDiceHandleAttackSocket = async (data) => {
                     notDiceMultipliers: data.notDiceMultipliers,
                     notDiceApplyMastery: data.applyMastery,
                     isCleaveAttack: data.isCleaveAttack
-                }
+                },
+                isNickAttack: data.isNickAttack
             });
             ui.notifications?.info(`Not Dice | Daño de hechizo enviado por ${data.senderName || "jugador"}.`);
         } catch(e) {
@@ -599,10 +664,15 @@ Hooks.once("ready", () => {
                         setTimeout(() => {
                             if (rollConfig.subject && rollConfig.subject.rollDamage) {
                                 console.log("Not Dice | Triggering Auto-Damage Roll (GM)");
+                                const isCleave = rollConfig.isCleaveAttack || rollConfig.options?.isCleaveAttack || rollConfig.event?.isCleaveAttack || false;
                                 rollConfig.subject.rollDamage({
                                     event: rollConfig.event,
-                                    options: { notDiceAutoTriggered: true },
-                                    isNickAttack: rollConfig.isNickAttack
+                                    options: { 
+                                        notDiceAutoTriggered: true,
+                                        isCleaveAttack: isCleave
+                                    },
+                                    isNickAttack: rollConfig.isNickAttack || rollConfig.options?.isNickAttack || rollConfig.event?.isNickAttack || false,
+                                    isCleaveAttack: isCleave
                                 });
                             }
                         }, 250);
@@ -641,7 +711,7 @@ Hooks.once("ready", () => {
             }
             
             // --- Nick Attack Logic ---
-            const isNickAttack = rollConfig.isNickAttack;
+            const isNickAttack = rollConfig.isNickAttack || rollConfig.options?.isNickAttack || rollConfig.event?.isNickAttack || false;
             const actor = rollConfig.subject?.actor || rollConfig.subject?.item?.actor;
             const hasTwoWeaponStyle = actor?.items?.some(i => 
                   i.system?.identifier === "two-weapon-fighting" || 
@@ -744,18 +814,12 @@ Hooks.once("ready", () => {
                 const forcedPart = hasForcedParts ? forcedParts[i] : null;
                 let originalFormula = forcedPart?.formula ? String(forcedPart.formula) : roll.formula;
                 
-                if (isOffhandWithoutStyle) {
-                     // Remove + @mod or + number from end
-                     originalFormula = originalFormula.replace(/\s*\+\s*(@mod|\d+)(\s*\[.*?\])?$/, "");
-                }
-
-                if (isCleaveAttack) {
+                if (isOffhandWithoutStyle || isCleaveAttack) {
                      const abilityId = item?.abilityMod || item?.system?.ability || (item?.system?.properties?.has("fin") ? (actor?.system?.abilities?.dex?.mod > actor?.system?.abilities?.str?.mod ? "dex" : "str") : "str");
                      const mod = actor?.system?.abilities?.[abilityId]?.mod ?? 0;
-                     if (mod > 0) {
-                          originalFormula = originalFormula.replace(/@mod/g, "0");
-                          originalFormula = originalFormula.replace(/\s*\+\s*(\d+)(\s*\[.*?\])?$/, "");
-                     }
+                     const negativeMod = mod < 0 ? mod : 0;
+                     originalFormula = notDiceExtractDiceOnly(item, originalFormula, negativeMod);
+                     console.log("Not Dice | Formula limpiada para Nick/Cleave:", originalFormula);
                 }
 
                 let versatileFormula = null;
@@ -906,9 +970,6 @@ Hooks.once("ready", () => {
 
             // --- Gather Attack Info ---
             let attackHtml = "";
-            let isNickActive = false;
-            let nickWeaponName = "";
-            let nickWeaponItem = null;
             let attackRollState = null;
             let attackRollMessageId = null;
 
@@ -966,17 +1027,6 @@ Hooks.once("ready", () => {
                 let masteryBadge = "";
                 if (activeMastery) {
                     masteryBadge = `<span style="display:inline-block; font-size:0.75em; background:rgba(106,27,154,0.15); color:#ba68c8; padding:3px 8px; border-radius:12px; border:1px solid rgba(106,27,154,0.3); margin-right:4px; font-weight:bold;"><i class="fas fa-crown"></i> Maestría: ${activeMastery.label}</span>`;
-                    
-                    if (activeMastery.id === "nick" && !isNickAttack) {
-                        const otherLightWeapon = item.actor?.itemTypes?.weapon?.find(w => 
-                            w.id !== item.id && w.system.equipped && w.system.properties?.has("lgt")
-                        );
-                        if (otherLightWeapon) {
-                            isNickActive = true;
-                            nickWeaponName = otherLightWeapon.name;
-                            nickWeaponItem = otherLightWeapon;
-                        }
-                    }
                 }
 
                 const hasSapEffect = item.actor?.effects?.some(e => 
@@ -1081,33 +1131,7 @@ Hooks.once("ready", () => {
                 }
             }
 
-            const confirmMellar = async (weaponName) => {
-                return new Promise(resolve => {
-                    const DialogV2 = foundry?.applications?.api?.DialogV2;
-                    if (DialogV2) {
-                        new DialogV2({
-                            window: { title: "Maestría: Mellar" },
-                            content: `<p style="padding:10px;">¿Atacar con Mellar: <strong>${weaponName}</strong>?</p>`,
-                            buttons: [
-                                { action: "yes", label: "Sí", default: true },
-                                { action: "no", label: "No" }
-                            ],
-                            submit: result => resolve(result === "yes")
-                        }).render(true);
-                    } else {
-                        new Dialog({
-                            title: "Maestría: Mellar",
-                            content: `<p>¿Atacar con Mellar: <strong>${weaponName}</strong>?</p>`,
-                            buttons: {
-                                yes: { label: "Si", callback: () => resolve(true) },
-                                no: { label: "No", callback: () => resolve(false) }
-                            },
-                            default: "yes",
-                            close: () => resolve(false)
-                        }).render(true);
-                    }
-                });
-            };
+
 
             // --- Build Logic For Multiple Damage Parts ---
 
@@ -1151,18 +1175,38 @@ Hooks.once("ready", () => {
             }) || false;
 
 
+            let masteryAlreadyUsed = false;
+            if (activeMastery && actor) {
+                let flagKey = "";
+                if (activeMastery.id === "cleave") flagKey = `lastCleave-${actor.id}`;
+                else if (activeMastery.id === "nick") flagKey = `lastNick-${actor.id}`;
+                else flagKey = `lastMastery-${activeMastery.id}-${actor.id}`;
+
+                if (flagKey) {
+                    const lastTurn = actor.getFlag("not-dice", flagKey);
+                    const currentTurn = game.combat
+                        ? `${game.combat.id}-${game.combat.round ?? 0}-${game.combat.turn ?? 0}`
+                        : Date.now();
+
+                    masteryAlreadyUsed = game.combat
+                        ? lastTurn === currentTurn
+                        : (typeof lastTurn === "number" && (Date.now() - lastTurn) < 6000);
+                }
+            }
+
             let damageInputsHtml = "";
             for (const part of damageParts) {
                 let specialModsHtml = "";
-                if (part.index === 0 && activeMastery && !isCleaveAttack) {
+                if (part.index === 0 && activeMastery && !isCleaveAttack && !isNickAttack) {
                     const initialApplyMastery = rollConfig.options?.hasOwnProperty("notDiceApplyMastery")
                         ? rollConfig.options.notDiceApplyMastery
                         : true;
-                    const masteryChecked = initialApplyMastery ? "checked" : "";
+                    const disabledAttr = masteryAlreadyUsed ? "disabled" : "";
+                    const checkedAttr = (initialApplyMastery && !masteryAlreadyUsed) ? "checked" : "";
                     specialModsHtml += `
                     <div style="display:flex; justify-content:center; align-items:center; gap:6px; margin-bottom: 4px; padding: 4px 8px; background: rgba(106,27,154,0.08); border: 1px solid rgba(106,27,154,0.3); border-radius: 4px; width: 100%;" title="MAESTRÍA: ${activeMastery.label.toUpperCase()}">
-                        <input type="checkbox" id="mastery-cb" class="mastery-cb" style="margin:0; cursor:pointer;" ${masteryChecked}>
-                        <label for="mastery-cb" style="font-size:0.85em; color:#ba68c8; cursor:pointer; font-weight:bold; letter-spacing: 0.5px; margin:0;"><i class="fas fa-crown"></i> Aplicar Maestría: ${activeMastery.label}</label>
+                        <input type="checkbox" id="mastery-cb" class="mastery-cb" style="margin:0; cursor:pointer;" ${checkedAttr} ${disabledAttr}>
+                        <label for="mastery-cb" style="font-size:0.85em; color:#ba68c8; cursor:pointer; font-weight:bold; letter-spacing: 0.5px; margin:0; ${masteryAlreadyUsed ? 'opacity:0.65;' : ''}"><i class="fas fa-crown"></i> Aplicar Maestría: ${activeMastery.label}${masteryAlreadyUsed ? " (Ya Usada)" : ""}</label>
                     </div>`;
                 }
                 if (hasSavageAttacker) {
@@ -1300,16 +1344,7 @@ Hooks.once("ready", () => {
                      }
                 }
 
-                // Nick / Mellar Logic
-                if (isDamage && isNickActive) {
-                    const confirmed = await confirmMellar(nickWeaponName);
-                    if (confirmed && nickWeaponItem) {
-                        const attackActivity = nickWeaponItem.system.activities?.find(a => a.type === "attack");
-                        if (attackActivity) {
-                            setTimeout(() => attackActivity.rollAttack({event: rollConfig.event, isNickAttack: true}), 500);
-                        }
-                    }
-                }
+
 
                 // Gather values and update rolls
                 const totalValues = [];
@@ -1378,6 +1413,43 @@ Hooks.once("ready", () => {
                                     if (t.actor) {
                                         await globalThis.notDiceMasteries.runCleaveEffect(t, item.actor, item);
                                     }
+                                }
+                            }
+                        } else if (activeMastery.id === "nick" || activeMastery.label.toLowerCase().includes("nick") || activeMastery.label.toLowerCase().includes("mellar")) {
+                            const masteryFlagKey = `lastNick-${item.actor.id}`;
+                            const lastTurn = item.actor.getFlag("not-dice", masteryFlagKey);
+                            const currentTurn = game.combat
+                                ? `${game.combat.id}-${game.combat.round ?? 0}-${game.combat.turn ?? 0}`
+                                : Date.now();
+
+                            const alreadyUsed = game.combat
+                                ? lastTurn === currentTurn
+                                : (typeof lastTurn === "number" && (Date.now() - lastTurn) < 6000);
+
+                            if (alreadyUsed) {
+                                ui.notifications.warn(`Not Dice | Ya activaste Mellar (Nick) este turno.`);
+                            } else {
+                                const hasDualWielder = item.actor?.items?.some(i => 
+                                    i.system?.identifier === "dual-wielder" || 
+                                    i.name?.toLowerCase().includes("dual wielder") || 
+                                    i.name?.toLowerCase().includes("combatiente a dos armas") ||
+                                    i.name?.toLowerCase().includes("combatiente con dos armas")
+                                ) || false;
+
+                                const nickWeaponItem = item.actor?.itemTypes?.weapon?.find(w => 
+                                    w.id !== item.id && 
+                                    w.system.equipped && 
+                                    (w.system.properties?.has("lgt") || (hasDualWielder && !w.system.properties?.has("2h")))
+                                );
+
+                                if (nickWeaponItem) {
+                                    await item.actor.setFlag("not-dice", masteryFlagKey, currentTurn);
+                                    const firstTarget = targetsLocal.find(t => t.actor);
+                                    if (firstTarget) {
+                                        await globalThis.notDiceMasteries.runNickEffect(firstTarget, item.actor, nickWeaponItem);
+                                    }
+                                } else {
+                                    ui.notifications.warn(`Not Dice | No tienes un arma secundaria válida equipada para Mellar.`);
                                 }
                             }
                         } else if (activeMastery.id !== "nick") {
@@ -1608,7 +1680,7 @@ Hooks.once("ready", () => {
                         <div class="not-dice-damage-request" style="text-align:center; padding:10px;">
                             <h3 style="margin-bottom:5px;">Daño de ${item.name}</h3>
                             <p style="font-size:0.9em; margin-bottom:10px;">El GM solicita tu tirada de daño.</p>
-                            <button class="not-dice-roll-spell-damage" data-uuid="${reqUuid}" data-formulas="${formulas}" data-damage-parts="${damagePartsStr}" data-targets="${targetIdsStr}" data-multipliers="${multipliersStr}" style="background: rgba(197,34,31,0.1); border: 1px solid #d32f2f; color: #ff5252; font-weight: bold; padding: 6px; border-radius:4px; cursor:pointer; width:100%;">
+                            <button class="not-dice-roll-spell-damage" data-uuid="${reqUuid}" data-formulas="${formulas}" data-damage-parts="${damagePartsStr}" data-targets="${targetIdsStr}" data-multipliers="${multipliersStr}" data-is-nick-attack="${isNickAttack}" data-is-cleave-attack="${isCleaveAttack}" style="background: rgba(197,34,31,0.1); border: 1px solid #d32f2f; color: #ff5252; font-weight: bold; padding: 6px; border-radius:4px; cursor:pointer; width:100%;">
                                 <i class="fas fa-dice-d20"></i> Lanzar Daño
                             </button>
                         </div>
@@ -2155,16 +2227,42 @@ Hooks.once("ready", () => {
                 
                 if (item && typeof globalThis.notDiceOpenDamageDialog === "function") {
                     const isCleaveAttack = rollConfig.isCleaveAttack || rollConfig.options?.isCleaveAttack || rollConfig.event?.isCleaveAttack || false;
+                    const isNickAttack = rollConfig.isNickAttack || rollConfig.options?.isNickAttack || rollConfig.event?.isNickAttack || false;
+                    const actor = item.actor;
+                    const hasTwoWeaponStyle = actor?.items?.some(i => 
+                        i.system?.identifier === "two-weapon-fighting" || 
+                        i.name === "Two-Weapon Fighting" || 
+                        (i.name.toLowerCase().includes("combate con dos armas") && i.type === "feat")
+                    );
+                    const isOffhandWithoutStyle = isNickAttack && !hasTwoWeaponStyle;
+
+                    const activeMastery = globalThis.notDiceMasteries?.getActiveMastery(item) || null;
+                    let masteryAlreadyUsed = false;
+                    if (activeMastery && actor) {
+                        let flagKey = "";
+                        if (activeMastery.id === "cleave") flagKey = `lastCleave-${actor.id}`;
+                        else if (activeMastery.id === "nick") flagKey = `lastNick-${actor.id}`;
+                        else flagKey = `lastMastery-${activeMastery.id}-${actor.id}`;
+
+                        if (flagKey) {
+                            const lastTurn = actor.getFlag("not-dice", flagKey);
+                            const currentTurn = game.combat
+                                ? `${game.combat.id}-${game.combat.round ?? 0}-${game.combat.turn ?? 0}`
+                                : Date.now();
+
+                            masteryAlreadyUsed = game.combat
+                                ? lastTurn === currentTurn
+                                : (typeof lastTurn === "number" && (Date.now() - lastTurn) < 6000);
+                        }
+                    }
+
                     const requestedDamageParts = rolls.map(r => {
                         let f = r.formula;
-                        if (isCleaveAttack) {
-                            const actor = item.actor;
+                        if (isCleaveAttack || isOffhandWithoutStyle) {
                             const abilityId = item.abilityMod || item.system?.ability || (item.system?.properties?.has("fin") ? (actor?.system?.abilities?.dex?.mod > actor?.system?.abilities?.str?.mod ? "dex" : "str") : "str");
                             const mod = actor?.system?.abilities?.[abilityId]?.mod ?? 0;
-                            if (mod > 0) {
-                                f = f.replace(/@mod/g, "0");
-                                f = f.replace(/\s*\+\s*(\d+)(\s*\[.*?\])?$/, "");
-                            }
+                            const negativeMod = mod < 0 ? mod : 0;
+                            f = notDiceExtractDiceOnly(item, f, negativeMod);
                         }
                         return {
                             formula: f,
@@ -2180,7 +2278,9 @@ Hooks.once("ready", () => {
                         targetUserId: notDiceFirstActiveGmId(),
                         senderName: game.user?.name || "Jugador",
                         requestedDamageParts: requestedDamageParts,
-                        isCleaveAttack: isCleaveAttack
+                        isCleaveAttack: isCleaveAttack,
+                        isNickAttack: isNickAttack,
+                        masteryAlreadyUsed: masteryAlreadyUsed
                     });
                 } else {
                     ui.notifications?.warn("Not Dice | No se pudo abrir el diálogo de daño personalizado.");
@@ -2454,6 +2554,41 @@ Hooks.on("renderChatMessage", (message, html, data) => {
             });
         } catch(e) {
             console.error("Not Dice | Error launching Cleave attack", e);
+        }
+    });
+
+    html.find(".not-dice-nick-attack-btn").click(async (ev) => {
+        ev.preventDefault();
+        const btn = ev.currentTarget;
+        const attackerId = btn.dataset.attackerId;
+        const weaponUuid = btn.dataset.weaponUuid;
+        const actor = game.actors.get(attackerId) || canvas.tokens.placeables.find(t => t.actor?.id === attackerId)?.actor;
+        
+        if (!actor) return ui.notifications.warn("Not Dice | Actor no encontrado.");
+        if (!actor.isOwner && !game.user.isGM) return ui.notifications.warn("Not Dice | No tienes permiso para controlar este personaje.");
+
+        const targets = Array.from(game.user.targets);
+        if (targets.length === 0) {
+            return ui.notifications.warn("Not Dice | Selecciona primero un nuevo objetivo.");
+        }
+
+        const weapon = await fromUuid(weaponUuid);
+        if (!weapon) return ui.notifications.warn("Not Dice | Arma no encontrada.");
+
+        const attackActivity = weapon.system.activities?.find(a => a.type === "attack");
+        if (!attackActivity) return ui.notifications.warn("Not Dice | No se encontró actividad de ataque en este objeto.");
+
+        btn.disabled = true;
+        btn.style.opacity = "0.6";
+        btn.innerHTML = "<i class='fas fa-check'></i> Ataque Mellar Iniciado";
+
+        try {
+            await attackActivity.rollAttack({
+                event: ev,
+                isNickAttack: true
+            });
+        } catch(e) {
+            console.error("Not Dice | Error launching Nick attack", e);
         }
     });
 });

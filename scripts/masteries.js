@@ -100,7 +100,7 @@ globalThis.notDiceMasteries = {
 
         const ownerUsers = game.users.filter(u => !u.isGM && targetActor.testUserPermission(u, "OWNER")).map(u => u.id);
         const whisperUsers = [...new Set([game.user.id, ...ownerUsers])];
-        
+
         ChatMessage.create({
             whisper: whisperUsers,
             content: `
@@ -131,7 +131,7 @@ globalThis.notDiceMasteries = {
             const handleSaveRoll = async (ev) => {
                 try {
                     await targetActor.rollSavingThrow({ ability: "con", event: ev });
-                } catch(e) {
+                } catch (e) {
                     if (typeof targetActor.rollAbilitySave === "function") {
                         await targetActor.rollAbilitySave("con", { event: ev });
                     } else {
@@ -169,17 +169,17 @@ globalThis.notDiceMasteries = {
                     title: `Maestría: Derribar — ${targetActor.name}`,
                     content: toppleContent,
                     buttons: {
-                        prone: { 
-                            label: "<i class='fas fa-person-falling'></i> Derribado", 
+                        prone: {
+                            label: "<i class='fas fa-person-falling'></i> Derribado",
                             callback: async () => {
                                 await targetActor.toggleStatusEffect("prone", { active: true });
                                 ui.notifications.info(`Not Dice | Derribar: ${targetActor.name} está Derribado.`);
                                 resolveTopple();
                             }
                         },
-                        pass: { 
-                            label: "<i class='fas fa-check'></i> Paso", 
-                            callback: () => resolveTopple() 
+                        pass: {
+                            label: "<i class='fas fa-check'></i> Paso",
+                            callback: () => resolveTopple()
                         }
                     },
                     default: "pass",
@@ -228,7 +228,7 @@ globalThis.notDiceMasteries = {
                 buttons: {
                     ok: {
                         label: "<i class='fas fa-check'></i> Entendido",
-                        callback: () => {}
+                        callback: () => { }
                     }
                 },
                 default: "ok"
@@ -243,7 +243,7 @@ globalThis.notDiceMasteries = {
         if (!targetToken || !attackerActor || !weaponItem) return;
 
         const whisperUsers = game.users.filter(u => u.isGM || attackerActor.testUserPermission(u, "OWNER")).map(u => u.id);
-        
+
         await ChatMessage.create({
             whisper: whisperUsers,
             content: `
@@ -252,6 +252,28 @@ globalThis.notDiceMasteries = {
                     <p style="font-size:0.9em; margin-bottom:10px;">¡Puedes realizar un ataque adicional contra otro objetivo a 5 pies de <strong>${targetToken.name}</strong>!</p>
                     <button class="not-dice-cleave-attack-btn" data-attacker-id="${attackerActor.id}" data-weapon-uuid="${weaponItem.uuid}" style="background: rgba(106,27,154,0.1); border: 1px solid #ba68c8; color: #ba68c8; font-weight: bold; padding: 6px; border-radius:4px; cursor:pointer; width:100%; transition: all 0.2s;">
                         <i class="fas fa-dice-d20"></i> Ataque Especial: Hender
+                    </button>
+                </div>
+            `
+        });
+    },
+
+    /**
+     * Muestra la opción de iniciar un ataque especial de Mellar (Nick).
+     */
+    async runNickEffect(targetToken, attackerActor, weaponItem) {
+        if (!targetToken || !attackerActor || !weaponItem) return;
+
+        const whisperUsers = game.users.filter(u => u.isGM || attackerActor.testUserPermission(u, "OWNER")).map(u => u.id);
+
+        await ChatMessage.create({
+            whisper: whisperUsers,
+            content: `
+                <div class="not-dice-nick-card" style="text-align:center; padding:10px; font-family:inherit;">
+                    <h3 style="margin-bottom:5px; color:#ba68c8;"><i class="fas fa-hand-fist"></i> Maestría: Mellar (Nick)</h3>
+                    <p style="font-size:0.9em; margin-bottom:10px;">¡Puedes realizar un ataque adicional con <strong>${weaponItem.name}</strong> contra un objetivo como parte de esta accion de ataque!</p>
+                    <button class="not-dice-nick-attack-btn" data-attacker-id="${attackerActor.id}" data-weapon-uuid="${weaponItem.uuid}" style="background: rgba(106,27,154,0.1); border: 1px solid #ba68c8; color: #ba68c8; font-weight: bold; padding: 6px; border-radius:4px; cursor:pointer; width:100%; transition: all 0.2s;">
+                        <i class="fas fa-dice-d20"></i> Ataque Especial: Mellar
                     </button>
                 </div>
             `

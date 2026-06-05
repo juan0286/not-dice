@@ -1031,6 +1031,9 @@ Hooks.on("renderChatMessage", (message, html) => {
                     .filter(p => p.formula.length > 0);
             }
 
+            const isNickAttack = btn.dataset.isNickAttack === "true";
+            const isCleaveAttack = btn.dataset.isCleaveAttack === "true";
+
             if (typeof globalThis.notDiceOpenDamageDialog === "function") {
                 const sent = await globalThis.notDiceOpenDamageDialog({
                     uuid,
@@ -1039,7 +1042,9 @@ Hooks.on("renderChatMessage", (message, html) => {
                     notDiceMultipliers,
                     targetUserId,
                     senderName: game.user.name,
-                    requestedDamageParts
+                    requestedDamageParts,
+                    isNickAttack,
+                    isCleaveAttack
                 });
                 btn.disabled = !sent;
                 btn.innerHTML = sent ? "<i class='fas fa-check'></i> Daño Enviado" : "<i class='fas fa-dice-d20'></i> Lanzar Daño";
