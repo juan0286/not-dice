@@ -204,11 +204,11 @@ globalThis.notDiceOpenDamageDialog = async ({
                 ${rowFaces.map(faces => `<button type="button" class="not-dice-damage-add-row" data-faces="${faces}" style="padding:4px 8px; border:1px solid var(--color-border-light-2, #bbb); border-radius:4px; background:rgba(127,127,127,0.1); color:inherit; cursor:pointer; font-size:0.8em;">d${faces}</button>`).join("")}
             </div>
 
-            ${activeMastery?.id === "sap" ? `
-            <div style="display:flex; align-items:center; gap:8px; margin-top:8px; padding:8px 10px; border:1px solid var(--color-border-light-2, #ddd); border-radius:6px; background:rgba(197,34,31,0.08);">
-                <input type="checkbox" id="${dialogId}-sap-cb" class="not-dice-sap-cb" style="margin:0; cursor:pointer;" checked />
-                <label for="${dialogId}-sap-cb" style="font-size:0.85em; font-weight:bold; color:#ff5252; cursor:pointer; margin:0; display:flex; align-items:center; gap:4px;">
-                    <i class="fas fa-crown"></i> Aplicar Debilitar (Sap)
+            ${activeMastery ? `
+            <div style="display:flex; align-items:center; gap:8px; margin-top:8px; padding:8px 10px; border:1px solid var(--color-border-light-2, #ddd); border-radius:6px; background:rgba(106,27,154,0.08);">
+                <input type="checkbox" id="${dialogId}-mastery-cb" class="not-dice-mastery-cb" style="margin:0; cursor:pointer;" checked />
+                <label for="${dialogId}-mastery-cb" style="font-size:0.85em; font-weight:bold; color:#ba68c8; cursor:pointer; margin:0; display:flex; align-items:center; gap:4px;">
+                    <i class="fas fa-crown"></i> Aplicar Maestría: ${activeMastery.label}
                 </label>
             </div>
             ` : ""}
@@ -279,7 +279,7 @@ globalThis.notDiceOpenDamageDialog = async ({
             totals.push(total);
         }
 
-        const applySap = root.querySelector(".not-dice-sap-cb")?.checked ?? false;
+        const applyMastery = root.querySelector(".not-dice-mastery-cb")?.checked ?? false;
 
         game.socket.emit("module.not-dice", {
             type: "not-dice.show-spell-damage",
@@ -290,7 +290,7 @@ globalThis.notDiceOpenDamageDialog = async ({
             targetUserId: gmUserId,
             preCalculatedTotals: totals,
             preCalculatedParts: damageRows,
-            applySap: applySap
+            applyMastery: applyMastery
         });
 
         ui.notifications?.info("Not Dice | Resultado de daño enviado al GM.");
@@ -475,7 +475,7 @@ const notDiceHandleAttackSocket = async (data) => {
     if (data.type === "not-dice.show-spell-damage") {
         try {
             if (globalThis._notDiceActiveAttackDialogs && globalThis._notDiceActiveAttackDialogs[data.itemUuid]) {
-                const wasUpdated = globalThis._notDiceActiveAttackDialogs[data.itemUuid](data.preCalculatedTotals, data.preCalculatedParts, data.applySap);
+                const wasUpdated = globalThis._notDiceActiveAttackDialogs[data.itemUuid](data.preCalculatedTotals, data.preCalculatedParts, data.applyMastery);
                 if (wasUpdated) {
                     ui.notifications?.info(`Not Dice | Daño actualizado por ${data.senderName || "jugador"}.`);
                     return;
@@ -493,7 +493,7 @@ const notDiceHandleAttackSocket = async (data) => {
                     notDicePreCalculatedTotals: data.preCalculatedTotals,
                     notDicePreCalculatedParts: data.preCalculatedParts,
                     notDiceMultipliers: data.notDiceMultipliers,
-                    notDiceApplySap: data.applySap
+                    notDiceApplyMastery: data.applyMastery
                 }
             });
             ui.notifications?.info(`Not Dice | Daño de hechizo enviado por ${data.senderName || "jugador"}.`);
@@ -1135,15 +1135,15 @@ Hooks.once("ready", () => {
             let damageInputsHtml = "";
             for (const part of damageParts) {
                 let specialModsHtml = "";
-                if (part.index === 0 && activeMastery?.id === "sap") {
-                    const initialApplySap = rollConfig.options?.hasOwnProperty("notDiceApplySap")
-                        ? rollConfig.options.notDiceApplySap
+                if (part.index === 0 && activeMastery) {
+                    const initialApplyMastery = rollConfig.options?.hasOwnProperty("notDiceApplyMastery")
+                        ? rollConfig.options.notDiceApplyMastery
                         : true;
-                    const sapChecked = initialApplySap ? "checked" : "";
+                    const masteryChecked = initialApplyMastery ? "checked" : "";
                     specialModsHtml += `
-                    <div style="display:flex; justify-content:center; align-items:center; gap:6px; margin-bottom: 4px; padding: 4px 8px; background: rgba(197,34,31,0.08); border: 1px solid rgba(197,34,31,0.3); border-radius: 4px; width: 100%;" title="MAESTRÍA: DEBILITAR (SAP)">
-                        <input type="checkbox" id="sap-mastery-cb" class="sap-mastery-cb" style="margin:0; cursor:pointer;" ${sapChecked}>
-                        <label for="sap-mastery-cb" style="font-size:0.85em; color:#ff5252; cursor:pointer; font-weight:bold; letter-spacing: 0.5px; margin:0;"><i class="fas fa-crown"></i> Aplicar Debilitar (Sap)</label>
+                    <div style="display:flex; justify-content:center; align-items:center; gap:6px; margin-bottom: 4px; padding: 4px 8px; background: rgba(106,27,154,0.08); border: 1px solid rgba(106,27,154,0.3); border-radius: 4px; width: 100%;" title="MAESTRÍA: ${activeMastery.label.toUpperCase()}">
+                        <input type="checkbox" id="mastery-cb" class="mastery-cb" style="margin:0; cursor:pointer;" ${masteryChecked}>
+                        <label for="mastery-cb" style="font-size:0.85em; color:#ba68c8; cursor:pointer; font-weight:bold; letter-spacing: 0.5px; margin:0;"><i class="fas fa-crown"></i> Aplicar Maestría: ${activeMastery.label}</label>
                     </div>`;
                 }
                 if (hasSavageAttacker) {
@@ -1320,18 +1320,21 @@ Hooks.once("ready", () => {
                     const targetsLocal = resolveTargets();
                     const damageSummaryLines = [];
 
-                    const applySapChecked = root.querySelector("#sap-mastery-cb")?.checked ?? false;
-                    if (applySapChecked && activeMastery?.id === "sap") {
-                        for (const t of targetsLocal) {
-                            if (t.actor) {
-                                await globalThis.notDiceMasteries.applySapEffect(t.actor, item.actor, item);
+                    const applyMasteryChecked = root.querySelector("#mastery-cb")?.checked ?? false;
+                    if (applyMasteryChecked && activeMastery) {
+                        if (activeMastery.id === "sap") {
+                            for (const t of targetsLocal) {
+                                if (t.actor) {
+                                    await globalThis.notDiceMasteries.applySapEffect(t.actor, item.actor, item);
+                                }
                             }
-                        }
-                    }
-
-                    const isToppleMastery = activeMastery && (activeMastery.id === "topple" || activeMastery.label.toLowerCase().includes("topple") || activeMastery.label.toLowerCase().includes("derribar"));
-                    
-                    if (activeMastery && activeMastery.id !== "nick" && activeMastery.id !== "sap" && !isToppleMastery) {
+                        } else if (activeMastery.id === "topple" || activeMastery.label.toLowerCase().includes("topple") || activeMastery.label.toLowerCase().includes("derribar")) {
+                            for (const t of targetsLocal) {
+                                if (t.actor) {
+                                    await globalThis.notDiceMasteries.runToppleSave(t.actor, item.actor, item);
+                                }
+                            }
+                        } else if (activeMastery.id !== "nick") {
                         for (const t of targetsLocal) {
                              if (t.actor) {
                                  // Evitar aplicar la marca más de una vez por turno para el mismo atacante y maestría
@@ -1384,6 +1387,7 @@ Hooks.once("ready", () => {
                                  ui.notifications.info(`Not Dice | Maestría Aplicada: ${activeMastery.label} -> ${t.name}`);
                              }
                         }
+                    }
                     }
 
                     if (isGuidingBolt) {
@@ -1445,15 +1449,18 @@ Hooks.once("ready", () => {
                                 ? { fg: "#166534", accent: "#16a34a", bg: "rgba(22,101,52,0.12)", border: "rgba(22,101,52,0.35)" }
                                 : { fg: "#991b1b", accent: "#dc2626", bg: "rgba(153,27,27,0.12)", border: "rgba(153,27,27,0.35)" };
                             
-                            let debilitadoLabel = "";
-                            if (activeMastery?.id === "sap" && applySapChecked) {
-                                debilitadoLabel = ` <span style="font-size:0.75em; background:rgba(197,34,31,0.15); color:#ff5252; padding:2px 6px; border-radius:8px; border:1px solid rgba(197,34,31,0.3); font-weight:bold; margin-left:4px;">Debilitado</span>`;
+                            let masteryBadge = "";
+                            if (activeMastery && applyMasteryChecked) {
+                                const badgeColor = activeMastery.id === "sap" ? "#ff5252" : "#ba68c8";
+                                const badgeBg = activeMastery.id === "sap" ? "rgba(197,34,31,0.15)" : "rgba(106,27,154,0.15)";
+                                const badgeBorder = activeMastery.id === "sap" ? "rgba(197,34,31,0.3)" : "rgba(106,27,154,0.3)";
+                                masteryBadge = ` <span style="font-size:0.75em; background:${badgeBg}; color:${badgeColor}; padding:2px 6px; border-radius:8px; border:1px solid ${badgeBorder}; font-weight:bold; margin-left:4px;">${activeMastery.label}</span>`;
                             }
 
                             damageSummaryLines.push(`
                                 <div style="display:flex; flex-direction:column; padding:6px 8px; margin-bottom:4px; border:1px solid ${palette.border}; border-radius:6px; background:${palette.bg}; font-size:0.84em; line-height:1.2;">
                                     <div style="display:flex; align-items:center; justify-content:space-between; gap:8px;">
-                                        <span style="font-weight:700; color:${palette.fg}; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${t.name}${debilitadoLabel}</span>
+                                        <span style="font-weight:700; color:${palette.fg}; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${t.name}${masteryBadge}</span>
                                         <span style="color:inherit; opacity:0.9; white-space:nowrap;">${hpBefore} pv</span>
                                         <span style="color:${palette.accent}; font-weight:800; white-space:nowrap;">${operator} ${amount} pv</span>
                                         <span style="color:inherit; opacity:0.9; white-space:nowrap;">${hpAfter} pv</span>
@@ -1474,86 +1481,7 @@ Hooks.once("ready", () => {
                         });
                     }
 
-                    // --- Topple / Derribar Mastery ---
-                    const isTopple = activeMastery && (
-                        activeMastery.id === "topple" || activeMastery.label.toLowerCase().includes("topple") || activeMastery.label.toLowerCase().includes("derribar")
-                    );
-                    if (isTopple) {
-                        const attackerProf = actor?.system?.attributes?.prof ?? 0;
-                        const strMod = actor?.system?.abilities?.str?.mod ?? 0;
-                        const dexMod = actor?.system?.abilities?.dex?.mod ?? 0;
-                        const attackMod = Math.max(strMod, dexMod);
-                        const toppleDC = 8 + attackerProf + attackMod;
-
-                        for (const t of targetsLocal) {
-                            if (!t.actor) continue;
-                            const conSaveRaw = t.actor.system?.abilities?.con?.save;
-                            const conSave = typeof conSaveRaw === "number" ? conSaveRaw : (t.actor.system?.abilities?.con?.mod ?? 0);
-                            const conSaveLabel = conSave >= 0 ? `+${conSave}` : `${conSave}`;
-
-                            const ownerUsers = game.users.filter(u => !u.isGM && t.actor.testUserPermission(u, "OWNER")).map(u => u.id);
-                            const whisperUsers = [...new Set([game.user.id, ...ownerUsers])];
-                            
-                            ChatMessage.create({
-                                whisper: whisperUsers,
-                                content: `
-                                    <div style="text-align:center; padding:10px; font-family:inherit;">
-                                        <h3 style="margin-bottom:5px;">Maestría: Derribar</h3>
-                                        <p style="font-size:0.9em; margin-bottom:10px;"><strong>${t.name}</strong> debe superar una Salvación.</p>
-                                        <div style="font-size: 1.2em; margin-bottom:10px; color:inherit;">CD: <span style="font-size: 1.4em; font-weight: 900; color: #ff5252;">${toppleDC}</span></div>
-                                        <button class="not-dice-topple-save" data-actor-id="${t.actor.id}" data-dc="${toppleDC}" style="background: rgba(197,34,31,0.1); border: 1px solid #d32f2f; color: #ff5252; font-weight: bold; padding: 6px; border-radius:4px; cursor:pointer; width:100%; transition: all 0.2s;">
-                                            <i class="fas fa-shield-alt"></i> Lanzar Salvación de Fuerza
-                                        </button>
-                                    </div>
-                                `
-                            });
-
-                            await new Promise(resolveTopple => {
-                                const DialogV2 = foundry?.applications?.api?.DialogV2;
-                                const toppleContent = `
-                                    <div style="text-align: center; padding: 10px; font-family:inherit;">
-                                        <div style="font-size:1.1em; margin-bottom:8px; color:inherit;"><strong>${t.name}</strong> debe superar una</div>
-                                        <div style="font-size: 1.3em; font-weight: bold; background:rgba(197,34,31,0.1); color:#ff5252; padding:6px; border-radius:6px; border:1px solid rgba(197,34,31,0.4); margin-bottom:10px;">Salvación de Constitución</div>
-                                        <div style="font-size: 1.2em; margin-bottom:10px; color:inherit;">CD: <span style="font-size: 1.4em; font-weight: 900; color: #ff5252;">${toppleDC}</span></div>
-                                        <div style="font-size: 0.9em; color:inherit; opacity:0.8;">Bono CON: <strong>${conSaveLabel}</strong></div>
-                                    </div>`;
-
-                                if (DialogV2) {
-                                    new DialogV2({
-                                        window: { title: `Maestría: Derribar — ${t.name}` },
-                                        content: toppleContent,
-                                        position: { width: 320 },
-                                        buttons: [
-                                            { action: "prone", label: "Derribado", icon: "fa-solid fa-person-falling" },
-                                            { action: "pass", label: "Pasa", icon: "fa-solid fa-check", default: true }
-                                        ],
-                                        submit: async result => {
-                                            if (result === "prone") {
-                                                await t.actor.toggleStatusEffect("prone", { active: true });
-                                                ui.notifications.info(`Not Dice | Derribar: ${t.name} está Derribado.`);
-                                            }
-                                            resolveTopple();
-                                        }
-                                    }).render(true);
-                                } else {
-                                    new Dialog({
-                                        title: `Maestría: Derribar — ${t.name}`,
-                                        content: toppleContent,
-                                        buttons: {
-                                            prone: { label: "<i class='fas fa-person-falling'></i> Derribado", callback: async () => {
-                                                await t.actor.toggleStatusEffect("prone", { active: true });
-                                                ui.notifications.info(`Not Dice | Derribar: ${t.name} está Derribado.`);
-                                                resolveTopple();
-                                            }},
-                                            pass: { label: "<i class='fas fa-check'></i> Paso", callback: () => resolveTopple() }
-                                        },
-                                        default: "pass",
-                                        close: () => resolveTopple()
-                                    }, { width: 320 }).render(true);
-                                }
-                            });
-                        }
-                    }
+                    // Topple Dialog moved to runToppleSave in masteries.js
                 }
                 return { total: totalValues.reduce((acc, curr) => acc + curr.value, 0) };
             };
@@ -1842,13 +1770,13 @@ Hooks.once("ready", () => {
                 });
 
                 globalThis._notDiceActiveAttackDialogs = globalThis._notDiceActiveAttackDialogs || {};
-                globalThis._notDiceActiveAttackDialogs[item.uuid] = (totals, parts = null, applySap = null) => {
+                globalThis._notDiceActiveAttackDialogs[item.uuid] = (totals, parts = null, applyMastery = null) => {
                     const reqBtn = root.querySelector(`#not-dice-btn-request-damage-attack`);
                     if (!document.body.contains(root)) return false; // El DOM del dialog ya no existe
 
-                    if (applySap !== null) {
-                        const sapCb = root.querySelector("#sap-mastery-cb");
-                        if (sapCb) sapCb.checked = !!applySap;
+                    if (applyMastery !== null) {
+                        const masteryCb = root.querySelector("#mastery-cb");
+                        if (masteryCb) masteryCb.checked = !!applyMastery;
                     }
 
                     const safeTotals = Array.isArray(totals) ? totals : [];
@@ -2374,10 +2302,10 @@ Hooks.on("renderChatMessage", (message, html, data) => {
         if (!actor) return ui.notifications.warn("Not Dice | Actor no encontrado.");
         
         try {
-            await actor.rollSavingThrow({ ability: "str", event: ev });
+            await actor.rollSavingThrow({ ability: "con", event: ev });
         } catch(e) {
             if (typeof actor.rollAbilitySave === "function") {
-                await actor.rollAbilitySave("str", { event: ev });
+                await actor.rollAbilitySave("con", { event: ev });
             } else {
                 console.error("Not Dice | No se pudo lanzar la salvación", e);
             }

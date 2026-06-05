@@ -80,5 +80,120 @@ globalThis.notDiceMasteries = {
             return true;
         }
         return false;
+    },
+
+    /**
+     * Ejecuta la lógica de la maestría Derribar (Topple) para un objetivo.
+     */
+    async runToppleSave(targetActor, attackerActor, weaponItem) {
+        if (!targetActor || !attackerActor) return;
+
+        const attackerProf = attackerActor.system?.attributes?.prof ?? 0;
+        const strMod = attackerActor.system?.abilities?.str?.mod ?? 0;
+        const dexMod = attackerActor.system?.abilities?.dex?.mod ?? 0;
+        const attackMod = Math.max(strMod, dexMod);
+        const toppleDC = 8 + attackerProf + attackMod;
+
+        const conSaveRaw = targetActor.system?.abilities?.con?.save;
+        const conSave = typeof conSaveRaw === "number" ? conSaveRaw : (targetActor.system?.abilities?.con?.mod ?? 0);
+        const conSaveLabel = conSave >= 0 ? `+${conSave}` : `${conSave}`;
+
+        const ownerUsers = game.users.filter(u => !u.isGM && targetActor.testUserPermission(u, "OWNER")).map(u => u.id);
+        const whisperUsers = [...new Set([game.user.id, ...ownerUsers])];
+        
+        ChatMessage.create({
+            whisper: whisperUsers,
+            content: `
+                <div style="text-align:center; padding:10px; font-family:inherit;">
+                    <h3 style="margin-bottom:5px;">Maestría: Derribar</h3>
+                    <p style="font-size:0.9em; margin-bottom:10px;"><strong>${targetActor.name}</strong> debe superar una Salvación.</p>
+                    <div style="font-size: 1.2em; margin-bottom:10px; color:inherit;">CD: <span style="font-size: 1.4em; font-weight: 900; color: #ff5252;">${toppleDC}</span></div>
+                    <button class="not-dice-topple-save" data-actor-id="${targetActor.id}" data-dc="${toppleDC}" style="background: rgba(197,34,31,0.1); border: 1px solid #d32f2f; color: #ff5252; font-weight: bold; padding: 6px; border-radius:4px; cursor:pointer; width:100%; transition: all 0.2s;">
+                        <i class="fas fa-shield-alt"></i> Lanzar Salvación de Constitución
+                    </button>
+                </div>
+            `
+        });
+
+        return new Promise(resolveTopple => {
+            const DialogV2 = foundry?.applications?.api?.DialogV2;
+            const toppleContent = `
+                <div style="text-align: center; padding: 10px; font-family:inherit;">
+                    <div style="font-size:1.1em; margin-bottom:8px; color:inherit;"><strong>${targetActor.name}</strong> debe superar una</div>
+                    <div style="font-size: 1.3em; font-weight: bold; background:rgba(197,34,31,0.1); color:#ff5252; padding:6px; border-radius:6px; border:1px solid rgba(197,34,31,0.4); margin-bottom:10px;">Salvación de Constitución</div>
+                    <div style="font-size: 1.2em; margin-bottom:10px; color:inherit;">CD: <span style="font-size: 1.4em; font-weight: 900; color: #ff5252;">${toppleDC}</span></div>
+                    <div style="font-size: 0.9em; color:inherit; opacity:0.8; margin-bottom:12px;">Bono CON: <strong>${conSaveLabel}</strong></div>
+                    <button class="not-dice-dialog-topple-save" style="background: rgba(26,115,232,0.1); border: 1px solid #1a73e8; color: #1a73e8; font-weight: bold; padding: 6px; border-radius:4px; cursor:pointer; width:100%; transition: all 0.2s; margin-bottom:10px;">
+                        <i class="fas fa-dice-d20"></i> Tirar Salvación (CON)
+                    </button>
+                </div>`;
+
+            const handleSaveRoll = async (ev) => {
+                try {
+                    await targetActor.rollSavingThrow({ ability: "con", event: ev });
+                } catch(e) {
+                    if (typeof targetActor.rollAbilitySave === "function") {
+                        await targetActor.rollAbilitySave("con", { event: ev });
+                    } else {
+                        console.error("Not Dice | No se pudo lanzar la salvación", e);
+                    }
+                }
+            };
+
+            if (DialogV2) {
+                const app = new DialogV2({
+                    window: { title: `Maestría: Derribar — ${targetActor.name}` },
+                    content: toppleContent,
+                    position: { width: 320 },
+                    buttons: [
+                        { action: "prone", label: "Derribado", icon: "fa-solid fa-person-falling" },
+                        { action: "pass", label: "Pasa", icon: "fa-solid fa-check", default: true }
+                    ],
+                    submit: async result => {
+                        if (result === "prone") {
+                            await targetActor.toggleStatusEffect("prone", { active: true });
+                            ui.notifications.info(`Not Dice | Derribar: ${targetActor.name} está Derribado.`);
+                        }
+                        resolveTopple();
+                    }
+                });
+                app.render(true).then(() => {
+                    const btn = app.element.querySelector(".not-dice-dialog-topple-save");
+                    btn?.addEventListener("click", async (ev) => {
+                        ev.preventDefault();
+                        await handleSaveRoll(ev);
+                    });
+                });
+            } else {
+                new Dialog({
+                    title: `Maestría: Derribar — ${targetActor.name}`,
+                    content: toppleContent,
+                    buttons: {
+                        prone: { 
+                            label: "<i class='fas fa-person-falling'></i> Derribado", 
+                            callback: async () => {
+                                await targetActor.toggleStatusEffect("prone", { active: true });
+                                ui.notifications.info(`Not Dice | Derribar: ${targetActor.name} está Derribado.`);
+                                resolveTopple();
+                            }
+                        },
+                        pass: { 
+                            label: "<i class='fas fa-check'></i> Paso", 
+                            callback: () => resolveTopple() 
+                        }
+                    },
+                    default: "pass",
+                    render: html => {
+                        const root = html[0] || html;
+                        const btn = root.querySelector(".not-dice-dialog-topple-save");
+                        btn?.addEventListener("click", async (ev) => {
+                            ev.preventDefault();
+                            await handleSaveRoll(ev);
+                        });
+                    },
+                    close: () => resolveTopple()
+                }, { width: 320 }).render(true);
+            }
+        });
     }
 };
