@@ -234,5 +234,27 @@ globalThis.notDiceMasteries = {
                 default: "ok"
             }, { width: 340 }).render(true);
         }
+    },
+
+    /**
+     * Muestra la opción de iniciar un ataque especial de Hender (Cleave).
+     */
+    async runCleaveEffect(targetToken, attackerActor, weaponItem) {
+        if (!targetToken || !attackerActor || !weaponItem) return;
+
+        const whisperUsers = game.users.filter(u => u.isGM || attackerActor.testUserPermission(u, "OWNER")).map(u => u.id);
+        
+        await ChatMessage.create({
+            whisper: whisperUsers,
+            content: `
+                <div class="not-dice-cleave-card" style="text-align:center; padding:10px; font-family:inherit;">
+                    <h3 style="margin-bottom:5px; color:#ba68c8;"><i class="fas fa-hand-fist"></i> Maestría: Hender (Cleave)</h3>
+                    <p style="font-size:0.9em; margin-bottom:10px;">¡Puedes realizar un ataque adicional contra otro objetivo a 5 pies de <strong>${targetToken.name}</strong>!</p>
+                    <button class="not-dice-cleave-attack-btn" data-attacker-id="${attackerActor.id}" data-weapon-uuid="${weaponItem.uuid}" style="background: rgba(106,27,154,0.1); border: 1px solid #ba68c8; color: #ba68c8; font-weight: bold; padding: 6px; border-radius:4px; cursor:pointer; width:100%; transition: all 0.2s;">
+                        <i class="fas fa-dice-d20"></i> Ataque Especial: Hender
+                    </button>
+                </div>
+            `
+        });
     }
 };
