@@ -21,15 +21,23 @@ globalThis.notDiceMasteries = {
     /**
      * Comprueba si un actor ya tiene aplicado el efecto de Debilitar (Sap).
      */
-    hasSapEffect(actor) {
+    hasSapEffect(actor, attackerActor = null) {
         if (!actor) return false;
         const effects = typeof globalThis.notDiceGetActorEffects === "function"
             ? globalThis.notDiceGetActorEffects(actor)
             : Array.from(actor.appliedEffects || actor.effects || []);
         return effects.some(e => {
             const name = (e.name || "").toLowerCase();
-            return (name.includes("maestría:") || name.includes("maestria:") || name.includes("mastery:")) &&
-                (name.includes("debilitar") || name.includes("sap") || name.includes("minar"));
+            const flags = e.flags?.["not-dice"] || e.getFlag?.("not-dice") || {};
+            const isSap = ((name.includes("maestría:") || name.includes("maestria:") || name.includes("mastery:")) &&
+                (name.includes("debilitar") || name.includes("sap") || name.includes("minar"))) || !!flags.isSapEffect;
+            
+            if (!isSap) return false;
+            if (!attackerActor) return true; // Si no se especifica atacante, cualquier debilitar coincide
+
+            const matchesAttackerId = flags.appliedActorId && flags.appliedActorId === attackerActor.id;
+            const matchesAttackerName = name.includes(`(${attackerActor.name.toLowerCase()})`);
+            return matchesAttackerId || matchesAttackerName;
         });
     },
 
@@ -39,9 +47,9 @@ globalThis.notDiceMasteries = {
     async applySapEffect(targetActor, attackerActor, weaponItem) {
         if (!targetActor || !attackerActor) return false;
 
-        // Verificar si ya tiene el efecto (no acumulable de ningún oponente)
-        if (this.hasSapEffect(targetActor)) {
-            ui.notifications?.warn(`Not Dice | ${targetActor.name} ya tiene un efecto de Debilitar (Sap) activo.`);
+        // Verificar si ya tiene el efecto del mismo oponente
+        if (this.hasSapEffect(targetActor, attackerActor)) {
+            ui.notifications?.warn(`Not Dice | ${targetActor.name} ya tiene un efecto de Debilitar (Sap) de ${attackerActor.name} activo.`);
             return false;
         }
 

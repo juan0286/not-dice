@@ -1383,14 +1383,16 @@ Hooks.once("ready", () => {
             const applyAndResolve = async (container, isDamage = false) => {
                 const root = container instanceof HTMLElement ? container : container[0];
 
-                // --- Consume Mastery Effects (Sap/Vex) ---
-                const sapEffect = getActorEffects(item.actor).find(e => {
+                // --- Consume All Sap Mastery Effects ---
+                const sapEffects = getActorEffects(item.actor).filter(e => {
                     const eName = (e.name || e.label || "").toLowerCase();
-                    return eName.includes("sap") || eName.includes("debilitar") || eName.includes("minar");
+                    const flags = e.flags?.["not-dice"] || e.getFlag?.("not-dice") || {};
+                    return eName.includes("sap") || eName.includes("debilitar") || eName.includes("minar") || !!flags.isSapEffect;
                 });
-                if (sapEffect) {
-                    await item.actor.deleteEmbeddedDocuments("ActiveEffect", [sapEffect.id]);
-                    ui.notifications.info(`Not Dice | Desventaja Consumida: ${sapEffect.name}`);
+                if (sapEffects.length > 0) {
+                    const idsToDelete = sapEffects.map(e => e.id);
+                    await item.actor.deleteEmbeddedDocuments("ActiveEffect", idsToDelete);
+                    ui.notifications.info(`Not Dice | Desventajas de Debilitar Consumidas (${sapEffects.length})`);
                 }
 
                 const currentTargets = resolveTargets();
