@@ -204,6 +204,7 @@ globalThis.notDiceOpenDamageDialog = async ({
 
     const speaker = ChatMessage.getSpeaker({ actor: actualItem.actor });
     const activeMastery = globalThis.notDiceMasteries?.getActiveMastery(actualItem) || null;
+    const isMasteryDisabled = !!(isCleaveAttack || isNickAttack || masteryAlreadyUsed);
     const damageTypeLabels = CONFIG.DND5E?.damageTypes ?? {};
     const rowFaces = [4, 6, 8, 10, 12, 20];
     const dialogId = `not-dice-damage-${Math.random().toString(36).slice(2, 10)}`;
@@ -269,11 +270,11 @@ globalThis.notDiceOpenDamageDialog = async ({
                 ${rowFaces.map(faces => `<button type="button" class="not-dice-damage-add-row" data-faces="${faces}" style="padding:4px 8px; border:1px solid var(--color-border-light-2, #bbb); border-radius:4px; background:rgba(127,127,127,0.1); color:inherit; cursor:pointer; font-size:0.8em;">d${faces}</button>`).join("")}
             </div>
 
-            ${activeMastery && !isCleaveAttack && !isNickAttack ? `
-            <div style="display:flex; align-items:center; gap:8px; margin-top:8px; padding:8px 10px; border:1px solid var(--color-border-light-2, #ddd); border-radius:6px; background:rgba(106,27,154,0.08);">
-                <input type="checkbox" id="${dialogId}-mastery-cb" class="not-dice-mastery-cb" style="margin:0; cursor:pointer;" ${masteryAlreadyUsed ? 'disabled' : 'checked'} />
-                <label for="${dialogId}-mastery-cb" style="font-size:0.85em; font-weight:bold; color:#ba68c8; cursor:pointer; margin:0; display:flex; align-items:center; gap:4px; ${masteryAlreadyUsed ? 'opacity:0.65;' : ''}">
-                    <i class="fas fa-crown"></i> Aplicar Maestría: ${activeMastery.label}${masteryAlreadyUsed ? " (Ya Usada)" : ""}
+            ${activeMastery ? `
+            <div style="display:flex; align-items:center; gap:8px; margin-top:8px; padding:8px 10px; border:1px solid var(--color-border-light-2, #ddd); border-radius:6px; background:rgba(106,27,154,0.08); ${isMasteryDisabled ? 'opacity:0.65;' : ''}">
+                <input type="checkbox" id="${dialogId}-mastery-cb" class="not-dice-mastery-cb" style="margin:0; cursor:pointer;" ${isMasteryDisabled ? 'disabled' : 'checked'} />
+                <label for="${dialogId}-mastery-cb" style="font-size:0.85em; font-weight:bold; color:#ba68c8; cursor:pointer; margin:0; display:flex; align-items:center; gap:4px;">
+                    <i class="fas fa-crown"></i> Aplicar Maestría: ${activeMastery.label}${isMasteryDisabled ? " (Ya Usada)" : ""}
                 </label>
             </div>
             ` : ""}
@@ -1197,16 +1198,17 @@ Hooks.once("ready", () => {
             let damageInputsHtml = "";
             for (const part of damageParts) {
                 let specialModsHtml = "";
-                if (part.index === 0 && activeMastery && !isCleaveAttack && !isNickAttack) {
+                if (part.index === 0 && activeMastery) {
                     const initialApplyMastery = rollConfig.options?.hasOwnProperty("notDiceApplyMastery")
                         ? rollConfig.options.notDiceApplyMastery
                         : true;
-                    const disabledAttr = masteryAlreadyUsed ? "disabled" : "";
-                    const checkedAttr = (initialApplyMastery && !masteryAlreadyUsed) ? "checked" : "";
+                    const isMasteryDisabled = !!(isCleaveAttack || isNickAttack || masteryAlreadyUsed);
+                    const disabledAttr = isMasteryDisabled ? "disabled" : "";
+                    const checkedAttr = (initialApplyMastery && !isMasteryDisabled) ? "checked" : "";
                     specialModsHtml += `
-                    <div style="display:flex; justify-content:center; align-items:center; gap:6px; margin-bottom: 4px; padding: 4px 8px; background: rgba(106,27,154,0.08); border: 1px solid rgba(106,27,154,0.3); border-radius: 4px; width: 100%;" title="MAESTRÍA: ${activeMastery.label.toUpperCase()}">
+                    <div style="display:flex; justify-content:center; align-items:center; gap:6px; margin-bottom: 4px; padding: 4px 8px; background: rgba(106,27,154,0.08); border: 1px solid rgba(106,27,154,0.3); border-radius: 4px; width: 100%; ${isMasteryDisabled ? 'opacity:0.65;' : ''}" title="MAESTRÍA: ${activeMastery.label.toUpperCase()}">
                         <input type="checkbox" id="mastery-cb" class="mastery-cb" style="margin:0; cursor:pointer;" ${checkedAttr} ${disabledAttr}>
-                        <label for="mastery-cb" style="font-size:0.85em; color:#ba68c8; cursor:pointer; font-weight:bold; letter-spacing: 0.5px; margin:0; ${masteryAlreadyUsed ? 'opacity:0.65;' : ''}"><i class="fas fa-crown"></i> Aplicar Maestría: ${activeMastery.label}${masteryAlreadyUsed ? " (Ya Usada)" : ""}</label>
+                        <label for="mastery-cb" style="font-size:0.85em; color:#ba68c8; cursor:pointer; font-weight:bold; letter-spacing: 0.5px; margin:0;"><i class="fas fa-crown"></i> Aplicar Maestría: ${activeMastery.label}${isMasteryDisabled ? " (Ya Usada)" : ""}</label>
                     </div>`;
                 }
                 if (hasSavageAttacker) {
