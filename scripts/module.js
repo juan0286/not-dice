@@ -18,8 +18,8 @@ const notDiceMockEvent = (extra = {}) => {
     return {
         target: { closest: () => null },
         currentTarget: { closest: () => null },
-        preventDefault: () => {},
-        stopPropagation: () => {},
+        preventDefault: () => { },
+        stopPropagation: () => { },
         ...extra
     };
 };
@@ -552,12 +552,12 @@ const notDiceHandleAttackSocket = async (data) => {
 
             const item = data.itemUuid ? await fromUuid(data.itemUuid) : null;
             const activity = item?.system?.activities?.find(a => a.type === "save" || a.type === "damage" || a.type === "attack") || (item?.type === "save" || item?.type === "spell" ? item : null);
-            
+
             if (!item || !activity) return ui.notifications?.warn("Not Dice | No se pudo recuperar la actividad para el daño del hechizo.");
 
             await activity.rollDamage({
                 event: notDiceMockEvent({ targetIds: data.targetIds }),
-                options: { 
+                options: {
                     notDicePreCalculatedTotals: data.preCalculatedTotals,
                     notDicePreCalculatedParts: data.preCalculatedParts,
                     notDiceMultipliers: data.notDiceMultipliers,
@@ -567,13 +567,18 @@ const notDiceHandleAttackSocket = async (data) => {
                 isNickAttack: data.isNickAttack
             });
             ui.notifications?.info(`Not Dice | Daño de hechizo enviado por ${data.senderName || "jugador"}.`);
-        } catch(e) {
+        } catch (e) {
             console.error("Not Dice | Error en show-spell-damage", e);
         }
         return;
     }
 
     if (data.type !== "not-dice.show-attack-dialog") return;
+
+    if (!data.targetIds || data.targetIds.length === 0) {
+        ui.notifications?.warn(`Not Dice | ${data.senderName} intentó atacar sin seleccionar un objetivo.`);
+        return;
+    }
 
     try {
         const item = data.itemUuid ? await fromUuid(data.itemUuid) : null;
@@ -582,7 +587,7 @@ const notDiceHandleAttackSocket = async (data) => {
 
         await activity.rollDamage({
             event: notDiceMockEvent({ targetIds: data.targetIds, senderUserId: data.senderUserId }),
-            options: { 
+            options: {
                 notDiceAutoTriggered: data.notDiceAutoTriggered !== false,
                 isCleaveAttack: data.isCleaveAttack
             },
@@ -610,15 +615,15 @@ Hooks.once("ready", () => {
         const originalBuildConfigure = D20Roll.buildConfigure;
         const originalBuildEvaluate = D20Roll.buildEvaluate;
 
-        D20Roll.buildConfigure = async function(config, dialog, message) {
+        D20Roll.buildConfigure = async function (config, dialog, message) {
             console.log("Not Dice | D20 buildConfigure intercepted", config);
 
             if (config.isNickAttack) {
                 console.log("Not Dice | >>> ATAQUE MELLAR DETECTADO <<<");
                 const actor = config.subject?.actor;
-                const hasTwoWeaponStyle = actor?.items?.some(i => 
-                    i.system?.identifier === "two-weapon-fighting" || 
-                    i.name === "Two-Weapon Fighting" || 
+                const hasTwoWeaponStyle = actor?.items?.some(i =>
+                    i.system?.identifier === "two-weapon-fighting" ||
+                    i.name === "Two-Weapon Fighting" ||
                     (i.name.toLowerCase().includes("combate con dos armas") && i.type === "feat")
                 );
 
@@ -629,10 +634,10 @@ Hooks.once("ready", () => {
                 }
             }
 
-            const isAttack = config.subject && 
-                             (config.subject.type === "attack" || 
-                              config.subject.constructor.name === "AttackActivity");
-            
+            const isAttack = config.subject &&
+                (config.subject.type === "attack" ||
+                    config.subject.constructor.name === "AttackActivity");
+
             if (isAttack) {
                 console.log("Not Dice | Skipping system dialog and chat message for Attack.");
                 dialog = foundry.utils.mergeObject(dialog ?? {}, { configure: false });
@@ -641,9 +646,17 @@ Hooks.once("ready", () => {
             return originalBuildConfigure.call(this, config, dialog, message);
         };
 
-        D20Roll.buildEvaluate = async function(rolls, rollConfig, messageConfig) {
+        D20Roll.buildEvaluate = async function (rolls, rollConfig, messageConfig) {
             console.log("Not Dice | D20 buildEvaluate intercepted", rolls);
             const isAttack = notDiceIsAttack(rollConfig.subject);
+
+            if (isAttack) {
+                const targets = game.user.targets;
+                if (!targets || targets.size === 0) {
+                    ui.notifications?.warn("Not Dice | Debes seleccionar al menos un objetivo para atacar.");
+                    return [];
+                }
+            }
 
             // Player branch: solo empaqueta y envía al GM
             if (isAttack && !game.user.isGM) {
@@ -654,12 +667,12 @@ Hooks.once("ready", () => {
                 console.log("Not Dice | Auto-resolving Attack Roll (Silent).");
                 for (const roll of rolls) {
                     const total = 20;
-                    const numericTerm = new foundry.dice.terms.NumericTerm({number: total});
+                    const numericTerm = new foundry.dice.terms.NumericTerm({ number: total });
                     numericTerm._evaluated = true;
                     roll.terms = [numericTerm];
                     roll._total = total;
                     roll._evaluated = true;
-                    
+
                     // Solo el GM debe disparar el daño automático y mostrar popup.
                     if (game.user.isGM) {
                         setTimeout(() => {
@@ -668,7 +681,7 @@ Hooks.once("ready", () => {
                                 const isCleave = rollConfig.isCleaveAttack || rollConfig.options?.isCleaveAttack || rollConfig.event?.isCleaveAttack || false;
                                 rollConfig.subject.rollDamage({
                                     event: rollConfig.event,
-                                    options: { 
+                                    options: {
                                         notDiceAutoTriggered: true,
                                         isCleaveAttack: isCleave
                                     },
@@ -693,7 +706,7 @@ Hooks.once("ready", () => {
 
         const notDiceEvaluateDamageRoll = async (rolls, rollConfig, messageConfig) => {
             console.log("Not Dice | Damage buildEvaluate intercepted", rolls);
-            
+
             const passedMultipliers = rollConfig?.notDiceMultipliers || rollConfig?.options?.notDiceMultipliers || rollConfig?.event?.notDiceMultipliers || {};
             const forcedParts = Array.isArray(rollConfig?.options?.notDicePreCalculatedParts) ? rollConfig.options.notDicePreCalculatedParts : [];
             const hasForcedParts = forcedParts.length > 0;
@@ -710,14 +723,14 @@ Hooks.once("ready", () => {
                 }
                 rolls = rebuiltRolls;
             }
-            
+
             // --- Nick Attack Logic ---
             const isNickAttack = rollConfig.isNickAttack || rollConfig.options?.isNickAttack || rollConfig.event?.isNickAttack || false;
             const actor = rollConfig.subject?.actor || rollConfig.subject?.item?.actor;
-            const hasTwoWeaponStyle = actor?.items?.some(i => 
-                  i.system?.identifier === "two-weapon-fighting" || 
-                  i.name === "Two-Weapon Fighting" || 
-                  (i.name.toLowerCase().includes("combate con dos armas") && i.type === "feat")
+            const hasTwoWeaponStyle = actor?.items?.some(i =>
+                i.system?.identifier === "two-weapon-fighting" ||
+                i.name === "Two-Weapon Fighting" ||
+                (i.name.toLowerCase().includes("combate con dos armas") && i.type === "feat")
             );
             const isOffhandWithoutStyle = isNickAttack && !hasTwoWeaponStyle;
             if (isOffhandWithoutStyle) console.log("Not Dice | Offhand Attack without Style - Removing Ability Mod from formula.");
@@ -769,7 +782,7 @@ Hooks.once("ready", () => {
                     const name = (i.name || "").toLowerCase();
                     return i.type === "feat" && (name.includes("great weapon master") || name.includes("maestro de armas pesadas") || name.includes("maestro en armas pesadas"));
                 });
-                
+
                 const isHeavy = item.system?.properties?.has("hvy");
                 const actionType = rollConfig.subject?.actionType || item.system?.actionType;
                 const isMelee = actionType === "mwak";
@@ -809,18 +822,18 @@ Hooks.once("ready", () => {
             const damageParts = [];
             const allDamageTypes = new Set();
             const activityDamageParts = rollConfig?.subject?.damage?.parts || [];
-            
+
             for (let i = 0; i < rolls.length; i++) {
                 const roll = rolls[i];
                 const forcedPart = hasForcedParts ? forcedParts[i] : null;
                 let originalFormula = forcedPart?.formula ? String(forcedPart.formula) : roll.formula;
-                
+
                 if (isOffhandWithoutStyle || isCleaveAttack) {
-                     const abilityId = item?.abilityMod || item?.system?.ability || (item?.system?.properties?.has("fin") ? (actor?.system?.abilities?.dex?.mod > actor?.system?.abilities?.str?.mod ? "dex" : "str") : "str");
-                     const mod = actor?.system?.abilities?.[abilityId]?.mod ?? 0;
-                     const negativeMod = mod < 0 ? mod : 0;
-                     originalFormula = notDiceExtractDiceOnly(item, originalFormula, negativeMod);
-                     console.log("Not Dice | Formula limpiada para Nick/Cleave:", originalFormula);
+                    const abilityId = item?.abilityMod || item?.system?.ability || (item?.system?.properties?.has("fin") ? (actor?.system?.abilities?.dex?.mod > actor?.system?.abilities?.str?.mod ? "dex" : "str") : "str");
+                    const mod = actor?.system?.abilities?.[abilityId]?.mod ?? 0;
+                    const negativeMod = mod < 0 ? mod : 0;
+                    originalFormula = notDiceExtractDiceOnly(item, originalFormula, negativeMod);
+                    console.log("Not Dice | Formula limpiada para Nick/Cleave:", originalFormula);
                 }
 
                 let versatileFormula = null;
@@ -838,18 +851,18 @@ Hooks.once("ready", () => {
                 }
 
                 if (damageTypeKey) {
-                    if(!availableTypes.includes(damageTypeKey)) availableTypes.push(damageTypeKey);
+                    if (!availableTypes.includes(damageTypeKey)) availableTypes.push(damageTypeKey);
                     allDamageTypes.add(damageTypeKey);
                 }
                 if (availableTypes.length > 0) {
-                     availableTypes.forEach(t => allDamageTypes.add(t));
+                    availableTypes.forEach(t => allDamageTypes.add(t));
                 }
 
                 const damageConfig = damageTypeKey ? CONFIG.DND5E.damageTypes[damageTypeKey] : null;
                 let damageTypeLabel = damageConfig?.label || damageTypeKey || "None";
                 const customLabel = roll.options?.notDiceLabel;
                 if (customLabel) damageTypeLabel = `${customLabel} (${damageTypeLabel})`;
-                
+
                 if (damageConfig?.icon) {
                     damageTypeLabel = `<img src="${damageConfig.icon}" style="width: 16px; height: 16px; vertical-align: text-bottom; margin-right: 4px; border: none; filter: drop-shadow(0px 1px 1px rgba(0,0,0,0.3));" /> ${damageTypeLabel}`;
                 }
@@ -865,7 +878,7 @@ Hooks.once("ready", () => {
                     isOffhandWithoutStyle: isOffhandWithoutStyle
                 });
             }
-                
+
             const multiplierOptions = globalThis.notDiceConstants.multiplierOptions;
 
             // Helper to resolve targets
@@ -880,14 +893,14 @@ Hooks.once("ready", () => {
 
             const targets = resolveTargets();
             let targetHtml = "";
-            
+
             if (targets.length > 0) {
                 targetHtml += `<h3 style="border-bottom: 1px solid var(--color-border-light-2, #ccc); padding-bottom: 4px; margin-bottom: 10px; font-size: 1.1em; color: inherit; opacity: 0.9;">Objetivos (${targets.length}):</h3>`;
                 targetHtml += `<div style="display: flex; flex-direction: column; gap: 8px;">`;
                 for (const t of targets) {
                     const traits = t.actor?.system?.traits;
                     if (!traits) continue;
-                    
+
                     let isResistant = false;
                     let isImmune = false;
                     let isVulnerable = false;
@@ -897,21 +910,21 @@ Hooks.once("ready", () => {
                         if (traits.di?.value?.has(dt)) isImmune = true;
                         if (traits.dv?.value?.has(dt)) isVulnerable = true;
                     }
-                    
+
                     const getLabels = (set) => {
                         if (!set) return "";
                         return Array.from(set).map(k => CONFIG.DND5E.damageTypes[k]?.label || k).join(", ");
                     };
-                    
+
                     const dr = getLabels(traits.dr?.value);
                     const di = getLabels(traits.di?.value);
                     const dv = getLabels(traits.dv?.value);
                     const ac = t.actor?.system?.attributes?.ac?.value;
                     const tokenImg = t.document?.texture?.src || t.actor?.img || "";
-                    
+
                     let borderStyle = "border: 1px solid var(--color-border-light-2, #ddd);";
                     let bgStyle = "background: rgba(127,127,127,0.1);";
-                    
+
                     if (isImmune) { borderStyle = "border: 1px solid rgba(197,34,31,0.4);"; bgStyle = "background: rgba(197,34,31,0.1);"; }
                     else if (isVulnerable) { borderStyle = "border: 1px solid rgba(11,87,208,0.4);"; bgStyle = "background: rgba(11,87,208,0.1);"; }
                     else if (isResistant) { borderStyle = "border: 1px solid rgba(176,96,0,0.4);"; bgStyle = "background: rgba(176,96,0,0.1);"; }
@@ -974,6 +987,52 @@ Hooks.once("ready", () => {
             let attackRollState = null;
             let attackRollMessageId = null;
 
+            const getActorEffects = (act) => {
+                if (!act) return [];
+                let effs = [];
+                if (act.appliedEffects) {
+                    effs = Array.from(act.appliedEffects);
+                } else if (act.effects) {
+                    effs = Array.from(act.effects.contents || act.effects.values() || act.effects);
+                }
+                return effs.map(e => Array.isArray(e) ? e[1] : e).filter(Boolean);
+            };
+
+            const attackerName = item?.actor?.name || "";
+            const attackerEffects = getActorEffects(item?.actor || actor);
+            const hasSapEffect = attackerEffects.some(e => {
+                const eName = (e.name || e.label || "").toLowerCase();
+                return eName.includes("sap") || eName.includes("debilitar") || eName.includes("minar");
+            });
+
+            const hasVexAdvantage = targets.some(t => {
+                const targetActor = t.actor || t;
+                const targetEffects = getActorEffects(targetActor);
+                return targetEffects.some(e => {
+                    const eName = (e.name || e.label || "").toLowerCase();
+                    return (eName.includes("vex") || eName.includes("molestar")) &&
+                        eName.includes(`(${attackerName.toLowerCase()})`);
+                });
+            });
+
+            const hasGuidingBoltAdvantage = targets.some(t => {
+                const targetActor = t.actor || t;
+                const targetEffects = getActorEffects(targetActor);
+                return targetEffects.some(e => {
+                    const eName = (e.name || e.label || "").toLowerCase();
+                    return eName.includes("saeta guía") || eName.includes("saeta guia") || eName.includes("guiding bolt");
+                });
+            });
+
+            console.log("Not Dice | Debug Vex/Sap:", {
+                attackerName,
+                targets: targets.map(t => t.name),
+                attackerEffects: attackerEffects.map(e => e.name || e.label),
+                hasSapEffect,
+                hasVexAdvantage,
+                hasGuidingBoltAdvantage
+            });
+
             const getAttackRollVisualState = (selectedD20, total) => {
                 const targetAC = targets.length > 0 ? (targets[0].actor?.system?.attributes?.ac?.value ?? null) : null;
                 if (selectedD20 === 1) return { bg: "rgba(197,34,31,0.1)", border: "rgba(197,34,31,0.4)", text: "#ff5252" };
@@ -1008,12 +1067,36 @@ Hooks.once("ready", () => {
                     diceHtml = `<span style="${originalStyle}">${state.originalD20}</span> / <span style="${extraStyle}">${state.extraD20}</span>`;
                 }
 
-                const contentHtml = `<div style="display:flex; align-items:center; justify-content:center; gap:8px;">
-                    <button type="button" class="not-dice-attack-disadvantage-btn" title="Convertir a Desventaja" style="width:34px; height:34px; border:1px solid rgba(197,34,31,0.4); border-radius:6px; background:rgba(197,34,31,0.1); color:#ff5252; cursor:pointer; flex-shrink:0;"><i class="fas fa-arrow-down"></i></button>
-                    <div class="not-dice-attack-roll-result" style="flex:1; min-width:0; font-size: 1.1em; line-height:1.2;">
-                        ${modeBadge}<span style="color:inherit; opacity:0.7;">d20:</span> ${diceHtml}${modifierHtml} = <span style="font-size: 1.4em; font-weight:900;">${total}</span>
+                let notices = [];
+                if (hasVexAdvantage) {
+                    notices.push(`<div style="font-size:0.78em; color:#4caf50; font-weight:bold; margin-top:2px; display:flex; align-items:center; justify-content:center; gap:4px;"><i class="fas fa-exclamation-triangle"></i> Debe tener Ventaja por Molestar (Vex)</div>`);
+                }
+                if (hasGuidingBoltAdvantage) {
+                    notices.push(`<div style="font-size:0.78em; color:#ffb300; font-weight:bold; margin-top:2px; display:flex; align-items:center; justify-content:center; gap:4px;"><i class="fas fa-exclamation-triangle"></i> Debe tener Ventaja por Saeta Guía</div>`);
+                }
+                if (hasSapEffect) {
+                    notices.push(`<div style="font-size:0.78em; color:#ff5252; font-weight:bold; margin-top:2px; display:flex; align-items:center; justify-content:center; gap:4px;"><i class="fas fa-exclamation-triangle"></i> Debe tener Desventaja por Debilitar (Sap)</div>`);
+                }
+                const noticeHtml = notices.join("");
+
+                const showAdvHighlight = hasVexAdvantage || hasGuidingBoltAdvantage;
+                const advBtnStyle = showAdvHighlight
+                    ? "width:34px; height:34px; border:2px solid #4caf50; border-radius:6px; background:rgba(19,115,51,0.25); color:#4caf50; cursor:pointer; flex-shrink:0; box-shadow: 0 0 8px rgba(76,175,80,0.5); transform: scale(1.05);"
+                    : "width:34px; height:34px; border:1px solid rgba(19,115,51,0.4); border-radius:6px; background:rgba(19,115,51,0.1); color:#4caf50; cursor:pointer; flex-shrink:0;";
+
+                const disadvBtnStyle = hasSapEffect
+                    ? "width:34px; height:34px; border:2px solid #ff5252; border-radius:6px; background:rgba(197,34,31,0.25); color:#ff5252; cursor:pointer; flex-shrink:0; box-shadow: 0 0 8px rgba(255,82,82,0.5); transform: scale(1.05);"
+                    : "width:34px; height:34px; border:1px solid rgba(197,34,31,0.4); border-radius:6px; background:rgba(197,34,31,0.1); color:#ff5252; cursor:pointer; flex-shrink:0;";
+
+                const contentHtml = `<div style="display:flex; flex-direction:column; gap:4px; align-items:stretch; justify-content:center; width:100%;">
+                    <div style="display:flex; align-items:center; justify-content:center; gap:8px;">
+                        <button type="button" class="not-dice-attack-disadvantage-btn" title="Convertir a Desventaja" style="${disadvBtnStyle}"><i class="fas fa-arrow-down"></i></button>
+                        <div class="not-dice-attack-roll-result" style="flex:1; min-width:0; font-size: 1.1em; line-height:1.2;">
+                            ${modeBadge}<span style="color:inherit; opacity:0.7;">d20:</span> ${diceHtml}${modifierHtml} = <span style="font-size: 1.4em; font-weight:900;">${total}</span>
+                        </div>
+                        <button type="button" class="not-dice-attack-advantage-btn" title="Convertir a Ventaja" style="${advBtnStyle}"><i class="fas fa-arrow-up"></i></button>
                     </div>
-                    <button type="button" class="not-dice-attack-advantage-btn" title="Convertir a Ventaja" style="width:34px; height:34px; border:1px solid rgba(19,115,51,0.4); border-radius:6px; background:rgba(19,115,51,0.1); color:#4caf50; cursor:pointer; flex-shrink:0;"><i class="fas fa-arrow-up"></i></button>
+                    ${noticeHtml}
                 </div>`;
                 const boxStyle = `margin-bottom: 12px; color: ${visual.text}; text-align: center; border: 1px solid ${visual.border}; background: ${visual.bg}; border-radius: 6px; padding: 8px; box-shadow: inset 0 1px 3px rgba(0,0,0,0.05);`;
 
@@ -1030,45 +1113,28 @@ Hooks.once("ready", () => {
                     masteryBadge = `<span style="display:inline-block; font-size:0.75em; background:rgba(106,27,154,0.15); color:#ba68c8; padding:3px 8px; border-radius:12px; border:1px solid rgba(106,27,154,0.3); margin-right:4px; font-weight:bold;"><i class="fas fa-crown"></i> Maestría: ${activeMastery.label}</span>`;
                 }
 
-                const hasSapEffect = item.actor?.effects?.some(e => 
-                    (e.name.toLowerCase().includes("maestria") || e.name.toLowerCase().includes("mastery")) &&
-                    (e.name.toLowerCase().includes("sap") || e.name.toLowerCase().includes("debilitar") || e.name.toLowerCase().includes("vax"))
-                );
-                
                 let sapBadge = hasSapEffect ? `<span style="display:inline-block; font-size:0.75em; background:rgba(197,34,31,0.15); color:#ff5252; padding:3px 8px; border-radius:12px; border:1px solid rgba(197,34,31,0.3); margin-right:4px; font-weight:bold;"><i class="fas fa-arrow-down"></i> Desventaja (Debilitado)</span>` : "";
 
-                const targetsLocal = Array.from(game.user.targets);
-                const attackerName = item.actor.name;
-                const hasVexAdvantage = targetsLocal.some(t => 
-                    t.actor?.effects?.some(e => 
-                        (e.name.toLowerCase().includes("maestria") || e.name.toLowerCase().includes("mastery")) &&
-                        (e.name.toLowerCase().includes("vex") || e.name.toLowerCase().includes("molestar")) &&
-                        e.name.includes(`(${attackerName})`)
-                    )
-                );
+                const targetsLocal = targets;
 
                 let vexBadge = hasVexAdvantage ? `<span style="display:inline-block; font-size:0.75em; background:rgba(19,115,51,0.15); color:#4caf50; padding:3px 8px; border-radius:12px; border:1px solid rgba(19,115,51,0.3); margin-right:4px; font-weight:bold;"><i class="fas fa-arrow-up"></i> Ventaja (Molestar)</span>` : "";
-
-                const hasGuidingBoltAdvantage = targetsLocal.some(t =>
-                    t.actor?.effects?.some(e => {
-                        const eName = (e.name || "").toLowerCase();
-                        return eName.includes("saeta guía") || eName.includes("saeta guia") || eName.includes("guiding bolt");
-                    })
-                );
 
                 let guidingBoltBadge = hasGuidingBoltAdvantage ? `<span style="display:inline-block; font-size:0.75em; background:rgba(176,96,0,0.15); color:#ffb300; padding:3px 8px; border-radius:12px; border:1px solid rgba(176,96,0,0.3); margin-right:4px; font-weight:bold;"><i class="fas fa-star"></i> Ventaja (Saeta Guía)</span>` : "";
 
                 // --- Simultaneous Attack Roll ---
                 let attackRollHtml = "";
                 let attackRollBoxStyle = "";
-                const isAutoTriggered = rollConfig?.notDiceAutoTriggered || 
-                                        rollConfig?.options?.notDiceAutoTriggered || 
-                                        rollConfig?.event?.notDiceAutoTriggered || 
-                                        rollConfig?.options?.event?.notDiceAutoTriggered || 
-                                        false;
+                const isAutoTriggered = rollConfig?.notDiceAutoTriggered ||
+                    rollConfig?.options?.notDiceAutoTriggered ||
+                    rollConfig?.event?.notDiceAutoTriggered ||
+                    rollConfig?.options?.event?.notDiceAutoTriggered ||
+                    false;
                 if (game.settings.get("not-dice", "enableSimultaneousRoll") && isAutoTriggered) {
                     try {
-                        let formula = `1d20`;
+                        let d20Term = "1d20";
+                        let rollMode = "normal";
+
+                        let formula = `${d20Term}`;
                         let parts = [];
                         if (toHit) {
                             let cleanToHit = toHit.trim();
@@ -1081,7 +1147,7 @@ Hooks.once("ready", () => {
                         if (parts.length > 0) {
                             formula += ` ${parts.join(" + ")}`;
                         }
-                        
+
                         const rollData = item.getRollData();
                         const r = await new Roll(formula, rollData).evaluate();
 
@@ -1099,11 +1165,16 @@ Hooks.once("ready", () => {
                         });
                         attackRollMessageId = attackChatMessage?.id || null;
 
+                        const activeDie = r.terms?.[0];
+                        const dieResults = activeDie?.results ?? [];
+                        const originalD20 = dieResults[0]?.result ?? 0;
+                        const extraD20 = dieResults[1]?.result ?? null;
+
                         attackRollState = {
-                            mode: "normal",
-                            originalD20: r.terms?.[0]?.total ?? 0,
-                            extraD20: null,
-                            bonus: r.total - (r.terms?.[0]?.total ?? 0)
+                            mode: rollMode,
+                            originalD20: originalD20,
+                            extraD20: extraD20,
+                            bonus: r.total - (activeDie?.total ?? originalD20)
                         };
 
                         const display = buildAttackRollDisplay(attackRollState);
@@ -1126,7 +1197,7 @@ Hooks.once("ready", () => {
                         </div>
                     </div>
                 </div>`;
-                
+
                 if (attackRollHtml) {
                     attackHtml += `<div class="not-dice-attack-roll-box" style="${attackRollBoxStyle}">${attackRollHtml}</div>`;
                 }
@@ -1137,21 +1208,21 @@ Hooks.once("ready", () => {
             // --- Build Logic For Multiple Damage Parts ---
 
             const damageStyle = {
-                 acid: { color: "#aeea00", icon: "🧪" },
-                 bludgeoning: { color: "inherit", icon: "🔨" },
-                 cold: { color: "#4fc3f7", icon: "❄️" },
-                 fire: { color: "#ff5252", icon: "🔥" },
-                 force: { color: "#e040fb", icon: "✨" }, 
-                 lightning: { color: "#ffd600", icon: "⚡" },
-                 necrotic: { color: "#b0bec5", icon: "💀" },
-                 piercing: { color: "inherit", icon: "🏹" },
-                 poison: { color: "#69f0ae", icon: "🤢" },
-                 psychic: { color: "#ff4081", icon: "🧠" },
-                 radiant: { color: "#ffca28", icon: "☀️" },
-                 slashing: { color: "inherit", icon: "⚔️" },
-                 thunder: { color: "#7c4dff", icon: "🔊" },
-                 healing: { color: "#69f0ae", icon: "💚" },
-                 temphp: { color: "inherit", icon: "🛡️" }
+                acid: { color: "#aeea00", icon: "🧪" },
+                bludgeoning: { color: "inherit", icon: "🔨" },
+                cold: { color: "#4fc3f7", icon: "❄️" },
+                fire: { color: "#ff5252", icon: "🔥" },
+                force: { color: "#e040fb", icon: "✨" },
+                lightning: { color: "#ffd600", icon: "⚡" },
+                necrotic: { color: "#b0bec5", icon: "💀" },
+                piercing: { color: "inherit", icon: "🏹" },
+                poison: { color: "#69f0ae", icon: "🤢" },
+                psychic: { color: "#ff4081", icon: "🧠" },
+                radiant: { color: "#ffca28", icon: "☀️" },
+                slashing: { color: "inherit", icon: "⚔️" },
+                thunder: { color: "#7c4dff", icon: "🔊" },
+                healing: { color: "#69f0ae", icon: "💚" },
+                temphp: { color: "inherit", icon: "🛡️" }
             };
 
             const hasSavageAttacker = actor?.items?.some(i => {
@@ -1163,8 +1234,8 @@ Hooks.once("ready", () => {
                 const n = (i.name || "").toLowerCase();
                 const sysId = i.system?.identifier || "";
                 return i.type === "feat" && (
-                    n.includes("great weapon fighting") || 
-                    n.includes("armas a dos manos") || 
+                    n.includes("great weapon fighting") ||
+                    n.includes("armas a dos manos") ||
                     n.includes("arma a dos manos") ||
                     sysId === "great-weapon-fighting"
                 );
@@ -1225,11 +1296,11 @@ Hooks.once("ready", () => {
                         <label for="gwf-${part.index}" style="font-size:0.85em; color:#1a73e8; cursor:pointer; font-weight:bold; letter-spacing: 0.5px; margin:0;"><i class="fas fa-gavel"></i> Armas a Dos Manos</label>
                     </div>`;
                 }
-                
+
                 if (specialModsHtml) specialModsHtml = `<div style="margin-bottom:8px;">${specialModsHtml}</div>`;
                 let labelHtml = part.label;
                 let currentDamageType = part.type;
-                
+
                 if (part.availableTypes && part.availableTypes.length > 1) {
                     let optionsHtml = part.availableTypes.map(t => {
                         const c = CONFIG.DND5E.damageTypes[t];
@@ -1238,17 +1309,17 @@ Hooks.once("ready", () => {
                         const style = damageStyle[t] || { color: "inherit", icon: "" };
                         return `<option value="${t}" style="color: ${style.color}; font-weight: bold;" ${selected}>${style.icon} ${l}</option>`;
                     }).join("");
-                    
+
                     const initialStyle = damageStyle[currentDamageType] || { color: "inherit" };
                     labelHtml = `<select name="type-${part.index}" style="width: 100%; border: 1px solid transparent; font-weight: bold; background: transparent; color: ${initialStyle.color}; font-size:1.05em; cursor:pointer;">${optionsHtml}</select>`;
                 } else {
-                     if (part.type) {
-                         const style = damageStyle[part.type] || { color: "inherit", icon: "" };
-                         const hiddenInput = `<input type="hidden" name="type-${part.index}" value="${part.type}">`; 
-                         let content = part.label;
-                         if (!content.includes("<img") && style.icon) content = `${style.icon} ${content}`;
-                         labelHtml = `<span style="color: ${style.color}; font-weight: bold; font-size:1.05em;">${content}</span>${hiddenInput}`;
-                     }
+                    if (part.type) {
+                        const style = damageStyle[part.type] || { color: "inherit", icon: "" };
+                        const hiddenInput = `<input type="hidden" name="type-${part.index}" value="${part.type}">`;
+                        let content = part.label;
+                        if (!content.includes("<img") && style.icon) content = `${style.icon} ${content}`;
+                        labelHtml = `<span style="color: ${style.color}; font-weight: bold; font-size:1.05em;">${content}</span>${hiddenInput}`;
+                    }
                 }
 
                 damageInputsHtml += `
@@ -1312,24 +1383,25 @@ Hooks.once("ready", () => {
                 const root = container instanceof HTMLElement ? container : container[0];
 
                 // --- Consume Mastery Effects (Sap/Vex) ---
-                const sapEffect = item.actor?.effects?.find(e => 
-                    (e.name.toLowerCase().includes("maestria") || e.name.toLowerCase().includes("mastery")) &&
-                    (e.name.toLowerCase().includes("sap") || e.name.toLowerCase().includes("debilitar") || e.name.toLowerCase().includes("vax"))
-                );
+                const sapEffect = getActorEffects(item.actor).find(e => {
+                    const eName = (e.name || e.label || "").toLowerCase();
+                    return eName.includes("sap") || eName.includes("debilitar") || eName.includes("minar");
+                });
                 if (sapEffect) {
                     await item.actor.deleteEmbeddedDocuments("ActiveEffect", [sapEffect.id]);
+                    ui.notifications.info(`Not Dice | Desventaja Consumida: ${sapEffect.name}`);
                 }
 
                 const currentTargets = resolveTargets();
                 if (currentTargets.length > 0) {
-                     const attackerName = item.actor.name;
-                     for (const t of currentTargets) {
+                    const attackerName = item.actor.name;
+                    for (const t of currentTargets) {
                         if (!t.actor) continue;
-                        const vexEffect = t.actor.effects?.find(e => 
-                            (e.name.toLowerCase().includes("maestria") || e.name.toLowerCase().includes("mastery")) &&
-                            (e.name.toLowerCase().includes("vex") || e.name.toLowerCase().includes("molestar")) &&
-                            e.name.includes(`(${attackerName})`)
-                        );
+                        const vexEffect = getActorEffects(t.actor).find(e => {
+                            const eName = (e.name || e.label || "").toLowerCase();
+                            return (eName.includes("vex") || eName.includes("molestar")) &&
+                                eName.includes(`(${attackerName.toLowerCase()})`);
+                        });
                         if (vexEffect) {
                             await t.actor.deleteEmbeddedDocuments("ActiveEffect", [vexEffect.id]);
                             ui.notifications.info(`Not Dice | Ventaja Consumida: ${vexEffect.name}`);
@@ -1343,7 +1415,7 @@ Hooks.once("ready", () => {
                             await t.actor.deleteEmbeddedDocuments("ActiveEffect", [guidingBoltEffect.id]);
                             ui.notifications.info(`Not Dice | Ventaja Consumida: ${guidingBoltEffect.name}`);
                         }
-                     }
+                    }
                 }
 
 
@@ -1357,17 +1429,17 @@ Hooks.once("ready", () => {
 
                     let selectedType = root.querySelector(`[name='type-${part.index}']`)?.value;
                     if (!selectedType) selectedType = part.type;
-                    
+
                     const roll = part.roll;
                     roll._total = val;
                     roll._evaluated = true;
                     roll.options.type = selectedType;
 
                     const options = roll.terms[0]?.options ?? {};
-                    const newTerm = new foundry.dice.terms.NumericTerm({number: val, options: options});
+                    const newTerm = new foundry.dice.terms.NumericTerm({ number: val, options: options });
                     newTerm._evaluated = true;
                     roll.terms = [newTerm];
-                    
+
                     totalValues.push({ value: val, type: selectedType });
                 }
 
@@ -1431,16 +1503,16 @@ Hooks.once("ready", () => {
                             if (alreadyUsed) {
                                 ui.notifications.warn(`Not Dice | Ya activaste Mellar (Nick) este turno.`);
                             } else {
-                                const hasDualWielder = item.actor?.items?.some(i => 
-                                    i.system?.identifier === "dual-wielder" || 
-                                    i.name?.toLowerCase().includes("dual wielder") || 
+                                const hasDualWielder = item.actor?.items?.some(i =>
+                                    i.system?.identifier === "dual-wielder" ||
+                                    i.name?.toLowerCase().includes("dual wielder") ||
                                     i.name?.toLowerCase().includes("combatiente a dos armas") ||
                                     i.name?.toLowerCase().includes("combatiente con dos armas")
                                 ) || false;
 
-                                const nickWeaponItem = item.actor?.itemTypes?.weapon?.find(w => 
-                                    w.id !== item.id && 
-                                    w.system.equipped && 
+                                const nickWeaponItem = item.actor?.itemTypes?.weapon?.find(w =>
+                                    w.id !== item.id &&
+                                    w.system.equipped &&
                                     (w.system.properties?.has("lgt") || (hasDualWielder && !w.system.properties?.has("2h")))
                                 );
 
@@ -1455,59 +1527,71 @@ Hooks.once("ready", () => {
                                 }
                             }
                         } else if (activeMastery.id !== "nick") {
-                        for (const t of targetsLocal) {
-                             if (t.actor) {
-                                 // Evitar aplicar la marca más de una vez por turno para el mismo atacante y maestría
-                                 const masteryFlagKey = `lastMastery-${activeMastery.id}-${item.actor.id}`;
-                                 const lastTurn = t.actor.getFlag("not-dice", masteryFlagKey);
-                                 const currentTurn = game.combat 
-                                     ? `${game.combat.id}-${game.combat.round ?? 0}-${game.combat.turn ?? 0}`
-                                     : Date.now();
+                            for (const t of targetsLocal) {
+                                if (t.actor) {
+                                    // Evitar aplicar la marca más de una vez por turno para el mismo atacante y maestría
+                                    const masteryFlagKey = `lastMastery-${activeMastery.id}-${item.actor.id}`;
+                                    const lastTurn = t.actor.getFlag("not-dice", masteryFlagKey);
+                                    const currentTurn = game.combat
+                                        ? `${game.combat.id}-${game.combat.round ?? 0}-${game.combat.turn ?? 0}`
+                                        : Date.now();
 
-                                 const alreadyApplied = game.combat 
-                                     ? lastTurn === currentTurn
-                                     : (typeof lastTurn === "number" && (Date.now() - lastTurn) < 6000);
+                                    const alreadyApplied = game.combat
+                                        ? lastTurn === currentTurn
+                                        : (typeof lastTurn === "number" && (Date.now() - lastTurn) < 6000);
 
-                                 if (alreadyApplied) {
-                                     console.log(`Not Dice | La marca de maestría ${activeMastery.label} ya fue aplicada a ${t.name} este turno.`);
-                                     continue;
-                                 }
+                                    if (alreadyApplied) {
+                                        console.log(`Not Dice | La marca de maestría ${activeMastery.label} ya fue aplicada a ${t.name} este turno.`);
+                                        continue;
+                                    }
 
-                                 const effectData = {
-                                    name: `Maestría: ${activeMastery.label} (${item.actor.name})`,
-                                    img: item.img || "icons/svg/aura.svg",
-                                    icon: item.img || "icons/svg/aura.svg",
-                                    origin: item.uuid,
-                                    duration: { rounds: 1 }
-                                 };
+                                    let effectName = `Maestría: ${activeMastery.label} (${item.actor.name})`;
+                                    if (activeMastery.id === "vex" || activeMastery.label.toLowerCase().includes("molestar")) {
+                                        effectName = `Maestría: Molestar (${item.actor.name})`;
+                                    }
 
-                                 if (activeMastery.id === "vex" || activeMastery.label.toLowerCase().includes("molestar")) {
-                                     effectData.duration.turns = 1;
-                                 }
+                                    const existingEffects = t.actor.appliedEffects || t.actor.effects || [];
+                                    const hasExisting = existingEffects.some(e => e.name === effectName || e.name === `Maestría: Vex (${item.actor.name})`);
+                                    if (hasExisting) {
+                                        console.log(`Not Dice | ${t.name} ya tiene el efecto ${effectName}.`);
+                                        continue;
+                                    }
 
-                                 if (activeMastery.id === "slow" || activeMastery.label.toLowerCase().includes("ralentizar")) {
-                                     effectData.changes = [
-                                         { key: "system.attributes.movement.walk", mode: 2, value: "-10" },
-                                         { key: "system.attributes.movement.fly", mode: 2, value: "-10" },
-                                         { key: "system.attributes.movement.swim", mode: 2, value: "-10" },
-                                         { key: "system.attributes.movement.climb", mode: 2, value: "-10" },
-                                         { key: "system.attributes.movement.burrow", mode: 2, value: "-10" }
-                                     ];
-                                 }
+                                    const effectData = {
+                                        name: effectName,
+                                        img: item.img || "icons/svg/aura.svg",
+                                        icon: item.img || "icons/svg/aura.svg",
+                                        origin: item.uuid,
+                                        duration: { rounds: 1 }
+                                    };
 
-                                 if (game.combat) {
-                                    effectData.duration.startRound = game.combat.round;
-                                    effectData.duration.startTurn = game.combat.turn;
-                                 } else {
-                                    effectData.duration.startTime = game.time.worldTime;
-                                 }
+                                    if (activeMastery.id === "vex" || activeMastery.label.toLowerCase().includes("molestar")) {
+                                        effectData.duration.turns = 1;
+                                    }
 
-                                 await t.actor.createEmbeddedDocuments("ActiveEffect", [effectData]);
-                                 await t.actor.setFlag("not-dice", masteryFlagKey, currentTurn);
-                                 ui.notifications.info(`Not Dice | Maestría Aplicada: ${activeMastery.label} -> ${t.name}`);
-                             }
+                                    if (activeMastery.id === "slow" || activeMastery.label.toLowerCase().includes("ralentizar")) {
+                                        effectData.changes = [
+                                            { key: "system.attributes.movement.walk", mode: 2, value: "-10" },
+                                            { key: "system.attributes.movement.fly", mode: 2, value: "-10" },
+                                            { key: "system.attributes.movement.swim", mode: 2, value: "-10" },
+                                            { key: "system.attributes.movement.climb", mode: 2, value: "-10" },
+                                            { key: "system.attributes.movement.burrow", mode: 2, value: "-10" }
+                                        ];
+                                    }
+
+                                    if (game.combat) {
+                                        effectData.duration.startRound = game.combat.round;
+                                        effectData.duration.startTurn = game.combat.turn;
+                                    } else {
+                                        effectData.duration.startTime = game.time.worldTime;
+                                    }
+
+                                    await t.actor.createEmbeddedDocuments("ActiveEffect", [effectData]);
+                                    await t.actor.setFlag("not-dice", masteryFlagKey, currentTurn);
+                                    ui.notifications.info(`Not Dice | Maestría Aplicada: ${activeMastery.label} -> ${t.name}`);
+                                }
+                            }
                         }
-                    }
                     }
 
                     if (isGuidingBolt) {
@@ -1568,7 +1652,7 @@ Hooks.once("ready", () => {
                             const palette = hasHealingType
                                 ? { fg: "#166534", accent: "#16a34a", bg: "rgba(22,101,52,0.12)", border: "rgba(22,101,52,0.35)" }
                                 : { fg: "#991b1b", accent: "#dc2626", bg: "rgba(153,27,27,0.12)", border: "rgba(153,27,27,0.35)" };
-                            
+
                             let masteryBadge = "";
                             if (activeMastery && applyMasteryChecked) {
                                 const badgeColor = activeMastery.id === "sap" ? "#ff5252" : "#ba68c8";
@@ -1699,7 +1783,7 @@ Hooks.once("ready", () => {
             };
 
             const notDiceVersion = game.modules.get("not-dice")?.version || "";
-            
+
             // --- Handlers for interactive UI ---
             const onRenderComplete = (element) => {
                 const root = element instanceof HTMLElement ? element : element[0];
@@ -1779,7 +1863,7 @@ Hooks.once("ready", () => {
                     select.addEventListener("change", (ev) => {
                         const newType = ev.currentTarget.value;
                         const currentTypes = Array.from(root.querySelectorAll("select[name^='type-'], input[type='hidden'][name^='type-']")).map(el => el.value);
-                        
+
                         targets.forEach(t => {
                             let baseMult = passedMultipliers[t.id] !== undefined ? passedMultipliers[t.id] : 1;
                             let detectedMultiplier = 1;
@@ -1795,7 +1879,7 @@ Hooks.once("ready", () => {
                             const targetSelect = root.querySelector(`select[name='target-multiplier-${t.id}']`);
                             if (targetSelect) targetSelect.value = detectedMultiplier;
                         });
-                        
+
                         const style = damageStyle[newType] || { color: "inherit" };
                         ev.currentTarget.style.color = style.color;
                     });
@@ -1812,25 +1896,25 @@ Hooks.once("ready", () => {
                 const executeDamageRoll = async (baseFormula, isCrit, idx) => {
                     let formula = baseFormula;
                     if (isCrit) formula = doubleDice(formula);
-                    
+
                     const isSavage = root.querySelector(`#savage-${idx}`)?.checked;
                     const isGwf = root.querySelector(`#gwf-${idx}`)?.checked;
                     const selectedType = root.querySelector(`[name='type-${idx}']`)?.value || damageParts.find(p => p.index == idx)?.type;
-                    
+
                     if (isGwf) {
                         formula = applyGwf(formula);
                     }
 
                     const flavorBase = isCrit ? "Daño Crítico" : "Daño Normal";
                     const actorSpeaker = ChatMessage.getSpeaker({ actor: item?.actor });
-                    
+
                     let extraMods = [];
                     if (isSavage) extraMods.push("Salvaje");
                     if (isGwf) extraMods.push("Armas a Dos Manos");
                     if (hasPiercer && selectedType === "piercing") extraMods.push("Perforador");
-                    
+
                     const modsString = extraMods.length > 0 ? ` (${extraMods.join(" | ")})` : "";
-                    
+
                     const buildPiercerButtons = (r, dmgIdx) => {
                         if (!hasPiercer || selectedType !== "piercing") return "";
                         let buttonsHtml = '<div style="display: flex; gap: 4px; flex-wrap: wrap; margin-top: 8px;">';
@@ -1843,14 +1927,14 @@ Hooks.once("ready", () => {
                         buttonsHtml += '</div>';
                         return buttonsHtml;
                     };
-                    
+
                     if (isSavage) {
                         const r1 = await new Roll(formula).evaluate();
                         const r2 = await new Roll(formula).evaluate();
-                        
+
                         await r1.toMessage({ flavor: `${flavorBase}${modsString.replace(")", " - Tirada 1)")}${buildPiercerButtons(r1, idx)}`, speaker: actorSpeaker });
                         await r2.toMessage({ flavor: `${flavorBase}${modsString.replace(")", " - Tirada 2)")}${buildPiercerButtons(r2, idx)}`, speaker: actorSpeaker });
-                        
+
                         return Math.max(r1.total, r2.total);
                     } else {
                         const r = await new Roll(formula).evaluate();
@@ -2164,7 +2248,7 @@ Hooks.once("ready", () => {
                                 callback: async html => {
                                     await applyAndResolve(html, true);
                                     unregisterChatAttackModeHandler();
-                                    resolve(rolls); 
+                                    resolve(rolls);
                                 }
                             },
                             ok: {
@@ -2189,51 +2273,51 @@ Hooks.once("ready", () => {
 
             for (const r of rolls) {
                 if (!r._evaluated) {
-                     r._total = 0;
-                     r._evaluated = true;
-                     r.terms = [new foundry.dice.terms.NumericTerm({number: 0, options: {}})];
+                    r._total = 0;
+                    r._evaluated = true;
+                    r.terms = [new foundry.dice.terms.NumericTerm({ number: 0, options: {} })];
                 }
             }
             return rolls;
         };
 
-        DamageRoll.buildConfigure = async function(config, dialog, message) {
-           console.log("Not Dice | Damage buildConfigure intercepted", config);
-           if (!config?.options?.notDiceBypass) {
-               dialog = foundry.utils.mergeObject(dialog ?? {}, { configure: false });
-               if (message) message.create = false;
-           }
-           return originalDamageBuildConfigure.call(this, config, dialog, message);
+        DamageRoll.buildConfigure = async function (config, dialog, message) {
+            console.log("Not Dice | Damage buildConfigure intercepted", config);
+            if (!config?.options?.notDiceBypass) {
+                dialog = foundry.utils.mergeObject(dialog ?? {}, { configure: false });
+                if (message) message.create = false;
+            }
+            return originalDamageBuildConfigure.call(this, config, dialog, message);
         };
 
-        DamageRoll.buildEvaluate = async function(rolls, rollConfig, messageConfig) {
+        DamageRoll.buildEvaluate = async function (rolls, rollConfig, messageConfig) {
             if (rollConfig?.options?.notDiceBypass) {
-                 return originalDamageBuildEvaluate.call(this, rolls, rollConfig, messageConfig);
+                return originalDamageBuildEvaluate.call(this, rolls, rollConfig, messageConfig);
             }
 
-            const isAutoTriggered = rollConfig?.notDiceAutoTriggered || 
-                                    rollConfig?.options?.notDiceAutoTriggered || 
-                                    rollConfig?.event?.notDiceAutoTriggered || 
-                                    rollConfig?.options?.event?.notDiceAutoTriggered || 
-                                    false;
+            const isAutoTriggered = rollConfig?.notDiceAutoTriggered ||
+                rollConfig?.options?.notDiceAutoTriggered ||
+                rollConfig?.event?.notDiceAutoTriggered ||
+                rollConfig?.options?.event?.notDiceAutoTriggered ||
+                false;
 
             const hasPreCalculated = rollConfig?.notDicePreCalculatedTotals ||
-                                     rollConfig?.options?.notDicePreCalculatedTotals ||
-                                     rollConfig?.event?.options?.notDicePreCalculatedTotals ||
-                                     false;
+                rollConfig?.options?.notDicePreCalculatedTotals ||
+                rollConfig?.event?.options?.notDicePreCalculatedTotals ||
+                false;
 
             // Si es una tirada manual de daño (no auto-disparada y sin totales precalculados), abrimos el diálogo de daño personalizado en la pantalla del usuario
             if (!isAutoTriggered && !hasPreCalculated) {
                 const subject = rollConfig?.subject;
                 const item = subject?.item || (subject?.documentName === "Item" ? subject : null);
-                
+
                 if (item && typeof globalThis.notDiceOpenDamageDialog === "function") {
                     const isCleaveAttack = rollConfig.isCleaveAttack || rollConfig.options?.isCleaveAttack || rollConfig.event?.isCleaveAttack || false;
                     const isNickAttack = rollConfig.isNickAttack || rollConfig.options?.isNickAttack || rollConfig.event?.isNickAttack || false;
                     const actor = item.actor;
-                    const hasTwoWeaponStyle = actor?.items?.some(i => 
-                        i.system?.identifier === "two-weapon-fighting" || 
-                        i.name === "Two-Weapon Fighting" || 
+                    const hasTwoWeaponStyle = actor?.items?.some(i =>
+                        i.system?.identifier === "two-weapon-fighting" ||
+                        i.name === "Two-Weapon Fighting" ||
                         (i.name.toLowerCase().includes("combate con dos armas") && i.type === "feat")
                     );
                     const isOffhandWithoutStyle = isNickAttack && !hasTwoWeaponStyle;
@@ -2272,7 +2356,7 @@ Hooks.once("ready", () => {
                             availableTypes: r.options?.availableTypes || []
                         };
                     });
-                    
+
                     globalThis.notDiceOpenDamageDialog({
                         uuid: item.uuid,
                         itemName: item.name,
@@ -2304,7 +2388,7 @@ Hooks.once("ready", () => {
 
         const hpUpdate = updateData.system?.attributes?.hp;
         if (!hpUpdate) return;
-        
+
         const oldHP = actor.system.attributes.hp.value;
         const oldTemp = actor.system.attributes.hp.temp || 0;
         const newHP = (hpUpdate.value !== undefined) ? hpUpdate.value : oldHP;
@@ -2313,21 +2397,21 @@ Hooks.once("ready", () => {
         const totalOld = oldHP + oldTemp;
         const totalNew = newHP + newTemp;
         const damage = totalOld - totalNew;
-        
+
         if (damage > 0) {
-            const isConcentrating = actor.statuses?.has("concentrating") || 
-                                    actor.effects.some(e => e.getFlag("core", "statusId") === "concentrating" || e.name === "Concentrating");
+            const isConcentrating = actor.statuses?.has("concentrating") ||
+                actor.effects.some(e => e.getFlag("core", "statusId") === "concentrating" || e.name === "Concentrating");
 
             if (isConcentrating) {
                 const dc = Math.max(10, Math.floor(damage / 2));
                 let bonus = 0;
-                
+
                 const con = actor.system?.abilities?.con;
                 if (con) {
                     if (typeof con.save === "number") bonus = con.save;
                     else if (typeof con.mod === "number") {
-                         bonus = con.mod;
-                         if (con.proficient) bonus += (actor.system.attributes?.prof || 0);
+                        bonus = con.mod;
+                        if (con.proficient) bonus += (actor.system.attributes?.prof || 0);
                     }
                 }
 
@@ -2354,7 +2438,7 @@ Hooks.once("ready", () => {
                     new Dialog({
                         title: "Concentración: Chequeo Requerido",
                         content: content,
-                        buttons: { ok: { label: "<i class='fas fa-check'></i> Entendido", callback: () => {} } },
+                        buttons: { ok: { label: "<i class='fas fa-check'></i> Entendido", callback: () => { } } },
                         default: "ok"
                     }, { width: 340 }).render(true);
                 }
@@ -2459,20 +2543,20 @@ Hooks.on("renderChatMessage", (message, html, data) => {
         ev.preventDefault();
         const btn = ev.currentTarget;
         const actorId = btn.dataset.actorId;
-        
+
         const actor = game.actors.get(actorId) || canvas.tokens.placeables.find(t => t.actor?.id === actorId)?.actor;
         if (!actor) return ui.notifications.warn("Not Dice | Actor no encontrado.");
-        
+
         try {
             await actor.rollSavingThrow({ ability: "con", event: ev });
-        } catch(e) {
+        } catch (e) {
             if (typeof actor.rollAbilitySave === "function") {
                 await actor.rollAbilitySave("con", { event: ev });
             } else {
                 console.error("Not Dice | No se pudo lanzar la salvación", e);
             }
         }
-        
+
         btn.disabled = true;
         btn.style.opacity = "0.6";
         btn.innerHTML = "<i class='fas fa-check'></i> Salvación Realizada";
@@ -2485,12 +2569,12 @@ Hooks.on("renderChatMessage", (message, html, data) => {
         const original = parseInt(btn.dataset.original);
         const uuid = btn.dataset.uuid;
         const idx = btn.dataset.idx;
-        
+
         if (!faces) return;
-        
+
         const rDie = await new Roll(`1d${faces}`).evaluate();
         const newDieResult = rDie.total;
-        
+
         let newTotal = newDieResult;
         let modifier = 0;
 
@@ -2501,7 +2585,7 @@ Hooks.on("renderChatMessage", (message, html, data) => {
                 modifier = resultObj.previous - original;
             }
         }
-        
+
         let displayRoll;
         if (modifier !== 0) {
             const sign = modifier >= 0 ? "+" : "-";
@@ -2516,7 +2600,7 @@ Hooks.on("renderChatMessage", (message, html, data) => {
             speaker: message.speaker,
             flavor: `<strong>Perforador</strong>: Relanzando d${faces}<br>Original: ${original} <i class="fas fa-arrow-right"></i> <strong style="font-size:1.2em;">${newDieResult}</strong>`
         });
-        
+
         // Deshabilitar botón para evitar multiclips y dar feedback
         btn.disabled = true;
         btn.style.opacity = "0.5";
@@ -2530,7 +2614,7 @@ Hooks.on("renderChatMessage", (message, html, data) => {
         const attackerId = btn.dataset.attackerId;
         const weaponUuid = btn.dataset.weaponUuid;
         const actor = game.actors.get(attackerId) || canvas.tokens.placeables.find(t => t.actor?.id === attackerId)?.actor;
-        
+
         if (!actor) return ui.notifications.warn("Not Dice | Actor no encontrado.");
         if (!actor.isOwner && !game.user.isGM) return ui.notifications.warn("Not Dice | No tienes permiso para controlar este personaje.");
 
@@ -2554,7 +2638,7 @@ Hooks.on("renderChatMessage", (message, html, data) => {
                 event: ev,
                 isCleaveAttack: true
             });
-        } catch(e) {
+        } catch (e) {
             console.error("Not Dice | Error launching Cleave attack", e);
         }
     });
@@ -2565,7 +2649,7 @@ Hooks.on("renderChatMessage", (message, html, data) => {
         const attackerId = btn.dataset.attackerId;
         const weaponUuid = btn.dataset.weaponUuid;
         const actor = game.actors.get(attackerId) || canvas.tokens.placeables.find(t => t.actor?.id === attackerId)?.actor;
-        
+
         if (!actor) return ui.notifications.warn("Not Dice | Actor no encontrado.");
         if (!actor.isOwner && !game.user.isGM) return ui.notifications.warn("Not Dice | No tienes permiso para controlar este personaje.");
 
@@ -2589,7 +2673,7 @@ Hooks.on("renderChatMessage", (message, html, data) => {
                 event: ev,
                 isNickAttack: true
             });
-        } catch(e) {
+        } catch (e) {
             console.error("Not Dice | Error launching Nick attack", e);
         }
     });
