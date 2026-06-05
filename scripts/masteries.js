@@ -50,14 +50,24 @@ globalThis.notDiceMasteries = {
             img: weaponItem?.img || "icons/svg/aura.svg",
             icon: weaponItem?.img || "icons/svg/aura.svg",
             origin: weaponItem?.uuid || attackerActor.uuid,
-            duration: { rounds: 1, turns: 1 }
+            duration: {},
+            flags: {
+                "not-dice": {
+                    isSapEffect: true,
+                    appliedRound: game.combat?.round ?? 0,
+                    appliedTurn: game.combat?.turn ?? 0,
+                    appliedActorId: attackerActor.id
+                }
+            }
         };
 
         if (game.combat) {
+            effectData.duration.rounds = 99; // Evitar expiración prematura
             effectData.duration.startRound = game.combat.round;
             effectData.duration.startTurn = game.combat.turn;
         } else {
             effectData.duration.startTime = game.time.worldTime;
+            effectData.duration.seconds = 6;
         }
 
         const created = await targetActor.createEmbeddedDocuments("ActiveEffect", [effectData]);

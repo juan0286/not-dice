@@ -1400,8 +1400,10 @@ Hooks.once("ready", () => {
                         if (!t.actor) continue;
                         const vexEffect = getActorEffects(t.actor).find(e => {
                             const eName = (e.name || e.label || "").toLowerCase();
-                            return (eName.includes("vex") || eName.includes("molestar")) &&
-                                eName.includes(`(${attackerName.toLowerCase()})`);
+                            const flags = e.flags?.["not-dice"] || e.getFlag?.("not-dice") || {};
+                            const isVex = eName.includes("vex") || eName.includes("molestar") || !!flags.isVexEffect;
+                            const isFromAttacker = eName.includes(`(${attackerName.toLowerCase()})`) || (flags.appliedActorId && flags.appliedActorId === item.actor.id);
+                            return isVex && isFromAttacker;
                         });
                         if (vexEffect) {
                             await t.actor.deleteEmbeddedDocuments("ActiveEffect", [vexEffect.id]);
@@ -2690,17 +2692,29 @@ Hooks.on("preUpdateCombat", (combat, updateData, options, userId) => {
 Hooks.on("updateCombat", async (combat, changed, options, userId) => {
     if (!game.user.isGM) return;
 
+    // Solo actuar si el turno o la ronda han cambiado
+    const turnChanged = changed.hasOwnProperty("turn");
+    const roundChanged = changed.hasOwnProperty("round");
+    if (!turnChanged && !roundChanged) return;
+
+    const currentRound = combat.round;
+    const currentTurn = combat.turn;
+
+    // 1. Obtener datos del combatiente que acaba de comenzar su turno (para condición 2 de Debilitar)
+    const startingCombatant = combat.combatant;
+    const startingActorId = startingCombatant?.actor?.id || null;
+    const lowerStartingActorName = (startingCombatant?.actor?.name || "").toLowerCase();
+
+    // 2. Obtener los datos del turno que acaba de terminar (para condición 2 de Molestar)
     const endingState = combat._notDiceEndingCombatState;
-    if (!endingState || !endingState.actorName) return;
     delete combat._notDiceEndingCombatState; // Limpiar
 
-    const attackerName = endingState.actorName;
-    const previousActorId = endingState.actorId;
-    const lowerAttackerName = attackerName.toLowerCase();
-    const endingRound = endingState.round;
-    const endingTurn = endingState.turn;
+    const previousActorId = endingState?.actorId || null;
+    const lowerAttackerName = (endingState?.actorName || "").toLowerCase();
+    const endingRound = endingState?.round;
+    const endingTurn = endingState?.turn;
 
-    // Recorrer los combatientes para buscar y eliminar efectos de Molestar aplicados por este atacante
+    // Recorrer todos los combatientes para buscar y procesar efectos de maestría
     for (const combatant of combat.combatants) {
         const targetActor = combatant.actor;
         if (!targetActor) continue;
@@ -2710,33 +2724,64 @@ Hooks.on("updateCombat", async (combat, changed, options, userId) => {
             ? getActorEffects(targetActor)
             : Array.from(targetActor.appliedEffects || targetActor.effects || []);
 
-        const vexEffectsToDelete = effects.filter(e => {
+        const masteryEffects = effects.filter(e => {
             const eName = (e.name || e.label || "").toLowerCase();
             const flags = e.flags?.["not-dice"] || e.getFlag?.("not-dice") || {};
-            
             const isVex = eName.includes("vex") || eName.includes("molestar") || !!flags.isVexEffect;
-            const isFromAttacker = eName.includes(`(${lowerAttackerName})`) || (flags.appliedActorId && flags.appliedActorId === previousActorId);
-            if (!isVex || !isFromAttacker) return false;
-
-            // Obtener el turno de inicio
-            const startRound = flags.appliedRound !== undefined ? flags.appliedRound : e.duration?.startRound;
-            const startTurn = flags.appliedTurn !== undefined ? flags.appliedTurn : e.duration?.startTurn;
-
-            // Si no tiene tracking de inicio, lo hacemos expirar
-            if (startRound == null || startTurn == null) return true;
-
-            const isSameTurn = Number(startRound) === Number(endingRound) && Number(startTurn) === Number(endingTurn);
-
-            // Si es el mismo turno en el que se aplicó, lo conservamos.
-            // Si es un turno/ronda posterior, lo eliminamos.
-            return !isSameTurn;
+            const isSap = eName.includes("sap") || eName.includes("debilitar") || eName.includes("minar") || !!flags.isSapEffect;
+            return isVex || isSap;
         });
 
-        if (vexEffectsToDelete.length > 0) {
-            const idsToDelete = vexEffectsToDelete.map(e => e.id);
-            await targetActor.deleteEmbeddedDocuments("ActiveEffect", idsToDelete);
-            for (const e of vexEffectsToDelete) {
-                ui.notifications?.info(`Not Dice | Molestar Expirado: ${e.name} en ${targetActor.name}`);
+        for (const e of masteryEffects) {
+            const eName = (e.name || e.label || "").toLowerCase();
+            const flags = e.flags?.["not-dice"] || e.getFlag?.("not-dice") || {};
+            const isVex = eName.includes("vex") || eName.includes("molestar") || !!flags.isVexEffect;
+            const isSap = eName.includes("sap") || eName.includes("debilitar") || eName.includes("minar") || !!flags.isSapEffect;
+
+            const appliedRound = flags.appliedRound;
+            const appliedTurn = flags.appliedTurn;
+            const appliedActorId = flags.appliedActorId;
+
+            // Si no tiene tracking de inicio, lo hacemos expirar
+            if (appliedRound === undefined || appliedTurn === undefined) {
+                await targetActor.deleteEmbeddedDocuments("ActiveEffect", [e.id]);
+                continue;
+            }
+
+            // Condición 4: Pasa más de una ronda del turno en donde se recibió el efecto y este sigue activo
+            const roundsDiff = currentRound - appliedRound;
+            let roundsExceeded = false;
+            if (roundsDiff > 1) {
+                roundsExceeded = true;
+            } else if (roundsDiff === 1) {
+                if (currentTurn > appliedTurn) {
+                    roundsExceeded = true;
+                }
+            }
+
+            if (roundsExceeded) {
+                await targetActor.deleteEmbeddedDocuments("ActiveEffect", [e.id]);
+                ui.notifications?.info(`Not Dice | ${isVex ? "Molestar" : "Debilitar"} Expirado (más de 1 ronda transcurrida) en ${targetActor.name}`);
+                continue;
+            }
+
+            // Condición 2 para Molestar: Luego de un cambio de turno, la próxima vez que el actor que lo aplicó termine un turno
+            if (isVex && previousActorId && (appliedActorId === previousActorId || eName.includes(`(${lowerAttackerName})`))) {
+                const wasAppliedOnEndingTurn = Number(appliedRound) === Number(endingRound) && Number(appliedTurn) === Number(endingTurn);
+                if (!wasAppliedOnEndingTurn) {
+                    await targetActor.deleteEmbeddedDocuments("ActiveEffect", [e.id]);
+                    ui.notifications?.info(`Not Dice | Molestar Expirado: ${e.name} en ${targetActor.name}`);
+                    continue;
+                }
+            }
+
+            // Condición 2 para Debilitar: La próxima vez que el actor que lo aplicó comience un turno
+            if (isSap && startingActorId && (appliedActorId === startingActorId || eName.includes(`(${lowerStartingActorName})`))) {
+                const wasAppliedOnCurrentTurn = Number(appliedRound) === Number(currentRound) && Number(appliedTurn) === Number(currentTurn);
+                if (!wasAppliedOnCurrentTurn) {
+                    await targetActor.deleteEmbeddedDocuments("ActiveEffect", [e.id]);
+                    ui.notifications?.info(`Not Dice | Debilitar Expirado: ${e.name} en ${targetActor.name}`);
+                }
             }
         }
     }
@@ -2754,14 +2799,57 @@ Hooks.on("deleteCombat", async (combat, options, userId) => {
             ? getActorEffects(targetActor)
             : Array.from(targetActor.appliedEffects || targetActor.effects || []);
 
-        const vexEffects = effects.filter(e => {
+        const masteryEffects = effects.filter(e => {
             const eName = (e.name || e.label || "").toLowerCase();
-            return eName.includes("vex") || eName.includes("molestar");
+            const flags = e.flags?.["not-dice"] || e.getFlag?.("not-dice") || {};
+            const isVex = eName.includes("vex") || eName.includes("molestar") || !!flags.isVexEffect;
+            const isSap = eName.includes("sap") || eName.includes("debilitar") || eName.includes("minar") || !!flags.isSapEffect;
+            return isVex || isSap;
         });
 
-        if (vexEffects.length > 0) {
-            const idsToDelete = vexEffects.map(e => e.id);
+        if (masteryEffects.length > 0) {
+            const idsToDelete = masteryEffects.map(e => e.id);
             await targetActor.deleteEmbeddedDocuments("ActiveEffect", idsToDelete);
+        }
+    }
+});
+
+Hooks.on("updateActiveEffect", (effect, changed, options, userId) => {
+    if (!game.user.isGM) return;
+
+    // Verificar si el efecto ha sido desactivado
+    if (changed.hasOwnProperty("disabled") && changed.disabled === true) {
+        const name = (effect.name || effect.label || "").toLowerCase();
+        const flags = effect.flags?.["not-dice"] || effect.getFlag?.("not-dice") || {};
+        
+        const isMasteryEffect = 
+            name.includes("maestría") || 
+            name.includes("maestria") || 
+            name.includes("mastery") || 
+            name.includes("molestar") || 
+            name.includes("debilitar") || 
+            name.includes("ralentizar") || 
+            name.includes("slow") || 
+            name.includes("sap") || 
+            name.includes("vex") || 
+            !!flags.isVexEffect;
+        
+        if (isMasteryEffect) {
+            const actor = effect.parent;
+            if (actor && actor.documentName === "Actor") {
+                // Eliminar el documento del efecto por completo tras un breve delay para evitar colisiones
+                setTimeout(async () => {
+                    try {
+                        const existingEffect = actor.effects.get(effect.id);
+                        if (existingEffect) {
+                            await actor.deleteEmbeddedDocuments("ActiveEffect", [effect.id]);
+                            console.log(`Not Dice | Deleted disabled/expired mastery effect: ${effect.name}`);
+                        }
+                    } catch (e) {
+                        console.error("Not Dice | Error deleting disabled mastery effect", e);
+                    }
+                }, 100);
+            }
         }
     }
 });
