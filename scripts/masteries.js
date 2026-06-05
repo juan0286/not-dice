@@ -195,5 +195,44 @@ globalThis.notDiceMasteries = {
                 }, { width: 320 }).render(true);
             }
         });
+    },
+
+    /**
+     * Muestra el popup informativo de la maestría Empujar (Push).
+     */
+    async runPushEffect(targetActor, attackerActor, weaponItem) {
+        if (!targetActor || !attackerActor) return;
+
+        const DialogV2 = foundry?.applications?.api?.DialogV2;
+        const pushContent = `
+            <div style="text-align: center; padding: 12px; font-family: inherit; line-height: 1.4;">
+                <p style="font-size: 1.05em; margin-bottom: 8px;">Si <strong>${targetActor.name}</strong> es de tamaño <strong>Large o menor</strong>:</p>
+                <div style="font-size: 1.15em; font-weight: bold; background: rgba(106,27,154,0.08); border: 1px solid rgba(106,27,154,0.3); color: #ba68c8; padding: 10px; border-radius: 6px; margin-bottom: 12px;">
+                    <i class="fas fa-arrow-right"></i> Es empujado 10 pies respecto a <strong>${attackerActor.name}</strong> en línea recta.
+                </div>
+            </div>`;
+
+        if (DialogV2) {
+            new DialogV2({
+                window: { title: "Maestría: Empujar" },
+                content: pushContent,
+                position: { width: 340 },
+                buttons: [
+                    { action: "ok", label: "Entendido", icon: "fa-solid fa-check", default: true }
+                ]
+            }).render(true);
+        } else {
+            new Dialog({
+                title: "Maestría: Empujar",
+                content: pushContent,
+                buttons: {
+                    ok: {
+                        label: "<i class='fas fa-check'></i> Entendido",
+                        callback: () => {}
+                    }
+                },
+                default: "ok"
+            }, { width: 340 }).render(true);
+        }
     }
 };

@@ -1334,6 +1334,12 @@ Hooks.once("ready", () => {
                                     await globalThis.notDiceMasteries.runToppleSave(t.actor, item.actor, item);
                                 }
                             }
+                        } else if (activeMastery.id === "push" || activeMastery.label.toLowerCase().includes("push") || activeMastery.label.toLowerCase().includes("empujar")) {
+                            for (const t of targetsLocal) {
+                                if (t.actor) {
+                                    await globalThis.notDiceMasteries.runPushEffect(t.actor, item.actor, item);
+                                }
+                            }
                         } else if (activeMastery.id !== "nick") {
                         for (const t of targetsLocal) {
                              if (t.actor) {
