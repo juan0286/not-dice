@@ -1308,12 +1308,10 @@ Hooks.once("ready", () => {
                     targetHtml += `
                     <div style="display:flex; align-items:flex-start; gap:10px; padding: 8px; border-radius: 6px; ${borderStyle} ${bgStyle}">
                         ${tokenImgHtml}
-                        <div style="flex:1; min-width:0;">
-                            <div style="display:flex; justify-content:space-between; align-items:center;">
-                                <span style="font-weight:bold; font-size:1.1em; color:inherit;">${t.name}</span>
-                                ${ac !== undefined ? `<span style="font-size:0.85em; font-weight:bold; background:rgba(128,128,128,0.2); color:inherit; padding:2px 6px; border-radius:4px; border:1px solid var(--color-border-light-2, #ccc); box-shadow:0 1px 1px rgba(0,0,0,0.1);" title="Clase de Armadura">CA ${ac}</span>` : ""}
-                            </div>
-                            <div>${badgesHtml}</div>
+                        <div style="flex:1; min-width:0; display:flex; flex-direction:column; gap:4px;">
+                            <span style="font-weight:bold; font-size:1.1em; color:inherit; line-height:1.1;">${t.name}</span>
+                            ${ac !== undefined ? `<div><span style="font-size:1em; font-weight:bold; background:rgba(128,128,128,0.2); color:inherit; padding:2px 6px; border-radius:4px; border:1px solid var(--color-border-light-2, #ccc); box-shadow:0 1px 1px rgba(0,0,0,0.1);" title="Clase de Armadura">CA ${ac}</span></div>` : ""}
+                            ${badgesHtml ? `<div>${badgesHtml}</div>` : ""}
                         </div>
                     </div>`;
                 }
@@ -1422,8 +1420,8 @@ Hooks.once("ready", () => {
                 const contentHtml = `<div style="display:flex; flex-direction:column; gap:4px; align-items:stretch; justify-content:center; width:100%;">
                     <div style="display:flex; align-items:center; justify-content:center; gap:8px;">
                         <button type="button" class="not-dice-attack-disadvantage-btn" title="Convertir a Desventaja" style="${disadvBtnStyle}"><i class="fas fa-arrow-down"></i></button>
-                        <div class="not-dice-attack-roll-result" style="flex:1; min-width:0; font-size: 1.1em; line-height:1.2;">
-                            ${modeBadge}<span style="color:inherit; opacity:0.7;">d20:</span> ${diceHtml}${modifierHtml} = <span style="font-size: 1.4em; font-weight:900;">${total}</span>
+                        <div class="not-dice-attack-roll-result" style="flex:1; min-width:0; font-size: 1.3em; line-height:1.2;">
+                            ${modeBadge}<span style="color:inherit; opacity:0.7;">d20:</span> ${diceHtml}${modifierHtml} = <span style="font-size: 1.6em; font-weight:900;">${total}</span>
                         </div>
                         <button type="button" class="not-dice-attack-advantage-btn" title="Convertir a Ventaja" style="${advBtnStyle}"><i class="fas fa-arrow-up"></i></button>
                     </div>
@@ -1545,13 +1543,20 @@ Hooks.once("ready", () => {
                     }
                 }
 
+                const attackerImg = item?.actor?.img || "icons/svg/mystery-man.svg";
                 attackHtml = `
                 <div style="display:flex; align-items:center; gap:12px; margin-bottom:12px; padding:10px; border:1px solid var(--color-border-light-2, #ddd); border-radius:6px; background:rgba(127,127,127,0.1); box-shadow: 0 1px 3px rgba(0,0,0,0.1);">
-                    <img src="${attackImg}" style="width:48px; height:48px; border:1px solid var(--color-border-light-2, #aaa); border-radius:6px; object-fit:cover; flex-shrink:0;">
-                    <div style="flex:1; min-width:0;">
-                        <div style="font-size:1em; margin-bottom:4px; color:inherit; opacity:0.8;">${headerLabel}: <span style="font-weight:900; font-size:1.4em; color:inherit; opacity:1;">${headerValue}</span></div>
-                        <div style="display:flex; flex-wrap:wrap; gap:4px;">
-                            ${headerBadges}
+                    <div style="display:flex; flex-direction:column; align-items:center; gap:4px; width:64px; flex-shrink:0; border-right:1px solid var(--color-border-light-2, #ccc); padding-right:12px;">
+                        <img src="${attackerImg}" style="width:48px; height:48px; border:1px solid var(--color-border-light-2, #aaa); border-radius:50%; object-fit:cover; box-shadow:0 1px 2px rgba(0,0,0,0.2);">
+                        <span style="font-size:0.7em; font-weight:bold; color:inherit; opacity:0.8; text-align:center; line-height:1; max-width:100%; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;" title="${attackerName}">${attackerName}</span>
+                    </div>
+                    <div style="display:flex; align-items:center; gap:12px; flex:1; min-width:0;">
+                        <img src="${attackImg}" style="width:48px; height:48px; border:1px solid var(--color-border-light-2, #aaa); border-radius:6px; object-fit:cover; flex-shrink:0;">
+                        <div style="flex:1; min-width:0;">
+                            <div style="font-size:1em; margin-bottom:4px; color:inherit; opacity:0.8;">${headerLabel}: <span style="font-weight:900; font-size:1.4em; color:inherit; opacity:1;">${headerValue}</span></div>
+                            <div style="display:flex; flex-wrap:wrap; gap:4px;">
+                                ${headerBadges}
+                            </div>
                         </div>
                     </div>
                 </div>`;
@@ -1623,7 +1628,7 @@ thunder: { color: "#7c4dff", icon: "🔊" },
                     const checkedAttr = (initialApplyMastery && !isMasteryDisabled) ? "checked" : "";
                     specialModsHtml += `
                     <div style="display:flex; justify-content:center; align-items:center; gap:6px; margin-bottom: 4px; padding: 2px 6px; background: rgba(106,27,154,0.08); border: 1px solid rgba(106,27,154,0.3); border-radius: 4px; width: 100%; ${isMasteryDisabled ? 'opacity:0.65;' : ''}" title="MAESTRÍA: ${activeMastery.label.toUpperCase()}">
-                        <input type="checkbox" id="mastery-cb" class="mastery-cb" style="margin:0; width:12px; height:12px; cursor:pointer;" ${checkedAttr} ${disabledAttr}>
+                        <input type="checkbox" id="mastery-cb" class="mastery-cb" style="margin:0; transform:scale(0.85); cursor:pointer;" ${checkedAttr} ${disabledAttr}>
                         <label for="mastery-cb" style="font-size:0.8em; color:#ba68c8; cursor:pointer; font-weight:bold; letter-spacing: 0.5px; margin:0;"><i class="fas fa-crown"></i> ${activeMastery.label}${isMasteryDisabled ? " (Usada)" : ""}</label>
                     </div>`;
                 }
@@ -1641,7 +1646,7 @@ thunder: { color: "#7c4dff", icon: "🔊" },
                     </div>`;
                 }
 
-                if (specialModsHtml) specialModsHtml = `<div style="margin-bottom:6px; display:flex; flex-wrap:wrap; gap:4px;">${specialModsHtml}</div>`;
+                if (specialModsHtml) specialModsHtml = `<div style="margin-bottom:6px; display:grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap:4px;">${specialModsHtml}</div>`;
                 let labelHtml = part.label;
                 let currentDamageType = part.type;
 
@@ -1670,7 +1675,7 @@ thunder: { color: "#7c4dff", icon: "🔊" },
                 <div class="damage-part-container" data-index="${part.index}" style="margin-bottom: 8px; padding: 6px 8px; border: 1px solid var(--color-border-light-2, #ddd); border-radius: 6px; background: rgba(127,127,127,0.05); box-shadow: 0 1px 2px rgba(0,0,0,0.1);">
                     <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom: 6px; border-bottom: 1px dashed var(--color-border-light-2, #ddd); padding-bottom: 4px;">
                         <div>${labelHtml}</div>
-                        <div style="font-size:0.85em; opacity:0.8; font-family:monospace; background:rgba(128,128,128,0.1); padding:1px 6px; border-radius:4px; border:1px solid var(--color-border-light-2, #ccc); text-align:right;" title="Fórmula de Daño">
+                        <div style="font-size:0.95em; opacity:0.8; font-family:monospace; background:rgba(128,128,128,0.1); padding:2px 8px; border-radius:4px; border:1px solid var(--color-border-light-2, #ccc); text-align:right;" title="Fórmula de Daño">
                             ${part.formula} ${part.isOffhandWithoutStyle ? '<span style="color:#ff5252;" title="Sin mod. de característica">*</span>' : ''}
                         </div>
                     </div>
@@ -1696,9 +1701,9 @@ thunder: { color: "#7c4dff", icon: "🔊" },
 
                                         const selectName = `target-multiplier-${t.id}-part-${part.index}`;
                                         partTargetMultipliersHtml += `
-                                        <div style="display:flex; justify-content:space-between; align-items:center; font-size:0.8em; background: rgba(128,128,128,0.08); padding: 1px 4px; border-radius: 4px; border:1px solid var(--color-border-light-2, #eee);">
+                                        <div style="display:flex; justify-content:space-between; align-items:center; font-size:0.85em; background: rgba(128,128,128,0.08); padding: 1px 4px; border-radius: 4px; border:1px solid var(--color-border-light-2, #eee); min-height:28px;">
                                             <span style="white-space:nowrap; overflow:hidden; text-overflow:ellipsis; margin-right: 4px; flex:1;" title="${t.name}">${t.name}</span>
-                                            <select name="${selectName}" style="padding:0px 2px; height:20px; border:1px solid var(--color-border-light-2, #ccc); background:transparent; color:inherit; border-radius:3px; cursor:pointer; font-weight:bold; font-size:0.95em; flex-shrink:0;">
+                                            <select name="${selectName}" style="padding:0px 2px; height:28px; border:1px solid var(--color-border-light-2, #ccc); background:transparent; color:inherit; border-radius:3px; cursor:pointer; font-weight:bold; font-size:1em; flex-shrink:0;">
                                                 ${multiplierOptions.map(o => `<option value="${o.val}" ${o.val === detectedMultiplier ? "selected" : ""}>${o.label}</option>`).join("")}
                                             </select>
                                         </div>`;
@@ -2561,7 +2566,7 @@ thunder: { color: "#7c4dff", icon: "🔊" },
                         <div class="damage-part-container" data-index="${newIndex}" style="margin-bottom: 8px; padding: 6px 8px; border: 1px solid rgba(26,115,232,0.4); border-radius: 6px; background: rgba(26,115,232,0.05); box-shadow: 0 1px 2px rgba(0,0,0,0.1);">
                             <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom: 6px; border-bottom: 1px dashed var(--color-border-light-2, #ddd); padding-bottom: 4px; color:${style.color}; font-weight:bold;">
                                 <div>${label} <span style="font-size:0.8em; opacity:0.75; margin-left:4px; font-weight:normal;">(Jugador)</span>${hiddenTypeInput}</div>
-                                <div style="font-size:0.85em; opacity:0.8; font-family:monospace; background:rgba(128,128,128,0.1); padding:1px 6px; border-radius:4px; border:1px solid var(--color-border-light-2, #ccc); text-align:right;" title="Fórmula de Daño">${formula}</div>
+                                <div style="font-size:0.95em; opacity:0.8; font-family:monospace; background:rgba(128,128,128,0.1); padding:2px 8px; border-radius:4px; border:1px solid var(--color-border-light-2, #ccc); text-align:right;" title="Fórmula de Daño">${formula}</div>
                             </div>
                             
                             <div style="display:flex; gap:8px; align-items:flex-start;">
@@ -2584,9 +2589,9 @@ thunder: { color: "#7c4dff", icon: "🔊" },
         
                                                 const selectName = `target-multiplier-${t.id}-part-${newIndex}`;
                                                 partTargetMultipliersHtml += `
-                                                <div style="display:flex; justify-content:space-between; align-items:center; font-size:0.8em; background: rgba(128,128,128,0.08); padding: 1px 4px; border-radius: 4px; border:1px solid var(--color-border-light-2, #eee);">
+                                                <div style="display:flex; justify-content:space-between; align-items:center; font-size:0.85em; background: rgba(128,128,128,0.08); padding: 1px 4px; border-radius: 4px; border:1px solid var(--color-border-light-2, #eee); min-height:28px;">
                                                     <span style="white-space:nowrap; overflow:hidden; text-overflow:ellipsis; margin-right: 4px; flex:1;" title="${t.name}">${t.name}</span>
-                                                    <select name="${selectName}" style="padding:0px 2px; height:20px; border:1px solid var(--color-border-light-2, #ccc); background:transparent; color:inherit; border-radius:3px; cursor:pointer; font-weight:bold; font-size:0.95em; flex-shrink:0;">
+                                                    <select name="${selectName}" style="padding:0px 2px; height:28px; border:1px solid var(--color-border-light-2, #ccc); background:transparent; color:inherit; border-radius:3px; cursor:pointer; font-weight:bold; font-size:1em; flex-shrink:0;">
                                                         ${multiplierOptions.map(o => `<option value="${o.val}" ${o.val === detectedMultiplier ? "selected" : ""}>${o.label}</option>`).join("")}
                                                     </select>
                                                 </div>`;
