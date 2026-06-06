@@ -141,6 +141,7 @@ const notDiceBuildAttackPayload = (rollConfig, isDamage = false) => {
             targetIds: Array.from(game.user.targets ?? []).map(t => t.id),
             isNickAttack: rollConfig?.isNickAttack || rollConfig?.options?.isNickAttack || rollConfig?.event?.isNickAttack || false,
             isCleaveAttack: rollConfig?.isCleaveAttack || rollConfig?.options?.isCleaveAttack || rollConfig?.event?.isCleaveAttack || false,
+            notDiceVersatile: rollConfig?.options?.notDiceVersatile || rollConfig?.notDiceVersatile || null,
             senderName: game.user?.name || "Jugador",
             senderUserId: game.user?.id || null,
             targetUserId: notDiceFirstActiveGmId(),
@@ -696,7 +697,8 @@ const notDiceHandleAttackSocket = async (data) => {
             event: notDiceMockEvent({ targetIds: data.targetIds, senderUserId: data.senderUserId }),
             options: {
                 notDiceAutoTriggered: data.notDiceAutoTriggered !== false,
-                isCleaveAttack: data.isCleaveAttack
+                isCleaveAttack: data.isCleaveAttack,
+                notDiceVersatile: data.notDiceVersatile
             },
             isNickAttack: data.isNickAttack
         });
@@ -753,6 +755,115 @@ Hooks.once("ready", () => {
             return originalBuildConfigure.call(this, config, dialog, message);
         };
 
+        const notDicePromptVersatile = (item, activity = null) => {
+            return new Promise(resolve => {
+                if (!item || !item.system?.properties?.has?.("ver")) {
+                    resolve("1h");
+                    return;
+                }
+
+                // Resolver la actividad por defecto si no es provista
+                const act = activity || item.system.activities?.find(a => a.type === "attack" || a.type === "damage") || item.system.activities?.first();
+                const firstPart = act?.damage?.parts?.[0];
+
+                const baseFormula = firstPart?.formula || 
+                                    (firstPart?.number && firstPart?.denomination ? `${firstPart.number}d${firstPart.denomination}` : "") || 
+                                    item.system.damage?.parts?.[0]?.[0] || 
+                                    "1d8";
+                const baseDie = baseFormula.match(/\d+d\d+/)?.[0] || "1d8";
+
+                // Buscar el dado versátil nativo del item, si no, aplicar la escala de dados clásica
+                let versatileDie = null;
+                const itemVersatile = item.system.damage?.versatile;
+                if (typeof itemVersatile === "string" && itemVersatile.trim()) {
+                    const match = itemVersatile.match(/\d+d\d+/);
+                    if (match) versatileDie = match[0];
+                }
+                if (!versatileDie) {
+                    versatileDie = (baseDie.includes("d6") ? baseDie.replace("d6", "d8") : 
+                                   (baseDie.includes("d8") ? baseDie.replace("d8", "d10") : 
+                                   (baseDie.includes("d10") ? baseDie.replace("d10", "d12") : baseDie)));
+                }
+
+                const DialogV2 = foundry?.applications?.api?.DialogV2;
+                const dialogContent = `
+                    <div style="text-align:center; padding:10px 5px; font-family:inherit;">
+                        <h3 style="margin: 0 0 15px 0; font-size:1.15em; border-bottom:1px solid rgba(128,128,128,0.2); padding-bottom:8px; color:inherit; font-weight:bold; letter-spacing:0.5px;">Elige Empuñadura para ${item.name}</h3>
+                        <div style="display:flex; justify-content:center; gap:20px; padding: 5px 0;">
+                            <button class="not-dice-versatile-select-btn" data-hands="1h" style="width:130px; height:150px; border:2px solid var(--color-border-light-2, #aaa); border-radius:10px; cursor:pointer; background-image: url('/modules/not-dice/icons/1mano.png'); background-size:cover; background-position:center; position:relative; overflow:hidden; transition: transform 0.2s, border-color 0.2s, box-shadow 0.2s; box-shadow: 0 4px 8px rgba(0,0,0,0.2); padding:0; outline: none;">
+                                <div style="position:absolute; bottom:0; left:0; right:0; background:rgba(0,0,0,0.75); color:#fff; padding:8px 4px; font-weight:bold; font-size:0.95em; line-height:1.2; text-shadow:1px 1px 2px #000; border-top:1px solid rgba(255,255,255,0.15);">
+                                    1 Mano<br/><span style="font-size:0.85em; font-weight:bold; color:#ffca28;">(${baseDie})</span>
+                                </div>
+                            </button>
+                            <button class="not-dice-versatile-select-btn" data-hands="2h" style="width:130px; height:150px; border:2px solid var(--color-border-light-2, #aaa); border-radius:10px; cursor:pointer; background-image: url('/modules/not-dice/icons/2manos.png'); background-size:cover; background-position:center; position:relative; overflow:hidden; transition: transform 0.2s, border-color 0.2s, box-shadow 0.2s; box-shadow: 0 4px 8px rgba(0,0,0,0.2); padding:0; outline: none;">
+                                <div style="position:absolute; bottom:0; left:0; right:0; background:rgba(0,0,0,0.75); color:#fff; padding:8px 4px; font-weight:bold; font-size:0.95em; line-height:1.2; text-shadow:1px 1px 2px #000; border-top:1px solid rgba(255,255,255,0.15);">
+                                    2 Manos<br/><span style="font-size:0.85em; font-weight:bold; color:#ffca28;">(${versatileDie})</span>
+                                </div>
+                            </button>
+                        </div>
+                    </div>
+                    <style>
+                        .not-dice-versatile-select-btn:hover {
+                            transform: scale(1.05);
+                            border-color: #ffca28 !important;
+                            box-shadow: 0 6px 12px rgba(255, 202, 40, 0.35) !important;
+                        }
+                        /* Ocultar botones de footer de DialogV2 */
+                        .dialog-buttons, nav.dialog-buttons, footer.dialog-buttons {
+                            display: none !important;
+                        }
+                    </style>
+                `;
+
+                let dialogApp;
+                let choiceMade = false;
+                const bindEvents = (htmlElement) => {
+                    htmlElement.querySelectorAll(".not-dice-versatile-select-btn").forEach(btn => {
+                        btn.addEventListener("click", (ev) => {
+                            ev.preventDefault();
+                            const choice = btn.dataset.hands;
+                            choiceMade = true;
+                            resolve(choice);
+                            if (dialogApp && typeof dialogApp.close === "function") {
+                                dialogApp.close();
+                            }
+                        });
+                    });
+                };
+
+                if (DialogV2) {
+                    dialogApp = new DialogV2({
+                        window: { title: "Arma Versátil" },
+                        content: dialogContent,
+                        position: { width: 340 },
+                        buttons: [
+                            { action: "cancel", label: "Cancelar" }
+                        ]
+                    });
+                    dialogApp.addEventListener("close", () => {
+                        if (!choiceMade) resolve(null);
+                    }, { once: true });
+                    dialogApp.render(true).then(() => {
+                        bindEvents(dialogApp.element);
+                    });
+                } else {
+                    dialogApp = new Dialog({
+                        title: "Arma Versátil",
+                        content: dialogContent,
+                        buttons: {},
+                        render: (html) => {
+                            const root = html[0] || html;
+                            bindEvents(root);
+                        },
+                        close: () => {
+                            if (!choiceMade) resolve(null);
+                        }
+                    }, { width: 340 });
+                    dialogApp.render(true);
+                }
+            });
+        };
+
         D20Roll.buildEvaluate = async function (rolls, rollConfig, messageConfig) {
             console.log("Not Dice | D20 buildEvaluate intercepted", rolls);
             const isAttack = notDiceIsAttack(rollConfig.subject);
@@ -767,11 +878,33 @@ Hooks.once("ready", () => {
 
             // Player branch: solo empaqueta y envía al GM
             if (isAttack && !game.user.isGM) {
+                const item = rollConfig.subject?.item || rollConfig.subject;
+                if (item?.system?.properties?.has?.("ver")) {
+                    const choice = await notDicePromptVersatile(item, rollConfig.subject);
+                    if (!choice) {
+                        console.log("Not Dice | Versatile weapon dialog cancelled. Aborting player attack.");
+                        return [];
+                    }
+                    rollConfig.options = rollConfig.options || {};
+                    rollConfig.options.notDiceVersatile = choice;
+                }
                 return notDiceHandlePlayerAttack(rolls, rollConfig);
             }
 
             if (isAttack) {
                 console.log("Not Dice | Auto-resolving Attack Roll (Silent).");
+                const item = rollConfig.subject?.item || rollConfig.subject;
+                let versatileChoice = null;
+                if (item?.system?.properties?.has?.("ver")) {
+                    versatileChoice = await notDicePromptVersatile(item, rollConfig.subject);
+                    if (!versatileChoice) {
+                        console.log("Not Dice | Versatile weapon dialog cancelled. Aborting GM attack.");
+                        return [];
+                    }
+                    rollConfig.options = rollConfig.options || {};
+                    rollConfig.options.notDiceVersatile = versatileChoice;
+                }
+
                 for (const roll of rolls) {
                     const total = 20;
                     const numericTerm = new foundry.dice.terms.NumericTerm({ number: total });
@@ -790,7 +923,8 @@ Hooks.once("ready", () => {
                                     event: rollConfig.event,
                                     options: {
                                         notDiceAutoTriggered: true,
-                                        isCleaveAttack: isCleave
+                                        isCleaveAttack: isCleave,
+                                        notDiceVersatile: versatileChoice
                                     },
                                     isNickAttack: rollConfig.isNickAttack || rollConfig.options?.isNickAttack || rollConfig.event?.isNickAttack || false,
                                     isCleaveAttack: isCleave
@@ -918,10 +1052,21 @@ Hooks.once("ready", () => {
                 }
             }
 
-            // Function to calculate versatile damage scaling (d6->d8, d8->d10)
+            // Function to calculate versatile damage scaling
             const scaleVersatile = (formula) => {
+                const itemVersatile = item?.system?.damage?.versatile;
+                if (typeof itemVersatile === "string" && itemVersatile.trim()) {
+                    const vDie = itemVersatile.match(/\d+d\d+/)?.[0];
+                    if (vDie) {
+                        const baseDie = formula.match(/\d+d\d+/)?.[0];
+                        if (baseDie) {
+                            return formula.replace(baseDie, vDie);
+                        }
+                    }
+                }
                 if (formula.includes("d6")) return formula.replace("d6", "d8");
                 if (formula.includes("d8")) return formula.replace("d8", "d10");
+                if (formula.includes("d10")) return formula.replace("d10", "d12");
                 return null;
             };
 
@@ -944,8 +1089,14 @@ Hooks.once("ready", () => {
                 }
 
                 let versatileFormula = null;
-                if (!versatileFormula && item?.system?.properties?.has("ver")) {
+                if (item?.system?.properties?.has("ver")) {
                     versatileFormula = scaleVersatile(originalFormula);
+                }
+
+                if (i === 0 && item?.system?.properties?.has("ver") && (rollConfig.options?.notDiceVersatile === "2h" || rollConfig.notDiceVersatile === "2h")) {
+                    if (versatileFormula) {
+                        originalFormula = versatileFormula;
+                    }
                 }
 
                 const damageTypeKey = forcedPart?.type || roll.options.type;
@@ -1429,11 +1580,6 @@ Hooks.once("ready", () => {
                             <input type="text" value="${part.formula}" readonly style="width: 100%; padding:4px 6px; border:1px solid var(--color-border-light-2, #ccc); border-radius:4px; background:rgba(128,128,128,0.1); color:inherit; font-family:monospace; font-size:1.1em; ${part.isOffhandWithoutStyle ? 'border-color:#ff5252; background-color:rgba(197,34,31,0.1);' : ''}"/>
                             ${part.isOffhandWithoutStyle ? '<div style="font-size: 0.75em; color: #ff5252; margin-top: 2px;">* Sin mod. de característica</div>' : ''}
                         </div>
-                        ${part.versatileFormula ? `
-                        <div style="flex:1;">
-                            <label style="font-size:0.85em; color:inherit; opacity:0.7;">Versátil (2M):</label>
-                            <input type="text" value="${part.versatileFormula}" readonly style="width: 100%; padding:4px 6px; border:1px solid var(--color-border-light-2, #ccc); border-radius:4px; background:rgba(128,128,128,0.1); color:inherit; font-family:monospace; font-size:1.1em;"/>
-                        </div>` : ""}
                     </div>
                     
                     ${specialModsHtml}
