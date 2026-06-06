@@ -160,6 +160,32 @@ const notDiceBuildAttackPayload = (rollConfig, isDamage = false) => {
     }
 };
 
+globalThis.notDiceApplyColorset = (rollObj, damageType) => {
+    if (!game.dice3d || !damageType || damageType === "none" || !globalThis.notDiceConstants?.damageStyle) return;
+    const style = globalThis.notDiceConstants.damageStyle[damageType];
+    if (style && style.color !== "inherit") {
+        const colorSetName = `not-dice-${damageType}`;
+        if (!game.dice3d.colorsets?.[colorSetName] && game.dice3d.addColorset) {
+            game.dice3d.addColorset({
+                name: colorSetName,
+                description: `Not Dice - ${damageType}`,
+                category: "Not Dice",
+                foreground: "#ffffff",
+                background: style.color,
+                outline: "none",
+                edge: "#222222",
+                material: "plastic"
+            });
+        }
+        rollObj.terms.forEach(t => {
+            if (t.faces) {
+                t.options = t.options || {};
+                t.options.colorset = colorSetName;
+            }
+        });
+    }
+};
+
 const notDiceGetDamageTypeOptionsHtml = (selectedType = "", availableTypes = null) => {
     const damageTypes = CONFIG.DND5E?.damageTypes ?? {};
     const sourceEntries = Array.isArray(availableTypes) && availableTypes.length > 0
@@ -430,7 +456,7 @@ globalThis.notDiceOpenDamageDialog = async ({
             buttonsHtml += '<div style="width: 100%; font-size: 0.9em; font-weight: bold; margin-bottom: 4px; color: inherit;">Perforador:</div>';
             r.dice.forEach(die => {
                 die.results.forEach(res => {
-                    buttonsHtml += `<button type="button" class="not-dice-piercer-reroll" data-uuid="${actualItem.uuid}" data-idx="${dmgIdx}" data-faces="${die.faces}" data-original="${res.result}" style="width: 28px; height: 28px; padding: 0; font-weight: bold; border: 1px solid var(--color-border-light-2, #ccc); border-radius: 4px; background: rgba(127,127,127,0.1); color: inherit; cursor: pointer; display: flex; align-items: center; justify-content: center; font-size: 1.1em;" title="d${die.faces}">${res.result}</button>`;
+                    buttonsHtml += `<button type="button" class="not-dice-piercer-reroll" data-uuid="${actualItem.uuid}" data-idx="${dmgIdx}" data-faces="${die.faces}" data-original="${res.result}" data-damage-type="${damageType}" style="width: 28px; height: 28px; padding: 0; font-weight: bold; border: 1px solid var(--color-border-light-2, #ccc); border-radius: 4px; background: rgba(127,127,127,0.1); color: inherit; cursor: pointer; display: flex; align-items: center; justify-content: center; font-size: 1.1em;" title="d${die.faces}">${res.result}</button>`;
                 });
             });
             buttonsHtml += '</div>';
@@ -439,10 +465,12 @@ globalThis.notDiceOpenDamageDialog = async ({
 
         const buildSavageButton = (r, dmgIdx) => {
             if (!hasSavageAttacker || isSavageUsed) return "";
-            return `<div style="margin-top:8px;"><button type="button" class="not-dice-savage-reroll" data-uuid="${actualItem.uuid}" data-idx="${dmgIdx}" data-formula="${btoa(formula)}" data-flavor="${btoa(flavorBase)}" data-damagelabel="${btoa(damageLabel)}" data-mods="${btoa(modsString)}" data-original="${r.total}" style="width:100%; font-weight:bold; padding:4px; border:1px solid rgba(197,34,31,0.5); border-radius:4px; background:rgba(197,34,31,0.1); color:#ff5252; cursor:pointer;"><i class="fas fa-paw"></i> Atacante Salvaje (relanza el daño)</button></div>`;
+            return `<div style="margin-top:8px;"><button type="button" class="not-dice-savage-reroll" data-uuid="${actualItem.uuid}" data-idx="${dmgIdx}" data-formula="${btoa(formula)}" data-flavor="${btoa(flavorBase)}" data-damagelabel="${btoa(damageLabel)}" data-mods="${btoa(modsString)}" data-original="${r.total}" data-damage-type="${damageType}" style="width:100%; font-weight:bold; padding:4px; border:1px solid rgba(197,34,31,0.5); border-radius:4px; background:rgba(197,34,31,0.1); color:#ff5252; cursor:pointer;"><i class="fas fa-paw"></i> Atacante Salvaje (relanza el daño)</button></div>`;
         };
 
-        const roll = await new Roll(formula, actualItem.getRollData()).evaluate();
+        const rollObj = new Roll(formula, actualItem.getRollData());
+        if (globalThis.notDiceApplyColorset) globalThis.notDiceApplyColorset(rollObj, damageType);
+        const roll = await rollObj.evaluate();
         await roll.toMessage({
             speaker,
             flavor: `<strong>${flavorBase}</strong> • ${actualItem.name || itemName || "Daño"} <span style="opacity:0.75;">(${damageLabel})</span>${modsString}${buildPiercerButtons(roll, 0)}${buildSavageButton(roll, 0)}`
@@ -2373,7 +2401,7 @@ thunder: { color: "#7c4dff", icon: "🔊" },
                         buttonsHtml += '<div style="width: 100%; font-size: 0.9em; font-weight: bold; margin-bottom: 4px; color: inherit;">Perforador:</div>';
                         r.dice.forEach(die => {
                             die.results.forEach(res => {
-                                buttonsHtml += `<button type="button" class="not-dice-piercer-reroll" data-uuid="${item.uuid}" data-idx="${dmgIdx}" data-faces="${die.faces}" data-original="${res.result}" style="width: 28px; height: 28px; padding: 0; font-weight: bold; border: 1px solid var(--color-border-light-2, #ccc); border-radius: 4px; background: rgba(127,127,127,0.1); color: inherit; cursor: pointer; display: flex; align-items: center; justify-content: center; font-size: 1.1em;" title="d${die.faces}">${res.result}</button>`;
+                                buttonsHtml += `<button type="button" class="not-dice-piercer-reroll" data-uuid="${item.uuid}" data-idx="${dmgIdx}" data-faces="${die.faces}" data-original="${res.result}" data-damage-type="${selectedType}" style="width: 28px; height: 28px; padding: 0; font-weight: bold; border: 1px solid var(--color-border-light-2, #ccc); border-radius: 4px; background: rgba(127,127,127,0.1); color: inherit; cursor: pointer; display: flex; align-items: center; justify-content: center; font-size: 1.1em;" title="d${die.faces}">${res.result}</button>`;
                             });
                         });
                         buttonsHtml += '</div>';
@@ -2382,10 +2410,12 @@ thunder: { color: "#7c4dff", icon: "🔊" },
 
                     const buildSavageButton = (r, dmgIdx) => {
                         if (!hasSavageAttacker || isSavageUsed) return "";
-                        return `<div style="margin-top:8px;"><button type="button" class="not-dice-savage-reroll" data-uuid="${item.uuid}" data-idx="${dmgIdx}" data-formula="${btoa(formula)}" data-flavor="${btoa(flavorBase)}" data-damagelabel="" data-mods="${btoa(modsString)}" data-original="${r.total}" style="width:100%; font-weight:bold; padding:4px; border:1px solid rgba(197,34,31,0.5); border-radius:4px; background:rgba(197,34,31,0.1); color:#ff5252; cursor:pointer;"><i class="fas fa-paw"></i> Atacante Salvaje (relanza el daño)</button></div>`;
+                        return `<div style="margin-top:8px;"><button type="button" class="not-dice-savage-reroll" data-uuid="${item.uuid}" data-idx="${dmgIdx}" data-formula="${btoa(formula)}" data-flavor="${btoa(flavorBase)}" data-damagelabel="" data-mods="${btoa(modsString)}" data-original="${r.total}" data-damage-type="${selectedType}" style="width:100%; font-weight:bold; padding:4px; border:1px solid rgba(197,34,31,0.5); border-radius:4px; background:rgba(197,34,31,0.1); color:#ff5252; cursor:pointer;"><i class="fas fa-paw"></i> Atacante Salvaje (relanza el daño)</button></div>`;
                     };
 
-                    const r = await new Roll(formula).evaluate();
+                    const rollObj = new Roll(formula);
+                    if (globalThis.notDiceApplyColorset) globalThis.notDiceApplyColorset(rollObj, selectedType);
+                    const r = await rollObj.evaluate();
                     await r.toMessage({ flavor: `${flavorBase}${modsString}${buildPiercerButtons(r, idx)}${buildSavageButton(r, idx)}`, speaker: actorSpeaker });
                     return r.total;
                 };
@@ -3062,10 +3092,13 @@ Hooks.on("renderChatMessage", (message, html, data) => {
         const original = parseInt(btn.dataset.original);
         const uuid = btn.dataset.uuid;
         const idx = btn.dataset.idx;
+        const damageType = btn.dataset.damageType;
 
         if (!faces) return;
 
-        const rDie = await new Roll(`1d${faces}`).evaluate();
+        const rollObj = new Roll(`1d${faces}`);
+        if (globalThis.notDiceApplyColorset) globalThis.notDiceApplyColorset(rollObj, damageType);
+        const rDie = await rollObj.evaluate();
         const newDieResult = rDie.total;
 
         let newTotal = newDieResult;
@@ -3082,7 +3115,9 @@ Hooks.on("renderChatMessage", (message, html, data) => {
         let displayRoll;
         if (modifier !== 0) {
             const sign = modifier >= 0 ? "+" : "-";
-            displayRoll = await new Roll(`1d${faces} ${sign} ${Math.abs(modifier)}`).evaluate();
+            const displayRollObj = new Roll(`1d${faces} ${sign} ${Math.abs(modifier)}`);
+            if (globalThis.notDiceApplyColorset) globalThis.notDiceApplyColorset(displayRollObj, damageType);
+            displayRoll = await displayRollObj.evaluate();
             displayRoll.terms[0].results[0].result = rDie.terms[0].results[0].result;
             displayRoll._total = newTotal;
         } else {
@@ -3111,6 +3146,7 @@ Hooks.on("renderChatMessage", (message, html, data) => {
         const damageLabel = atob(btn.dataset.damagelabel || "");
         const modsString = atob(btn.dataset.mods || "");
         const originalTotal = parseInt(btn.dataset.original);
+        const damageType = btn.dataset.damageType;
 
         if (!formula) return;
 
@@ -3119,7 +3155,9 @@ Hooks.on("renderChatMessage", (message, html, data) => {
             await globalThis.notDiceEspeciales.useSavageAttacker(item.actor);
         }
 
-        const rNew = await new Roll(formula).evaluate();
+        const rollObj = new Roll(formula);
+        if (globalThis.notDiceApplyColorset) globalThis.notDiceApplyColorset(rollObj, damageType);
+        const rNew = await rollObj.evaluate();
         const newTotal = rNew.total;
 
         let finalTotal = originalTotal;
