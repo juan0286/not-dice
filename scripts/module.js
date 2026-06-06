@@ -268,6 +268,21 @@ globalThis.notDiceOpenDamageDialog = async ({
     const rowFaces = [4, 6, 8, 10, 12, 20];
     const dialogId = `not-dice-damage-${Math.random().toString(36).slice(2, 10)}`;
     let isCritical = false;
+
+    const actor = actualItem?.actor;
+    const hasSavageAttacker = actor && globalThis.notDiceEspeciales
+        ? globalThis.notDiceEspeciales.hasSavageAttacker(actor, actualItem)
+        : false;
+    const isSavageUsed = hasSavageAttacker
+        ? (globalThis.notDiceEspeciales?.isSavageAttackerUsed(actor) || false)
+        : false;
+    const hasGreatWeaponFighting = actor && globalThis.notDiceEspeciales
+        ? globalThis.notDiceEspeciales.hasGreatWeaponFighting(actor, actualItem)
+        : false;
+    const hasPiercer = actor?.items?.some(i => {
+        const n = (i.name || "").toLowerCase();
+        return i.type === "feat" && (n.includes("piercer") || n.includes("perforador"));
+    }) || false;
     const normalizedRequestedParts = Array.isArray(requestedDamageParts)
         ? requestedDamageParts.map((part, index) => ({
             formula: String(part?.formula || "").trim(),
@@ -338,6 +353,24 @@ globalThis.notDiceOpenDamageDialog = async ({
             </div>
             ` : ""}
 
+            ${hasSavageAttacker ? `
+            <div style="display:flex; align-items:center; gap:8px; margin-top:8px; padding:8px 10px; border:1px solid var(--color-border-light-2, #ddd); border-radius:6px; background:rgba(197,34,31,0.08); ${isSavageUsed ? 'opacity:0.65;' : ''}">
+                <input type="checkbox" id="${dialogId}-savage-cb" class="not-dice-savage-cb" style="margin:0; cursor:pointer;" ${isSavageUsed ? 'disabled' : 'checked'} />
+                <label for="${dialogId}-savage-cb" style="font-size:0.85em; font-weight:bold; color:#ff5252; cursor:pointer; margin:0; display:flex; align-items:center; gap:4px;">
+                    <i class="fas fa-paw"></i> Atacante Salvaje${isSavageUsed ? " (Ya Usado)" : ""}
+                </label>
+            </div>
+            ` : ""}
+
+            ${hasGreatWeaponFighting ? `
+            <div style="display:flex; align-items:center; gap:8px; margin-top:8px; padding:8px 10px; border:1px solid var(--color-border-light-2, #ddd); border-radius:6px; background:rgba(26,115,232,0.08); opacity:0.85;">
+                <input type="checkbox" id="${dialogId}-gwf-cb" class="not-dice-gwf-cb" style="display:none;" checked />
+                <span style="font-size:0.85em; font-weight:bold; color:#1a73e8; margin:0; display:flex; align-items:center; gap:4px;">
+                    <i class="fas fa-gavel"></i> Armas a Dos Manos (Activo)
+                </span>
+            </div>
+            ` : ""}
+
             <div style="margin-top:10px; display:flex; justify-content:flex-end; gap:8px; font-size:0.78em; opacity:0.8;">
                 <span>Selecciona un botón de dado para añadir una nueva fila.</span>
             </div>
@@ -372,17 +405,52 @@ globalThis.notDiceOpenDamageDialog = async ({
             .filter(row => row.formula.length > 0);
     };
 
-    const executeDamageRoll = async (baseFormula, damageType) => {
+    const executeDamageRoll = async (baseFormula, damageType, root) => {
         let formula = baseFormula;
         if (isCritical) formula = doubleDice(formula);
 
-        const roll = await new Roll(formula, actualItem.getRollData()).evaluate();
+        const rootEl = root instanceof HTMLElement ? root : (root?.[0] || root);
+        const isSavage = rootEl?.querySelector?.(".not-dice-savage-cb")?.checked ?? false;
+        const isGwf = rootEl?.querySelector?.(".not-dice-gwf-cb")?.checked ?? false;
+
+        if (isGwf && globalThis.notDiceEspeciales) {
+            formula = globalThis.notDiceEspeciales.applyGreatWeaponFightingFormula(formula);
+        }
+
+        const flavorBase = isCritical ? "Daño Crítico" : "Daño Normal";
         const damageLabel = damageType ? (damageTypeLabels[damageType]?.label || damageType) : "Sin tipo";
-        await roll.toMessage({
-            speaker,
-            flavor: `<strong>${isCritical ? "Daño Crítico" : "Daño"}</strong> • ${actualItem.name || itemName || "Daño"} <span style="opacity:0.75;">(${damageLabel})</span>`
-        });
-        return roll.total;
+
+        let extraMods = [];
+        if (isSavage) extraMods.push("Salvaje");
+        if (isGwf) extraMods.push("Armas a Dos Manos");
+        if (hasPiercer && damageType === "piercing") extraMods.push("Perforador");
+
+        const modsString = extraMods.length > 0 ? ` (${extraMods.join(" | ")})` : "";
+
+        const buildPiercerButtons = (r, dmgIdx) => {
+            if (!hasPiercer || damageType !== "piercing") return "";
+            let buttonsHtml = '<div style="display: flex; gap: 4px; flex-wrap: wrap; margin-top: 8px;">';
+            buttonsHtml += '<div style="width: 100%; font-size: 0.9em; font-weight: bold; margin-bottom: 4px; color: inherit;">Perforador:</div>';
+            r.dice.forEach(die => {
+                die.results.forEach(res => {
+                    buttonsHtml += `<button type="button" class="not-dice-piercer-reroll" data-uuid="${actualItem.uuid}" data-idx="${dmgIdx}" data-faces="${die.faces}" data-original="${res.result}" style="width: 28px; height: 28px; padding: 0; font-weight: bold; border: 1px solid var(--color-border-light-2, #ccc); border-radius: 4px; background: rgba(127,127,127,0.1); color: inherit; cursor: pointer; display: flex; align-items: center; justify-content: center; font-size: 1.1em;" title="d${die.faces}">${res.result}</button>`;
+                });
+            });
+            buttonsHtml += '</div>';
+            return buttonsHtml;
+        };
+
+        if (isSavage && globalThis.notDiceEspeciales) {
+            await globalThis.notDiceEspeciales.useSavageAttacker(actualItem.actor);
+            return await globalThis.notDiceEspeciales.rollSavageAttacker(formula, `<strong>${flavorBase}</strong> • ${actualItem.name || itemName || "Daño"} <span style="opacity:0.75;">(${damageLabel})</span>`, modsString, speaker, 0, buildPiercerButtons);
+        } else {
+            const roll = await new Roll(formula, actualItem.getRollData()).evaluate();
+            await roll.toMessage({
+                speaker,
+                flavor: `<strong>${flavorBase}</strong> • ${actualItem.name || itemName || "Daño"} <span style="opacity:0.75;">(${damageLabel})</span>${modsString}${buildPiercerButtons(roll, 0)}`
+            });
+            return roll.total;
+        }
     };
 
     const sendDamageToGM = async (root) => {
@@ -400,11 +468,14 @@ globalThis.notDiceOpenDamageDialog = async ({
 
         const totals = [];
         for (const row of damageRows) {
-            const total = await executeDamageRoll(row.formula, row.type);
+            const total = await executeDamageRoll(row.formula, row.type, root);
             totals.push(total);
         }
 
-        const applyMastery = root.querySelector(".not-dice-mastery-cb")?.checked ?? false;
+        const rootEl = root instanceof HTMLElement ? root : (root?.[0] || root);
+        const applyMastery = rootEl?.querySelector?.(".not-dice-mastery-cb")?.checked ?? false;
+        const applySavage = rootEl?.querySelector?.(".not-dice-savage-cb")?.checked ?? false;
+        const applyGwf = rootEl?.querySelector?.(".not-dice-gwf-cb")?.checked ?? false;
 
         game.socket.emit("module.not-dice", {
             type: "not-dice.show-spell-damage",
@@ -416,6 +487,8 @@ globalThis.notDiceOpenDamageDialog = async ({
             preCalculatedTotals: totals,
             preCalculatedParts: damageRows,
             applyMastery: applyMastery,
+            applySavage: applySavage,
+            applyGwf: applyGwf,
             isCleaveAttack: isCleaveAttack,
             isNickAttack: isNickAttack
         });
@@ -677,7 +750,13 @@ const notDiceHandleAttackSocket = async (data) => {
     if (data.type === "not-dice.show-spell-damage") {
         try {
             if (globalThis._notDiceActiveAttackDialogs && globalThis._notDiceActiveAttackDialogs[data.itemUuid]) {
-                const wasUpdated = globalThis._notDiceActiveAttackDialogs[data.itemUuid](data.preCalculatedTotals, data.preCalculatedParts, data.applyMastery);
+                const wasUpdated = globalThis._notDiceActiveAttackDialogs[data.itemUuid](
+                    data.preCalculatedTotals,
+                    data.preCalculatedParts,
+                    data.applyMastery,
+                    data.applySavage,
+                    data.applyGwf
+                );
                 if (wasUpdated) {
                     ui.notifications?.info(`Not Dice | Daño actualizado por ${data.senderName || "jugador"}.`);
                     return;
@@ -696,6 +775,8 @@ const notDiceHandleAttackSocket = async (data) => {
                     notDicePreCalculatedParts: data.preCalculatedParts,
                     notDiceMultipliers: data.notDiceMultipliers,
                     notDiceApplyMastery: data.applyMastery,
+                    notDiceApplySavage: data.applySavage,
+                    notDiceApplyGwf: data.applyGwf,
                     isCleaveAttack: data.isCleaveAttack
                 },
                 isNickAttack: data.isNickAttack
@@ -1563,8 +1644,11 @@ thunder: { color: "#7c4dff", icon: "🔊" },
                     </div>`;
                 }
                 if (hasSavageAttacker) {
+                    const initialApplySavage = rollConfig.options?.hasOwnProperty("notDiceApplySavage")
+                        ? rollConfig.options.notDiceApplySavage
+                        : !isSavageUsed;
                     const disabledAttr = isSavageUsed ? "disabled" : "";
-                    const checkedAttr = isSavageUsed ? "" : "checked";
+                    const checkedAttr = (initialApplySavage && !isSavageUsed) ? "checked" : "";
                     specialModsHtml += `
                     <div style="display:flex; justify-content:center; align-items:center; gap:6px; margin-bottom: 4px; padding: 4px 8px; background: rgba(197,34,31,0.08); border: 1px solid rgba(197,34,31,0.3); border-radius: 4px; width: 100%; ${isSavageUsed ? 'opacity:0.65;' : ''}" title="ATACANTE SALVAJE">
                         <input type="checkbox" id="savage-${part.index}" class="savage-attacker-cb" data-index="${part.index}" style="margin:0; cursor:pointer;" ${checkedAttr} ${disabledAttr}>
@@ -1573,9 +1657,9 @@ thunder: { color: "#7c4dff", icon: "🔊" },
                 }
                 if (hasGreatWeaponFighting) {
                     specialModsHtml += `
-                    <div style="display:flex; justify-content:center; align-items:center; gap:6px; margin-bottom: 4px; padding: 4px 8px; background: rgba(26,115,232,0.08); border: 1px solid rgba(26,115,232,0.3); border-radius: 4px; width: 100%;" title="ESTILO: COMBATE CON ARMAS A DOS MANOS">
-                        <input type="checkbox" id="gwf-${part.index}" class="gwf-cb" data-index="${part.index}" style="margin:0; cursor:pointer;" checked>
-                        <label for="gwf-${part.index}" style="font-size:0.85em; color:#1a73e8; cursor:pointer; font-weight:bold; letter-spacing: 0.5px; margin:0;"><i class="fas fa-gavel"></i> Armas a Dos Manos</label>
+                    <div style="display:flex; justify-content:center; align-items:center; gap:6px; margin-bottom: 4px; padding: 4px 8px; background: rgba(26,115,232,0.08); border: 1px solid rgba(26,115,232,0.3); border-radius: 4px; width: 100%; opacity:0.85;" title="ESTILO: COMBATE CON ARMAS A DOS MANOS">
+                        <input type="checkbox" id="gwf-${part.index}" class="gwf-cb" data-index="${part.index}" style="display:none;" checked>
+                        <span style="font-size:0.85em; color:#1a73e8; font-weight:bold; letter-spacing: 0.5px; margin:0; display:flex; align-items:center; gap:4px;"><i class="fas fa-gavel"></i> Armas a Dos Manos (Activo)</span>
                     </div>`;
                 }
 
@@ -2347,14 +2431,31 @@ thunder: { color: "#7c4dff", icon: "🔊" },
                     });
                 });
 
-                globalThis._notDiceActiveAttackDialogs = globalThis._notDiceActiveAttackDialogs || {};
-                globalThis._notDiceActiveAttackDialogs[item.uuid] = (totals, parts = null, applyMastery = null) => {
+                 globalThis._notDiceActiveAttackDialogs = globalThis._notDiceActiveAttackDialogs || {};
+                globalThis._notDiceActiveAttackDialogs[item.uuid] = (totals, parts = null, applyMastery = null, applySavage = null, applyGwf = null) => {
                     const reqBtn = root.querySelector(`#not-dice-btn-request-damage-attack`);
                     if (!document.body.contains(root)) return false; // El DOM del dialog ya no existe
 
                     if (applyMastery !== null) {
                         const masteryCb = root.querySelector("#mastery-cb");
-                        if (masteryCb) masteryCb.checked = !!applyMastery;
+                        if (masteryCb) {
+                            masteryCb.checked = !!applyMastery;
+                            masteryCb.dispatchEvent(new Event("change", { bubbles: true }));
+                        }
+                    }
+
+                    if (applySavage !== null && applySavage !== undefined) {
+                        root.querySelectorAll("[id^='savage-']").forEach(cb => {
+                            cb.checked = !!applySavage;
+                            cb.dispatchEvent(new Event("change", { bubbles: true }));
+                        });
+                    }
+
+                    if (applyGwf !== null && applyGwf !== undefined) {
+                        root.querySelectorAll("[id^='gwf-']").forEach(cb => {
+                            cb.checked = !!applyGwf;
+                            cb.dispatchEvent(new Event("change", { bubbles: true }));
+                        });
                     }
 
                     const safeTotals = Array.isArray(totals) ? totals : [];
