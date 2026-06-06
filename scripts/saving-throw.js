@@ -464,6 +464,12 @@ const showCaughtTokensDialog = (spellData, tokens, templateDocument) => {
         `;
     }
 
+    const isEpicActive = game.modules.get("epic-rolls-5e")?.active || typeof ui.EpicRolls5e !== "undefined";
+    const epicBtnHtml = isEpicActive ? `
+                    <button id="${uniqueId}-epic-btn" style="background: #9c27b0; color: white; border: 1px solid #7b1fa2; padding: 4px 12px; border-radius: 4px; cursor: pointer; font-weight: bold; font-family: inherit; font-size: 0.85em; display:flex; align-items:center; gap:4px; box-shadow: 0 1px 2px rgba(0,0,0,0.2);">
+                        <i class="fas fa-meteor"></i> Epic
+                    </button>` : "";
+
     const content = `
         <div style="font-family:inherit; padding:4px 2px; margin-bottom: 10px;" id="${uniqueId}-main-container">
             ${headerHtml}
@@ -474,9 +480,7 @@ const showCaughtTokensDialog = (spellData, tokens, templateDocument) => {
                     <button id="${uniqueId}-req-saves-btn" style="background: #1a73e8; color: white; border: 1px solid #0b57d0; padding: 4px 12px; border-radius: 4px; cursor: pointer; font-weight: bold; font-family: inherit; font-size: 0.85em; display:flex; align-items:center; gap:4px; box-shadow: 0 1px 2px rgba(0,0,0,0.2);" title="Solicitar Salvaciones a Jugadores">
                         <i class="fas fa-bullhorn"></i> Solicitar
                     </button>
-                    <button id="${uniqueId}-epic-btn" style="background: #9c27b0; color: white; border: 1px solid #7b1fa2; padding: 4px 12px; border-radius: 4px; cursor: pointer; font-weight: bold; font-family: inherit; font-size: 0.85em; display:flex; align-items:center; gap:4px; box-shadow: 0 1px 2px rgba(0,0,0,0.2);">
-                        <i class="fas fa-meteor"></i> Epic
-                    </button>
+${epicBtnHtml}
                 </div>
             </div>
             <div style="max-height: 250px; overflow-y: auto; padding-right: 4px;">
