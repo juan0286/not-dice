@@ -2374,6 +2374,19 @@ thunder: { color: "#7c4dff", icon: "🔊" },
                             extraD20
                         };
                         rerenderAttackRollState();
+
+                        // Enviar solicitud automática de daño al chat si corresponde y el ataque ahora impacta
+                        const autoRequestOnHit = game.settings.get("not-dice", "enableAutoDamageRequestOnHit");
+                        const reqBtn = root.querySelector("#not-dice-btn-request-damage-attack");
+                        if (autoRequestOnHit && canRequestPlayerDamage && reqBtn) {
+                            const hitTargetIds = getHitTargetIds();
+                            if (hitTargetIds.length > 0) {
+                                const sent = await sendDamageRequestToPlayer(root, hitTargetIds);
+                                if (sent) {
+                                    ui.notifications.info("Not Dice | Solicitud de daño enviada automáticamente al jugador (ataque acertado por ventaja/desventaja).");
+                                }
+                            }
+                        }
                     } catch (err) {
                         console.error("Not Dice | Error applying manual advantage/disadvantage", err);
                     } finally {

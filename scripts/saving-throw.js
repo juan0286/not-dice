@@ -166,7 +166,7 @@ async function handleAreaCreation(document, userId, tipoLog) {
             spellData.name = actualItem.name || spellData.name;
             spellData.caster = actualItem.actor?.name || "Desconocido";
             spellData.img = actualItem.img || spellData.img;
-            
+
             if (globalThis.notDiceEnrichDescription) {
                 spellData.description = await globalThis.notDiceEnrichDescription(actualItem);
             } else {
@@ -210,7 +210,7 @@ async function handleAreaCreation(document, userId, tipoLog) {
             // --- EXTRACCIÓN DE DAÑO ---
             spellData.damageLabels = [];
             let hasParts = false;
-            
+
             if (actualItem.system?.activities) {
                 for (const act of actualItem.system.activities.values()) {
                     if (act.damage && act.damage.parts && act.damage.parts.length > 0) {
@@ -239,7 +239,7 @@ async function handleAreaCreation(document, userId, tipoLog) {
                     }
                 }
             }
-            
+
             if (!hasParts && actualItem.labels?.damage) {
                 spellData.hasDamage = true;
                 spellData.damageLabels.push({ formula: actualItem.labels.damage, type: "" });
@@ -378,7 +378,7 @@ const showCaughtTokensDialog = (spellData, tokens, templateDocument) => {
             const style = damageStyle[d.type] || { color: "inherit", bg: "rgba(128,128,128,0.15)", border: "var(--color-border-light-2, #ccc)" };
             // Capitalizar la primera letra del tipo si existe
             const typeDisplay = d.type ? d.type.charAt(0).toUpperCase() + d.type.slice(1) : "";
-            
+
             return `
                 <span style="display:inline-block; font-size:0.85em; background:${style.bg}; color:${style.color}; padding:3px 8px; border-radius:12px; border:1px solid ${style.border}; white-space:nowrap; margin-right:4px;">
                     <strong style="color:inherit; opacity:0.9;">Daño:</strong> <span style="font-weight:bold;">${d.formula}</span> <span style="font-size:0.9em; opacity:0.8;">${typeDisplay}</span>
@@ -822,26 +822,26 @@ ${epicBtnHtml}
                         availableTypes: d.type ? [d.type] : []
                     }))
                 ).replace(/"/g, '&quot;');
-                
+
                 const targetIds = [];
                 const targetMultipliers = {};
                 for (const t of tokens) {
                     const cb = container.querySelector(`.${uniqueId}-cb[data-token-id="${t.id}"]`);
                     if (!cb || !cb.checked) continue;
-                    
+
                     const state = tokenStates[t.id];
                     targetMultipliers[t.id] = state === 'pass' ? 0.5 : 1;
                     targetIds.push(t.id);
                 }
-                
+
                 if (targetIds.length === 0) {
                     ui.notifications.warn("Not Dice | No hay objetivos marcados (checkbox) para solicitar daño.");
                     return;
                 }
-                
+
                 const targetIdsStr = targetIds.join(",");
                 const multipliersStr = JSON.stringify(targetMultipliers).replace(/"/g, '&quot;');
-                
+
                 ChatMessage.create({
                     whisper: [uId],
                     content: `
@@ -854,7 +854,7 @@ ${epicBtnHtml}
                         </div>
                     `
                 });
-                
+
                 reqBtn.innerHTML = "<i class='fas fa-check'></i> Solicitud Enviada";
                 reqBtn.disabled = true;
                 reqBtn.style.opacity = "0.6";
@@ -940,7 +940,7 @@ ${epicBtnHtml}
         const DialogV2 = foundry?.applications?.api?.DialogV2;
         if (DialogV2) {
             const app = new DialogV2({
-                window: { title: `Área de Efecto detectada` },
+                window: { title: `Hechizo de Área Lanzado` },
                 content: content,
                 position: { width: 500 }, // Ancho aumentado para acomodar los nuevos botones
                 buttons: [
@@ -991,41 +991,41 @@ Hooks.on("renderChatMessage", (message, html) => {
         const dc = btn.dataset.dc;
         const targetIdsStr = btn.dataset.targets;
         const sourceId = btn.dataset.sourceId;
-        
+
         btn.disabled = true;
         btn.innerHTML = "<i class='fas fa-spinner fa-spin'></i> Tirando...";
         btn.style.opacity = "0.7";
         btn.style.cursor = "not-allowed";
-        
+
         try {
             const targetIds = targetIdsStr ? targetIdsStr.split(",") : [];
             const results = {};
-            
+
             for (const tId of targetIds) {
                 const token = canvas.tokens.get(tId);
                 if (!token || !token.actor) continue;
-                
+
                 const rolls = await token.actor.rollSavingThrow({ ability: abilityId });
-                
+
                 if (rolls) {
                     const roll = Array.isArray(rolls) ? rolls[0] : rolls;
-                    
+
                     results[tId] = {
                         total: roll.total,
                         isSuccess: dc ? roll.total >= parseInt(dc) : undefined
                     };
                 }
             }
-            
+
             const targetUserId = game.users.find(u => u.isGM && u.active)?.id;
-            
+
             if (!targetUserId || !game.socket) {
                 ui.notifications.warn("Not Dice | No hay un GM activo para recibir la salvación.");
                 btn.disabled = false;
                 btn.innerHTML = "Error. GM desconectado.";
                 return;
             }
-            
+
             const payload = {
                 type: "not-dice.show-spell-save-result",
                 sourceId: sourceId,
@@ -1033,12 +1033,12 @@ Hooks.on("renderChatMessage", (message, html) => {
                 senderName: game.user.name,
                 targetUserId: targetUserId
             };
-            
+
             game.socket.emit("module.not-dice", payload);
             ui.notifications.info("Not Dice | Resultado de salvación enviado al GM.");
-            
+
             btn.innerHTML = `<i class='fas fa-check'></i> Salvaciones Enviadas`;
-        } catch(e) {
+        } catch (e) {
             console.error("Not Dice | Error tirando salvación", e);
             btn.disabled = false;
             btn.innerHTML = "Error. Reintentar";
@@ -1049,16 +1049,16 @@ Hooks.on("renderChatMessage", (message, html) => {
         ev.preventDefault();
         const btn = ev.currentTarget;
         const uuid = btn.dataset.uuid;
-        
+
         btn.disabled = true;
         btn.innerHTML = "<i class='fas fa-spinner fa-spin'></i> Tirando...";
         btn.style.opacity = "0.7";
         btn.style.cursor = "not-allowed";
-        
+
         try {
             const item = await fromUuid(uuid);
             const actualItem = item?.item || item;
-            
+
             if (!actualItem) {
                 ui.notifications.warn("Not Dice | No se pudo encontrar el objeto origen para el daño.");
                 btn.disabled = false;
@@ -1142,14 +1142,14 @@ Hooks.on("renderChatMessage", (message, html) => {
                 totals.push(r.total);
                 grandTotal += r.total;
             }
-            
+
             if (!targetUserId || !game.socket) {
                 ui.notifications.warn("Not Dice | No hay un GM activo para recibir el daño.");
                 btn.disabled = false;
                 btn.innerHTML = "Error. GM desconectado.";
                 return;
             }
-            
+
             const payload = {
                 type: "not-dice.show-spell-damage",
                 itemUuid: uuid,
@@ -1159,12 +1159,12 @@ Hooks.on("renderChatMessage", (message, html) => {
                 targetUserId: targetUserId,
                 preCalculatedTotals: totals
             };
-            
+
             game.socket.emit("module.not-dice", payload);
             ui.notifications.info("Not Dice | Resultado de daño enviado al GM.");
-            
+
             btn.innerHTML = `<i class='fas fa-check'></i> Daño Enviado (${grandTotal})`;
-        } catch(e) {
+        } catch (e) {
             console.error("Not Dice | Error tirando daño del hechizo", e);
             btn.disabled = false;
             btn.innerHTML = "Error. Reintentar";
