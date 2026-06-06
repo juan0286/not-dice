@@ -1017,27 +1017,9 @@ Hooks.once("ready", () => {
 
             const item = rollConfig.subject?.item || rollConfig.subject;
 
-            // --- Great Weapon Master / Maestro en Armas Pesadas ---
-            if (item && item.type === "weapon" && actor) {
-                const hasGWM = actor.items?.some(i => {
-                    const name = (i.name || "").toLowerCase();
-                    return i.type === "feat" && (name.includes("great weapon master") || name.includes("maestro de armas pesadas") || name.includes("maestro en armas pesadas"));
-                });
-
-                const isHeavy = item.system?.properties?.has("hvy");
-                const actionType = rollConfig.subject?.actionType || item.system?.actionType;
-                const isMelee = actionType === "mwak";
-
-                if (!hasForcedParts && hasGWM && isHeavy && isMelee) {
-                    const profBonus = actor.system?.attributes?.prof || 0;
-                    if (profBonus > 0 && rolls.length > 0) {
-                        const originalRoll = rolls[0];
-                        const newFormula = `${originalRoll.formula} + ${profBonus}[GWM]`;
-                        const newRoll = new DamageRoll(newFormula, originalRoll.data, originalRoll.options);
-                        rolls[0] = newRoll;
-                        console.log(`Not Dice | Great Weapon Master detectado: Fórmula base modificada a ${newFormula}`);
-                    }
-                }
+            // --- Habilidades Especiales (Maestro en Armas Pesadas, etc.) ---
+            if (globalThis.notDiceEspeciales) {
+                globalThis.notDiceEspeciales.applyGreatWeaponMaster(rolls, actor, item, rollConfig, hasForcedParts);
             }
 
             // --- Detect Mastery ---
@@ -1474,21 +1456,8 @@ Hooks.once("ready", () => {
                 temphp: { color: "inherit", icon: "🛡️" }
             };
 
-            const hasSavageAttacker = actor?.items?.some(i => {
-                const n = (i.name || "").toLowerCase();
-                return i.type === "feat" && (n.includes("savage attacker") || n.includes("atacante salvaje"));
-            }) || false;
-
-            const hasGreatWeaponFighting = actor?.items?.some(i => {
-                const n = (i.name || "").toLowerCase();
-                const sysId = i.system?.identifier || "";
-                return i.type === "feat" && (
-                    n.includes("great weapon fighting") ||
-                    n.includes("armas a dos manos") ||
-                    n.includes("arma a dos manos") ||
-                    sysId === "great-weapon-fighting"
-                );
-            }) || false;
+            const hasSavageAttacker = globalThis.notDiceEspeciales?.hasSavageAttacker(actor) || false;
+            const hasGreatWeaponFighting = globalThis.notDiceEspeciales?.hasGreatWeaponFighting(actor) || false;
 
             const hasPiercer = actor?.items?.some(i => {
                 const n = (i.name || "").toLowerCase();
@@ -2206,8 +2175,6 @@ Hooks.once("ready", () => {
                     });
                 };
 
-                const applyGwf = (f) => f.replace(/(\d+)d(\d+)/g, "$1d$2min3");
-
                 const executeDamageRoll = async (baseFormula, isCrit, idx) => {
                     let formula = baseFormula;
                     if (isCrit) formula = doubleDice(formula);
@@ -2216,8 +2183,8 @@ Hooks.once("ready", () => {
                     const isGwf = root.querySelector(`#gwf-${idx}`)?.checked;
                     const selectedType = root.querySelector(`[name='type-${idx}']`)?.value || damageParts.find(p => p.index == idx)?.type;
 
-                    if (isGwf) {
-                        formula = applyGwf(formula);
+                    if (isGwf && globalThis.notDiceEspeciales) {
+                        formula = globalThis.notDiceEspeciales.applyGreatWeaponFightingFormula(formula);
                     }
 
                     const flavorBase = isCrit ? "Daño Crítico" : "Daño Normal";
@@ -2243,14 +2210,8 @@ Hooks.once("ready", () => {
                         return buttonsHtml;
                     };
 
-                    if (isSavage) {
-                        const r1 = await new Roll(formula).evaluate();
-                        const r2 = await new Roll(formula).evaluate();
-
-                        await r1.toMessage({ flavor: `${flavorBase}${modsString.replace(")", " - Tirada 1)")}${buildPiercerButtons(r1, idx)}`, speaker: actorSpeaker });
-                        await r2.toMessage({ flavor: `${flavorBase}${modsString.replace(")", " - Tirada 2)")}${buildPiercerButtons(r2, idx)}`, speaker: actorSpeaker });
-
-                        return Math.max(r1.total, r2.total);
+                    if (isSavage && globalThis.notDiceEspeciales) {
+                        return await globalThis.notDiceEspeciales.rollSavageAttacker(formula, flavorBase, modsString, actorSpeaker, idx, buildPiercerButtons);
                     } else {
                         const r = await new Roll(formula).evaluate();
                         await r.toMessage({ flavor: `${flavorBase}${modsString}${buildPiercerButtons(r, idx)}`, speaker: actorSpeaker });
