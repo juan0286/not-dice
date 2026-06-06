@@ -4,7 +4,8 @@
 // ============================================================
 
 globalThis.notDiceApplyColorset = (rollObj, damageType) => {
-    if (!game.dice3d || !damageType || damageType === "none" || !globalThis.notDiceConstants?.diceStyle) return;
+    const isEnabled = game.settings.get("not-dice", "enableCustomDiceColors");
+    if (!isEnabled || !game.dice3d || !damageType || damageType === "none" || !globalThis.notDiceConstants?.diceStyle) return;
     const style = globalThis.notDiceConstants.diceStyle[damageType];
     if (style) {
         const colorSetName = `not-dice-${damageType}`;

@@ -44,6 +44,15 @@ Hooks.once("init", () => {
         default: true
     });
 
+    game.settings.register("not-dice", "enableCustomDiceColors", {
+        name: "Colores de Dados Personalizados",
+        hint: "Si está activo, colorea los dados en 3D (Dice So Nice) según el tipo de daño.",
+        scope: "client",
+        config: true,
+        type: Boolean,
+        default: true
+    });
+
     // --- Configuraciones de Áreas y Traducción (saving-throw.js) ---
     game.settings.register("not-dice", "enableTemplateIntercept", {
         name: "Detectar Área de Efecto",
