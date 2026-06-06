@@ -2354,8 +2354,12 @@ thunder: { color: "#7c4dff", icon: "🔊" },
                     if (!attackRollState || !attackRollBoxNode) return;
                     setAttackButtonsDisabled(true);
                     try {
-                        const extraRoll = await new Roll("1d20").evaluate();
-                        const extraD20 = extraRoll.total;
+                        const sign = attackRollState.bonus >= 0 ? "+" : "-";
+                        const bonusFormula = `1d20 ${sign} ${Math.abs(attackRollState.bonus)}`;
+                        const extraRoll = await new Roll(bonusFormula).evaluate();
+                        const activeDie = extraRoll.terms?.[0];
+                        const dieResults = activeDie?.results ?? [];
+                        const extraD20 = dieResults[0]?.result ?? 0;
                         const selectedD20 = mode === "advantage"
                             ? Math.max(attackRollState.originalD20, extraD20)
                             : Math.min(attackRollState.originalD20, extraD20);
