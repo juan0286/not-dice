@@ -1724,8 +1724,8 @@ thunder: { color: "#7c4dff", icon: "🔊" },
                     ${specialModsHtml}
                     
                     <div style="display:flex; align-items:center; gap:6px; width:100%;">
-                        <!-- 1. Input de daño (estirado) -->
-                        <input type="number" name="total-${part.index}" value="${rollConfig.options?.notDicePreCalculatedTotals?.[part.index] !== undefined ? rollConfig.options.notDicePreCalculatedTotals[part.index] : '0'}" style="flex:1; height:32px; font-size:1.3em; font-weight:bold; text-align:center; padding:2px; border:1px solid var(--color-border-light-2, #aaa); border-radius:4px; color:#ff5252; background:rgba(128,128,128,0.1); box-sizing:border-box; margin:0;" title="Total de daño base"/>
+                        <!-- 1. Input de daño (un tercio del largo) -->
+                        <input type="number" name="total-${part.index}" value="${rollConfig.options?.notDicePreCalculatedTotals?.[part.index] !== undefined ? rollConfig.options.notDicePreCalculatedTotals[part.index] : '0'}" style="width:55px; flex-shrink:0; height:32px; font-size:1.3em; font-weight:bold; text-align:center; padding:2px; border:1px solid var(--color-border-light-2, #aaa); border-radius:4px; color:#ff5252; background:rgba(128,128,128,0.1); box-sizing:border-box; margin:0;" title="Total de daño base"/>
                         
                         <!-- 2. Multiplicador(es) -->
                         ${(() => {
@@ -1776,10 +1776,10 @@ thunder: { color: "#7c4dff", icon: "🔊" },
                             return partTargetMultipliersHtml;
                         })()}
 
-                        <!-- 3. Botones de tirar dados (Normal y Crítico) -->
-                        <div style="display:flex; gap:3px; flex-shrink:0;">
-                            <button type="button" class="roll-damage-btn" data-index="${part.index}" style="width:32px; height:32px; padding:0; border:1px solid var(--color-border-light-2, #bbb); border-radius:4px; background:var(--color-bg-option, rgba(127,127,127,0.1)); color:inherit; cursor:pointer; display:flex; align-items:center; justify-content:center; box-sizing:border-box; margin:0;" title="Tirar Daño Normal"><i class="fas fa-dice" style="color:inherit; opacity:0.8; font-size:1em;"></i></button>
-                            <button type="button" class="roll-damage-crit-btn" data-index="${part.index}" style="width:32px; height:32px; padding:0; border:1px solid #d32f2f; border-radius:4px; background:rgba(197,34,31,0.1); color:#ff5252; cursor:pointer; display:flex; align-items:center; justify-content:center; box-sizing:border-box; margin:0;" title="Tirar Daño Crítico"><i class="fas fa-dice-d20" style="font-size:1em;"></i></button>
+                        <!-- 3. Botones de tirar dados (Normal y Crítico, estirados) -->
+                        <div style="display:flex; gap:4px; flex:1;">
+                            <button type="button" class="roll-damage-btn" data-index="${part.index}" style="flex:1; height:32px; padding:0 6px; border:1px solid var(--color-border-light-2, #bbb); border-radius:4px; background:var(--color-bg-option, rgba(127,127,127,0.1)); color:inherit; cursor:pointer; display:flex; align-items:center; justify-content:center; gap:4px; font-weight:bold; font-size:0.85em; box-sizing:border-box; margin:0;" title="Tirar Daño Normal"><i class="fas fa-dice" style="color:inherit; opacity:0.8; font-size:1.1em;"></i>Normal</button>
+                            <button type="button" class="roll-damage-crit-btn" data-index="${part.index}" style="flex:1; height:32px; padding:0 6px; border:1px solid #d32f2f; border-radius:4px; background:rgba(197,34,31,0.1); color:#ff5252; cursor:pointer; display:flex; align-items:center; justify-content:center; gap:4px; font-weight:bold; font-size:0.85em; box-sizing:border-box; margin:0;" title="Tirar Daño Crítico"><i class="fas fa-dice-d20" style="font-size:1.1em;"></i>Crítico</button>
                         </div>
                     </div>
                 </div>`;
@@ -2628,10 +2628,10 @@ thunder: { color: "#7c4dff", icon: "🔊" },
                             </div>
                             
                             <div style="display:flex; align-items:center; gap:6px; width:100%;">
-                                <!-- 1. Input de daño (estirado) -->
-                                <input type="number" name="total-${newIndex}" value="${Number(totalVal) || 0}" style="flex:1; height:32px; font-size:1.3em; font-weight:bold; text-align:center; padding:2px; border:1px solid var(--color-border-light-2, #aaa); border-radius:4px; color:#ff5252; background:rgba(128,128,128,0.1); box-sizing:border-box; margin:0;" title="Total de daño base"/>
+                                <!-- 1. Input de daño (un tercio del largo) -->
+                                <input type="number" name="total-${newIndex}" value="${Number(totalVal) || 0}" style="width:55px; flex-shrink:0; height:32px; font-size:1.3em; font-weight:bold; text-align:center; padding:2px; border:1px solid var(--color-border-light-2, #aaa); border-radius:4px; color:#ff5252; background:rgba(128,128,128,0.1); box-sizing:border-box; margin:0;" title="Total de daño base"/>
                                 
-                                <!-- 2. Multiplicador(es) -->
+                                <!-- 2. Multiplicador(es) (estirado) -->
                                 ${(() => {
                                     const targets = resolveTargets();
                                     let partTargetMultipliersHtml = "";
@@ -2650,11 +2650,11 @@ thunder: { color: "#7c4dff", icon: "🔊" },
 
                                             const selectName = `target-multiplier-${t.id}-part-${newIndex}`;
                                             partTargetMultipliersHtml = `
-                                            <select name="${selectName}" style="width:65px; height:32px; border:1px solid var(--color-border-light-2, #ccc); background:rgba(128,128,128,0.1); color:inherit; border-radius:4px; cursor:pointer; font-weight:bold; font-size:1.05em; flex-shrink:0; text-align:center; box-sizing:border-box; margin:0; padding:0;" title="Multiplicador para ${t.name}">
+                                            <select name="${selectName}" style="flex:1; height:32px; border:1px solid var(--color-border-light-2, #ccc); background:rgba(128,128,128,0.1); color:inherit; border-radius:4px; cursor:pointer; font-weight:bold; font-size:1.05em; text-align:center; box-sizing:border-box; margin:0; padding:0;" title="Multiplicador para ${t.name}">
                                                 ${multiplierOptions.map(o => `<option value="${o.val}" ${o.val === detectedMultiplier ? "selected" : ""}>${o.label}</option>`).join("")}
                                             </select>`;
                                         } else {
-                                            partTargetMultipliersHtml += `<div style="display:flex; flex-direction:column; gap:2px; flex-shrink:0;">`;
+                                            partTargetMultipliersHtml += `<div style="display:flex; flex-direction:column; gap:2px; flex:1;">`;
                                             for (const t of targets) {
                                                 const traits = t.actor?.system?.traits;
                                                 let detectedMultiplier = 1;
@@ -2668,7 +2668,7 @@ thunder: { color: "#7c4dff", icon: "🔊" },
 
                                                 const selectName = `target-multiplier-${t.id}-part-${newIndex}`;
                                                 partTargetMultipliersHtml += `
-                                                <div style="display:flex; justify-content:space-between; align-items:center; font-size:0.8em; background: rgba(128,128,128,0.08); padding: 1px 4px; border-radius: 4px; border:1px solid var(--color-border-light-2, #eee); min-height:30px; gap:4px; max-width:140px; box-sizing:border-box;">
+                                                <div style="display:flex; justify-content:space-between; align-items:center; font-size:0.8em; background: rgba(128,128,128,0.08); padding: 1px 4px; border-radius: 4px; border:1px solid var(--color-border-light-2, #eee); min-height:30px; gap:4px; box-sizing:border-box; width:100%;">
                                                     <span style="white-space:nowrap; overflow:hidden; text-overflow:ellipsis; flex:1;" title="${t.name}">${t.name}</span>
                                                     <select name="${selectName}" style="width:55px; height:24px; padding:0; border:1px solid var(--color-border-light-2, #ccc); background:transparent; color:inherit; border-radius:3px; cursor:pointer; font-weight:bold; font-size:0.95em; flex-shrink:0; text-align:center; box-sizing:border-box; margin:0;">
                                                         ${multiplierOptions.map(o => `<option value="${o.val}" ${o.val === detectedMultiplier ? "selected" : ""}>${o.label}</option>`).join("")}

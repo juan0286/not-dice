@@ -50,11 +50,11 @@ globalThis.notDiceConstants = {
     },
     
     multiplierOptions: [
-        { val: -1, label: "Curar (-1)" },
+        { val: -1, label: "Curar" },
         { val: 0, label: "x0" },
         { val: 0.25, label: "x1/4" },
         { val: 0.5, label: "x1/2" },
-        { val: 1, label: "x1 (Normal)" },
+        { val: 1, label: "x1" },
         { val: 2, label: "x2" }
     ]
 };
