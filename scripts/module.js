@@ -1724,8 +1724,8 @@ thunder: { color: "#7c4dff", icon: "🔊" },
                     ${specialModsHtml}
                     
                     <div style="display:flex; align-items:center; gap:6px; width:100%;">
-                        <!-- 1. Input de daño (un tercio del largo) -->
-                        <input type="number" name="total-${part.index}" value="${rollConfig.options?.notDicePreCalculatedTotals?.[part.index] !== undefined ? rollConfig.options.notDicePreCalculatedTotals[part.index] : '0'}" style="width:55px; flex-shrink:0; height:32px; font-size:1.3em; font-weight:bold; text-align:center; padding:2px; border:1px solid var(--color-border-light-2, #aaa); border-radius:4px; color:#ff5252; background:rgba(128,128,128,0.1); box-sizing:border-box; margin:0;" title="Total de daño base"/>
+                        <!-- 1. Input de daño -->
+                        <input type="number" name="total-${part.index}" value="${rollConfig.options?.notDicePreCalculatedTotals?.[part.index] !== undefined ? rollConfig.options.notDicePreCalculatedTotals[part.index] : '0'}" style="width:110px; flex-shrink:0; height:32px; font-size:1.3em; font-weight:bold; text-align:center; padding:2px; border:1px solid var(--color-border-light-2, #aaa); border-radius:4px; color:#ff5252; background:rgba(128,128,128,0.1); box-sizing:border-box; margin:0;" title="Total de daño base"/>
                         
                         <!-- 2. Multiplicador(es) -->
                         ${(() => {
@@ -2628,8 +2628,8 @@ thunder: { color: "#7c4dff", icon: "🔊" },
                             </div>
                             
                             <div style="display:flex; align-items:center; gap:6px; width:100%;">
-                                <!-- 1. Input de daño (un tercio del largo) -->
-                                <input type="number" name="total-${newIndex}" value="${Number(totalVal) || 0}" style="width:55px; flex-shrink:0; height:32px; font-size:1.3em; font-weight:bold; text-align:center; padding:2px; border:1px solid var(--color-border-light-2, #aaa); border-radius:4px; color:#ff5252; background:rgba(128,128,128,0.1); box-sizing:border-box; margin:0;" title="Total de daño base"/>
+                                <!-- 1. Input de daño -->
+                                <input type="number" name="total-${newIndex}" value="${Number(totalVal) || 0}" style="width:110px; flex-shrink:0; height:32px; font-size:1.3em; font-weight:bold; text-align:center; padding:2px; border:1px solid var(--color-border-light-2, #aaa); border-radius:4px; color:#ff5252; background:rgba(128,128,128,0.1); box-sizing:border-box; margin:0;" title="Total de daño base"/>
                                 
                                 <!-- 2. Multiplicador(es) (estirado) -->
                                 ${(() => {
