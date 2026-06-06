@@ -1776,8 +1776,8 @@ thunder: { color: "#7c4dff", icon: "🔊" },
                             return partTargetMultipliersHtml;
                         })()}
 
-                        <!-- 3. Botones de tirar dados (Normal y Crítico, estirados) -->
-                        <div style="display:flex; gap:4px; flex:1;">
+                        <!-- 3. Botones de tirar dados (Normal y Crítico, estirados, en columnas si hay múltiples objetivos) -->
+                        <div style="display:flex; ${targets.length > 1 ? 'flex-direction:column;' : ''} gap:4px; flex:1;">
                             <button type="button" class="roll-damage-btn" data-index="${part.index}" style="flex:1; height:32px; padding:0 6px; border:1px solid var(--color-border-light-2, #bbb); border-radius:4px; background:var(--color-bg-option, rgba(127,127,127,0.1)); color:inherit; cursor:pointer; display:flex; align-items:center; justify-content:center; gap:4px; font-weight:bold; font-size:0.85em; box-sizing:border-box; margin:0;" title="Tirar Daño Normal"><i class="fas fa-dice" style="color:inherit; opacity:0.8; font-size:1.1em;"></i>Normal</button>
                             <button type="button" class="roll-damage-crit-btn" data-index="${part.index}" style="flex:1; height:32px; padding:0 6px; border:1px solid #d32f2f; border-radius:4px; background:rgba(197,34,31,0.1); color:#ff5252; cursor:pointer; display:flex; align-items:center; justify-content:center; gap:4px; font-weight:bold; font-size:0.85em; box-sizing:border-box; margin:0;" title="Tirar Daño Crítico"><i class="fas fa-dice-d20" style="font-size:1.1em;"></i>Crítico</button>
                         </div>
