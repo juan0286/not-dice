@@ -1444,7 +1444,31 @@ Hooks.once("ready", () => {
 
                 if (isAttackAct) {
                     const toHit = item.labels?.toHit || "";
-                    const isProficient = item.system.proficient || false;
+                    let isProficient = false;
+                    if (item?.system?.proficient) {
+                        isProficient = true;
+                    } else if (actor) {
+                        if (actor.type === "npc") {
+                            isProficient = true;
+                        } else if (item) {
+                            const weaponType = item.system?.type?.value;
+                            const baseItem = item.system?.type?.baseItem || item.system?.baseItem;
+                            const weaponProfs = actor.system?.traits?.weaponProf?.value;
+                            if (weaponProfs) {
+                                const profsArray = Array.isArray(weaponProfs)
+                                    ? weaponProfs
+                                    : (weaponProfs instanceof Set ? Array.from(weaponProfs) : Object.values(weaponProfs || {}));
+                                if (weaponType === "simpleM" || weaponType === "simpleR") {
+                                    if (profsArray.includes("sim")) isProficient = true;
+                                } else if (weaponType === "martialM" || weaponType === "martialR") {
+                                    if (profsArray.includes("mar")) isProficient = true;
+                                }
+                                if (!isProficient && baseItem && profsArray.includes(baseItem)) {
+                                    isProficient = true;
+                                }
+                            }
+                        }
+                    }
                     const profBadge = isProficient ? `<span style="display:inline-block; font-size:0.75em; background:rgba(19,115,51,0.15); color:#4caf50; padding:3px 8px; border-radius:12px; border:1px solid rgba(19,115,51,0.3); margin-right:4px; font-weight:bold;"><i class="fas fa-check-circle"></i> Competencia</span>` : `<span style="display:inline-block; font-size:0.75em; background:rgba(127,127,127,0.15); color:inherit; opacity:0.8; padding:3px 8px; border-radius:12px; border:1px solid rgba(127,127,127,0.3); margin-right:4px;">Sin Competencia</span>`;
 
                     let masteryBadge = "";
