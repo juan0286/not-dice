@@ -1622,26 +1622,26 @@ thunder: { color: "#7c4dff", icon: "🔊" },
                     const disabledAttr = isMasteryDisabled ? "disabled" : "";
                     const checkedAttr = (initialApplyMastery && !isMasteryDisabled) ? "checked" : "";
                     specialModsHtml += `
-                    <div style="display:flex; justify-content:center; align-items:center; gap:6px; margin-bottom: 4px; padding: 4px 8px; background: rgba(106,27,154,0.08); border: 1px solid rgba(106,27,154,0.3); border-radius: 4px; width: 100%; ${isMasteryDisabled ? 'opacity:0.65;' : ''}" title="MAESTRÍA: ${activeMastery.label.toUpperCase()}">
-                        <input type="checkbox" id="mastery-cb" class="mastery-cb" style="margin:0; cursor:pointer;" ${checkedAttr} ${disabledAttr}>
-                        <label for="mastery-cb" style="font-size:0.85em; color:#ba68c8; cursor:pointer; font-weight:bold; letter-spacing: 0.5px; margin:0;"><i class="fas fa-crown"></i> Aplicar Maestría: ${activeMastery.label}${isMasteryDisabled ? " (Ya Usada)" : ""}</label>
+                    <div style="display:flex; justify-content:center; align-items:center; gap:6px; margin-bottom: 4px; padding: 2px 6px; background: rgba(106,27,154,0.08); border: 1px solid rgba(106,27,154,0.3); border-radius: 4px; width: 100%; ${isMasteryDisabled ? 'opacity:0.65;' : ''}" title="MAESTRÍA: ${activeMastery.label.toUpperCase()}">
+                        <input type="checkbox" id="mastery-cb" class="mastery-cb" style="margin:0; width:12px; height:12px; cursor:pointer;" ${checkedAttr} ${disabledAttr}>
+                        <label for="mastery-cb" style="font-size:0.8em; color:#ba68c8; cursor:pointer; font-weight:bold; letter-spacing: 0.5px; margin:0;"><i class="fas fa-crown"></i> ${activeMastery.label}${isMasteryDisabled ? " (Usada)" : ""}</label>
                     </div>`;
                 }
                 if (hasSavageAttacker) {
                     specialModsHtml += `
-                    <div style="display:flex; justify-content:center; align-items:center; gap:6px; margin-bottom: 4px; padding: 4px 8px; background: rgba(197,34,31,0.08); border: 1px solid rgba(197,34,31,0.3); border-radius: 4px; width: 100%; ${isSavageUsed ? 'opacity:0.65;' : ''}" title="ATACANTE SALVAJE">
-                        <span style="font-size:0.85em; color:#ff5252; font-weight:bold; letter-spacing: 0.5px; margin:0; display:flex; align-items:center; gap:4px;"><i class="fas fa-paw"></i> Atacante Salvaje${isSavageUsed ? " (Ya Usado)" : " (Disponible)"}</span>
+                    <div style="display:flex; justify-content:center; align-items:center; gap:4px; margin-bottom: 4px; padding: 2px 6px; background: rgba(197,34,31,0.08); border: 1px solid rgba(197,34,31,0.3); border-radius: 4px; width: 100%; ${isSavageUsed ? 'opacity:0.65;' : ''}" title="ATACANTE SALVAJE">
+                        <span style="font-size:0.8em; color:#ff5252; font-weight:bold; letter-spacing: 0.5px; margin:0; display:flex; align-items:center; gap:4px;"><i class="fas fa-paw"></i> Atacante Salvaje${isSavageUsed ? " (Usado)" : ""}</span>
                     </div>`;
                 }
                 if (hasGreatWeaponFighting) {
                     specialModsHtml += `
-                    <div style="display:flex; justify-content:center; align-items:center; gap:6px; margin-bottom: 4px; padding: 4px 8px; background: rgba(26,115,232,0.08); border: 1px solid rgba(26,115,232,0.3); border-radius: 4px; width: 100%; opacity:0.85;" title="ESTILO: COMBATE CON ARMAS A DOS MANOS">
+                    <div style="display:flex; justify-content:center; align-items:center; gap:4px; margin-bottom: 4px; padding: 2px 6px; background: rgba(26,115,232,0.08); border: 1px solid rgba(26,115,232,0.3); border-radius: 4px; width: 100%; opacity:0.85;" title="ESTILO: COMBATE CON ARMAS A DOS MANOS">
                         <input type="checkbox" id="gwf-${part.index}" class="gwf-cb" data-index="${part.index}" style="display:none;" checked>
-                        <span style="font-size:0.85em; color:#1a73e8; font-weight:bold; letter-spacing: 0.5px; margin:0; display:flex; align-items:center; gap:4px;"><i class="fas fa-gavel"></i> Armas a Dos Manos (Activo)</span>
+                        <span style="font-size:0.8em; color:#1a73e8; font-weight:bold; letter-spacing: 0.5px; margin:0; display:flex; align-items:center; gap:4px;"><i class="fas fa-gavel"></i> Armas a Dos Manos (Activo)</span>
                     </div>`;
                 }
 
-                if (specialModsHtml) specialModsHtml = `<div style="margin-bottom:8px;">${specialModsHtml}</div>`;
+                if (specialModsHtml) specialModsHtml = `<div style="margin-bottom:6px; display:flex; flex-wrap:wrap; gap:4px;">${specialModsHtml}</div>`;
                 let labelHtml = part.label;
                 let currentDamageType = part.type;
 
@@ -1667,57 +1667,56 @@ thunder: { color: "#7c4dff", icon: "🔊" },
                 }
 
                 damageInputsHtml += `
-                <div class="damage-part-container" data-index="${part.index}" style="margin-bottom: 12px; padding: 12px; border: 1px solid var(--color-border-light-2, #ddd); border-radius: 6px; background: rgba(127,127,127,0.1); box-shadow: 0 1px 2px rgba(0,0,0,0.1);">
-                    <div style="margin-bottom: 8px; border-bottom: 1px solid var(--color-border-light-2, #ddd); padding-bottom: 4px;">${labelHtml}</div>
-                    
-                    <div style="display:flex; gap:10px; margin-bottom: 8px;">
-                        <div style="flex:1;">
-                            <label style="font-size:0.85em; color:inherit; opacity:0.7;">Fórmula:</label>
-                            <input type="text" value="${part.formula}" readonly style="width: 100%; padding:4px 6px; border:1px solid var(--color-border-light-2, #ccc); border-radius:4px; background:rgba(128,128,128,0.1); color:inherit; font-family:monospace; font-size:1.1em; ${part.isOffhandWithoutStyle ? 'border-color:#ff5252; background-color:rgba(197,34,31,0.1);' : ''}"/>
-                            ${part.isOffhandWithoutStyle ? '<div style="font-size: 0.75em; color: #ff5252; margin-top: 2px;">* Sin mod. de característica</div>' : ''}
+                <div class="damage-part-container" data-index="${part.index}" style="margin-bottom: 8px; padding: 6px 8px; border: 1px solid var(--color-border-light-2, #ddd); border-radius: 6px; background: rgba(127,127,127,0.05); box-shadow: 0 1px 2px rgba(0,0,0,0.1);">
+                    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom: 6px; border-bottom: 1px dashed var(--color-border-light-2, #ddd); padding-bottom: 4px;">
+                        <div>${labelHtml}</div>
+                        <div style="font-size:0.85em; opacity:0.8; font-family:monospace; background:rgba(128,128,128,0.1); padding:1px 6px; border-radius:4px; border:1px solid var(--color-border-light-2, #ccc); text-align:right;" title="Fórmula de Daño">
+                            ${part.formula} ${part.isOffhandWithoutStyle ? '<span style="color:#ff5252;" title="Sin mod. de característica">*</span>' : ''}
                         </div>
                     </div>
                     
                     ${specialModsHtml}
                     
-                    ${(() => {
-                        let partTargetMultipliersHtml = "";
-                        if (targets.length > 0) {
-                            partTargetMultipliersHtml += `<div style="display:flex; flex-direction:column; gap:4px; margin-bottom:8px; padding-top:8px; border-top:1px dashed var(--color-border-light-2, #ccc);">`;
-                            partTargetMultipliersHtml += `<span style="font-size:0.8em; font-weight:bold; opacity:0.8; margin-bottom:2px;">Multiplicadores por Objetivo:</span>`;
-                            for (const t of targets) {
-                                const traits = t.actor?.system?.traits;
-                                let detectedMultiplier = 1;
-                                if (traits) {
-                                    if (traits.di?.value?.has(currentDamageType)) detectedMultiplier = 0;
-                                    else if (traits.dv?.value?.has(currentDamageType)) detectedMultiplier = 2;
-                                    else if (traits.dr?.value?.has(currentDamageType)) detectedMultiplier = 0.5;
-                                }
-                                const baseMult = passedMultipliers[t.id] !== undefined ? passedMultipliers[t.id] : 1;
-                                detectedMultiplier = detectedMultiplier * baseMult;
+                    <div style="display:flex; gap:8px; align-items:flex-start;">
+                        <div style="flex:2; display:flex; flex-direction:column; min-width:0;">
+                            ${(() => {
+                                let partTargetMultipliersHtml = "";
+                                if (targets.length > 0) {
+                                    partTargetMultipliersHtml += `<div style="display:flex; flex-direction:column; gap:2px;">`;
+                                    for (const t of targets) {
+                                        const traits = t.actor?.system?.traits;
+                                        let detectedMultiplier = 1;
+                                        if (traits) {
+                                            if (traits.di?.value?.has(currentDamageType)) detectedMultiplier = 0;
+                                            else if (traits.dv?.value?.has(currentDamageType)) detectedMultiplier = 2;
+                                            else if (traits.dr?.value?.has(currentDamageType)) detectedMultiplier = 0.5;
+                                        }
+                                        const baseMult = passedMultipliers[t.id] !== undefined ? passedMultipliers[t.id] : 1;
+                                        detectedMultiplier = detectedMultiplier * baseMult;
 
-                                const selectName = `target-multiplier-${t.id}-part-${part.index}`;
-                                partTargetMultipliersHtml += `
-                                <div style="display:flex; justify-content:space-between; align-items:center; font-size:0.85em; background: rgba(128,128,128,0.05); padding: 2px 6px; border-radius: 4px;">
-                                    <span style="white-space:nowrap; overflow:hidden; text-overflow:ellipsis; margin-right: 10px;" title="${t.name}">${t.name}</span>
-                                    <select name="${selectName}" style="padding:1px 2px; border:1px solid var(--color-border-light-2, #ccc); background:rgba(128,128,128,0.1); color:inherit; border-radius:4px; cursor:pointer; font-weight:bold;">
-                                        ${multiplierOptions.map(o => `<option value="${o.val}" ${o.val === detectedMultiplier ? "selected" : ""}>${o.label}</option>`).join("")}
-                                    </select>
-                                </div>`;
-                            }
-                            partTargetMultipliersHtml += `</div>`;
-                        }
-                        return partTargetMultipliersHtml;
-                    })()}
-                    
-                    <div style="display:flex; gap:10px; align-items:flex-end;">
-                        <div style="flex:1;">
-                            <label style="font-size:0.85em; color:inherit; opacity:0.7;">Total Daño:</label>
-                            <input type="number" name="total-${part.index}" value="${rollConfig.options?.notDicePreCalculatedTotals?.[part.index] !== undefined ? rollConfig.options.notDicePreCalculatedTotals[part.index] : '0'}" style="width: 100%; height: 38px; font-size:1.6em; font-weight:bold; text-align:center; padding:4px; border:1px solid var(--color-border-light-2, #aaa); border-radius:4px; color:#ff5252; background:rgba(128,128,128,0.1);"/>
+                                        const selectName = `target-multiplier-${t.id}-part-${part.index}`;
+                                        partTargetMultipliersHtml += `
+                                        <div style="display:flex; justify-content:space-between; align-items:center; font-size:0.8em; background: rgba(128,128,128,0.08); padding: 1px 4px; border-radius: 4px; border:1px solid var(--color-border-light-2, #eee);">
+                                            <span style="white-space:nowrap; overflow:hidden; text-overflow:ellipsis; margin-right: 4px; flex:1;" title="${t.name}">${t.name}</span>
+                                            <select name="${selectName}" style="padding:0px 2px; height:20px; border:1px solid var(--color-border-light-2, #ccc); background:transparent; color:inherit; border-radius:3px; cursor:pointer; font-weight:bold; font-size:0.95em; flex-shrink:0;">
+                                                ${multiplierOptions.map(o => `<option value="${o.val}" ${o.val === detectedMultiplier ? "selected" : ""}>${o.label}</option>`).join("")}
+                                            </select>
+                                        </div>`;
+                                    }
+                                    partTargetMultipliersHtml += `</div>`;
+                                }
+                                return partTargetMultipliersHtml;
+                            })()}
                         </div>
-                        <div style="display:flex; gap:4px; padding-bottom:1px; align-items:center;">
-                            <button type="button" class="roll-damage-btn" data-index="${part.index}" style="width:38px; height:38px; border:1px solid var(--color-border-light-2, #bbb); border-radius:4px; background:var(--color-bg-option, rgba(127,127,127,0.1)); color:inherit; cursor:pointer;" title="Tirar Daño Normal"><i class="fas fa-dice" style="color:inherit; opacity:0.8;"></i></button>
-                            <button type="button" class="roll-damage-crit-btn" data-index="${part.index}" style="width:38px; height:38px; border:1px solid #d32f2f; border-radius:4px; background:rgba(197,34,31,0.1); color:#ff5252; cursor:pointer;" title="Tirar Daño Crítico"><i class="fas fa-dice-d20"></i></button>
+                        
+                        <div style="flex:1; min-width:110px; display:flex; flex-direction:column; align-items:flex-end;">
+                            <div style="display:flex; gap:4px; width:100%;">
+                                <input type="number" name="total-${part.index}" value="${rollConfig.options?.notDicePreCalculatedTotals?.[part.index] !== undefined ? rollConfig.options.notDicePreCalculatedTotals[part.index] : '0'}" style="width: 100%; height: 28px; font-size:1.3em; font-weight:bold; text-align:center; padding:2px; border:1px solid var(--color-border-light-2, #aaa); border-radius:4px; color:#ff5252; background:rgba(128,128,128,0.1);"/>
+                                <div style="display:flex; gap:2px;">
+                                    <button type="button" class="roll-damage-btn" data-index="${part.index}" style="width:28px; height:28px; padding:0; border:1px solid var(--color-border-light-2, #bbb); border-radius:4px; background:var(--color-bg-option, rgba(127,127,127,0.1)); color:inherit; cursor:pointer; display:flex; align-items:center; justify-content:center;" title="Tirar Daño Normal"><i class="fas fa-dice" style="color:inherit; opacity:0.8; font-size:0.9em;"></i></button>
+                                    <button type="button" class="roll-damage-crit-btn" data-index="${part.index}" style="width:28px; height:28px; padding:0; border:1px solid #d32f2f; border-radius:4px; background:rgba(197,34,31,0.1); color:#ff5252; cursor:pointer; display:flex; align-items:center; justify-content:center;" title="Tirar Daño Crítico"><i class="fas fa-dice-d20" style="font-size:0.9em;"></i></button>
+                                </div>
+                            </div>
                         </div>
                     </div>
                 </div>`;
@@ -2559,50 +2558,49 @@ thunder: { color: "#7c4dff", icon: "🔊" },
                         const style = type ? (damageStyle[type] || { color: "inherit", icon: "" }) : { color: "inherit", icon: "" };
                         const hiddenTypeInput = `<input type="hidden" name="type-${newIndex}" value="${type}">`;
                         const newRowHtml = `
-                        <div class="damage-part-container" data-index="${newIndex}" style="margin-bottom: 12px; padding: 12px; border: 1px solid rgba(26,115,232,0.4); border-radius: 6px; background: rgba(26,115,232,0.08); box-shadow: 0 1px 2px rgba(0,0,0,0.1);">
-                            <div style="margin-bottom: 8px; border-bottom: 1px solid var(--color-border-light-2, #ddd); padding-bottom: 4px; color:${style.color}; font-weight:bold;">${label} <span style="font-size:0.85em; opacity:0.75; margin-left:6px;">(Agregado por jugador)</span>${hiddenTypeInput}</div>
-                            <div style="display:flex; gap:10px; margin-bottom: 8px;">
-                                <div style="flex:1;">
-                                    <label style="font-size:0.85em; color:inherit; opacity:0.7;">Fórmula:</label>
-                                    <input type="text" value="${formula}" readonly style="width: 100%; padding:4px 6px; border:1px solid var(--color-border-light-2, #ccc); border-radius:4px; background:rgba(128,128,128,0.1); color:inherit; font-family:monospace; font-size:1.1em;"/>
-                                </div>
+                        <div class="damage-part-container" data-index="${newIndex}" style="margin-bottom: 8px; padding: 6px 8px; border: 1px solid rgba(26,115,232,0.4); border-radius: 6px; background: rgba(26,115,232,0.05); box-shadow: 0 1px 2px rgba(0,0,0,0.1);">
+                            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom: 6px; border-bottom: 1px dashed var(--color-border-light-2, #ddd); padding-bottom: 4px; color:${style.color}; font-weight:bold;">
+                                <div>${label} <span style="font-size:0.8em; opacity:0.75; margin-left:4px; font-weight:normal;">(Jugador)</span>${hiddenTypeInput}</div>
+                                <div style="font-size:0.85em; opacity:0.8; font-family:monospace; background:rgba(128,128,128,0.1); padding:1px 6px; border-radius:4px; border:1px solid var(--color-border-light-2, #ccc); text-align:right;" title="Fórmula de Daño">${formula}</div>
                             </div>
                             
-                            ${(() => {
-                                const targets = resolveTargets();
-                                let partTargetMultipliersHtml = "";
-                                if (targets.length > 0) {
-                                    partTargetMultipliersHtml += `<div style="display:flex; flex-direction:column; gap:4px; margin-bottom:8px; padding-top:8px; border-top:1px dashed var(--color-border-light-2, #ccc);">`;
-                                    partTargetMultipliersHtml += `<span style="font-size:0.8em; font-weight:bold; opacity:0.8; margin-bottom:2px;">Multiplicadores por Objetivo:</span>`;
-                                    for (const t of targets) {
-                                        const traits = t.actor?.system?.traits;
-                                        let detectedMultiplier = 1;
-                                        if (traits) {
-                                            if (traits.di?.value?.has(type)) detectedMultiplier = 0;
-                                            else if (traits.dv?.value?.has(type)) detectedMultiplier = 2;
-                                            else if (traits.dr?.value?.has(type)) detectedMultiplier = 0.5;
+                            <div style="display:flex; gap:8px; align-items:flex-start;">
+                                <div style="flex:2; display:flex; flex-direction:column; min-width:0;">
+                                    ${(() => {
+                                        const targets = resolveTargets();
+                                        let partTargetMultipliersHtml = "";
+                                        if (targets.length > 0) {
+                                            partTargetMultipliersHtml += `<div style="display:flex; flex-direction:column; gap:2px;">`;
+                                            for (const t of targets) {
+                                                const traits = t.actor?.system?.traits;
+                                                let detectedMultiplier = 1;
+                                                if (traits) {
+                                                    if (traits.di?.value?.has(type)) detectedMultiplier = 0;
+                                                    else if (traits.dv?.value?.has(type)) detectedMultiplier = 2;
+                                                    else if (traits.dr?.value?.has(type)) detectedMultiplier = 0.5;
+                                                }
+                                                const baseMult = passedMultipliers[t.id] !== undefined ? passedMultipliers[t.id] : 1;
+                                                detectedMultiplier = detectedMultiplier * baseMult;
+        
+                                                const selectName = `target-multiplier-${t.id}-part-${newIndex}`;
+                                                partTargetMultipliersHtml += `
+                                                <div style="display:flex; justify-content:space-between; align-items:center; font-size:0.8em; background: rgba(128,128,128,0.08); padding: 1px 4px; border-radius: 4px; border:1px solid var(--color-border-light-2, #eee);">
+                                                    <span style="white-space:nowrap; overflow:hidden; text-overflow:ellipsis; margin-right: 4px; flex:1;" title="${t.name}">${t.name}</span>
+                                                    <select name="${selectName}" style="padding:0px 2px; height:20px; border:1px solid var(--color-border-light-2, #ccc); background:transparent; color:inherit; border-radius:3px; cursor:pointer; font-weight:bold; font-size:0.95em; flex-shrink:0;">
+                                                        ${multiplierOptions.map(o => `<option value="${o.val}" ${o.val === detectedMultiplier ? "selected" : ""}>${o.label}</option>`).join("")}
+                                                    </select>
+                                                </div>`;
+                                            }
+                                            partTargetMultipliersHtml += `</div>`;
                                         }
-                                        const baseMult = passedMultipliers[t.id] !== undefined ? passedMultipliers[t.id] : 1;
-                                        detectedMultiplier = detectedMultiplier * baseMult;
-
-                                        const selectName = `target-multiplier-${t.id}-part-${newIndex}`;
-                                        partTargetMultipliersHtml += `
-                                        <div style="display:flex; justify-content:space-between; align-items:center; font-size:0.85em; background: rgba(128,128,128,0.05); padding: 2px 6px; border-radius: 4px;">
-                                            <span style="white-space:nowrap; overflow:hidden; text-overflow:ellipsis; margin-right: 10px;" title="${t.name}">${t.name}</span>
-                                            <select name="${selectName}" style="padding:1px 2px; border:1px solid var(--color-border-light-2, #ccc); background:rgba(128,128,128,0.1); color:inherit; border-radius:4px; cursor:pointer; font-weight:bold;">
-                                                ${multiplierOptions.map(o => `<option value="${o.val}" ${o.val === detectedMultiplier ? "selected" : ""}>${o.label}</option>`).join("")}
-                                            </select>
-                                        </div>`;
-                                    }
-                                    partTargetMultipliersHtml += `</div>`;
-                                }
-                                return partTargetMultipliersHtml;
-                            })()}
-                            
-                            <div style="display:flex; gap:10px; align-items:flex-end;">
-                                <div style="flex:1;">
-                                    <label style="font-size:0.85em; color:inherit; opacity:0.7;">Total Daño:</label>
-                                    <input type="number" name="total-${newIndex}" value="${Number(totalVal) || 0}" style="width: 100%; height: 38px; font-size:1.6em; font-weight:bold; text-align:center; padding:4px; border:1px solid var(--color-border-light-2, #aaa); border-radius:4px; color:#ff5252; background:rgba(128,128,128,0.1);"/>
+                                        return partTargetMultipliersHtml;
+                                    })()}
+                                </div>
+                                
+                                <div style="flex:1; min-width:110px; display:flex; flex-direction:column; align-items:flex-end;">
+                                    <div style="display:flex; gap:4px; width:100%;">
+                                        <input type="number" name="total-${newIndex}" value="${Number(totalVal) || 0}" style="width: 100%; height: 28px; font-size:1.3em; font-weight:bold; text-align:center; padding:2px; border:1px solid var(--color-border-light-2, #aaa); border-radius:4px; color:#ff5252; background:rgba(128,128,128,0.1);"/>
+                                    </div>
                                 </div>
                             </div>
                         </div>`;
