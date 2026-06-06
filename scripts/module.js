@@ -160,32 +160,6 @@ const notDiceBuildAttackPayload = (rollConfig, isDamage = false) => {
     }
 };
 
-globalThis.notDiceApplyColorset = (rollObj, damageType) => {
-    if (!game.dice3d || !damageType || damageType === "none" || !globalThis.notDiceConstants?.damageStyle) return;
-    const style = globalThis.notDiceConstants.damageStyle[damageType];
-    if (style && style.color !== "inherit") {
-        const colorSetName = `not-dice-${damageType}`;
-        if (!game.dice3d.colorsets?.[colorSetName] && game.dice3d.addColorset) {
-            game.dice3d.addColorset({
-                name: colorSetName,
-                description: `Not Dice - ${damageType}`,
-                category: "Not Dice",
-                foreground: "#ffffff",
-                background: style.color,
-                outline: "none",
-                edge: "#222222",
-                material: "plastic"
-            });
-        }
-        rollObj.terms.forEach(t => {
-            if (t.faces) {
-                t.options = t.options || {};
-                t.options.colorset = colorSetName;
-            }
-        });
-    }
-};
-
 const notDiceGetDamageTypeOptionsHtml = (selectedType = "", availableTypes = null) => {
     const damageTypes = CONFIG.DND5E?.damageTypes ?? {};
     const sourceEntries = Array.isArray(availableTypes) && availableTypes.length > 0

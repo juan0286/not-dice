@@ -16,6 +16,7 @@
   "esmodules": [
     "scripts/settings.js",
     "scripts/constants.js",
+    "scripts/dice-colors.js",
     "scripts/masteries.js",
     "scripts/especiales.js",
     "scripts/module.js",
