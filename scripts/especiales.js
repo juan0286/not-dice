@@ -5,25 +5,54 @@
 
 globalThis.notDiceEspeciales = {
     /**
-     * Evalúa si un actor posee la dote de Atacante Salvaje (Savage Attacker).
+     * Evalúa si un actor posee la dote de Atacante Salvaje (Savage Attacker),
+     * si el ataque es con arma y si no ha sido usado este turno.
      * @param {Actor} actor - El actor a evaluar.
+     * @param {Item} item - El item/arma utilizada.
      * @returns {boolean}
      */
-    hasSavageAttacker(actor) {
-        if (!actor) return false;
-        return actor.items?.some(i => {
+    hasSavageAttacker(actor, item) {
+        if (!actor || !item || item.type !== "weapon") return false;
+
+        const hasFeat = actor.items?.some(i => {
             const n = (i.name || "").toLowerCase();
             return i.type === "feat" && (n.includes("savage attacker") || n.includes("atacante salvaje"));
-        }) || false;
+        });
+        if (!hasFeat) return false;
+
+        const lastTurn = actor.getFlag("not-dice", `lastSavageAttacker-${actor.id}`);
+        const currentTurn = game.combat
+            ? `${game.combat.id}-${game.combat.round ?? 0}-${game.combat.turn ?? 0}`
+            : Date.now();
+
+        const alreadyUsed = game.combat
+            ? lastTurn === currentTurn
+            : (typeof lastTurn === "number" && (Date.now() - lastTurn) < 6000);
+
+        return !alreadyUsed;
     },
 
     /**
-     * Evalúa si un actor posee el estilo de combate de Armas a Dos Manos (Great Weapon Fighting).
+     * Registra el uso de Atacante Salvaje para el turno actual.
+     * @param {Actor} actor - El actor atacante.
+     */
+    async useSavageAttacker(actor) {
+        if (!actor) return;
+        const currentTurn = game.combat
+            ? `${game.combat.id}-${game.combat.round ?? 0}-${game.combat.turn ?? 0}`
+            : Date.now();
+        await actor.setFlag("not-dice", `lastSavageAttacker-${actor.id}`, currentTurn);
+    },
+
+    /**
+     * Evalúa si un actor posee el estilo de combate de Armas a Dos Manos (Great Weapon Fighting)
+     * y si el ataque se realiza con un arma.
      * @param {Actor} actor - El actor a evaluar.
+     * @param {Item} item - El item/arma utilizada.
      * @returns {boolean}
      */
-    hasGreatWeaponFighting(actor) {
-        if (!actor) return false;
+    hasGreatWeaponFighting(actor, item) {
+        if (!actor || !item || item.type !== "weapon") return false;
         return actor.items?.some(i => {
             const n = (i.name || "").toLowerCase();
             const sysId = i.system?.identifier || "";

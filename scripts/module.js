@@ -1451,13 +1451,13 @@ Hooks.once("ready", () => {
                 psychic: { color: "#ff4081", icon: "🧠" },
                 radiant: { color: "#ffca28", icon: "☀️" },
                 slashing: { color: "inherit", icon: "⚔️" },
-                thunder: { color: "#7c4dff", icon: "🔊" },
+thunder: { color: "#7c4dff", icon: "🔊" },
                 healing: { color: "#69f0ae", icon: "💚" },
                 temphp: { color: "inherit", icon: "🛡️" }
             };
 
-            const hasSavageAttacker = globalThis.notDiceEspeciales?.hasSavageAttacker(actor) || false;
-            const hasGreatWeaponFighting = globalThis.notDiceEspeciales?.hasGreatWeaponFighting(actor) || false;
+            const hasSavageAttacker = globalThis.notDiceEspeciales?.hasSavageAttacker(actor, item) || false;
+            const hasGreatWeaponFighting = globalThis.notDiceEspeciales?.hasGreatWeaponFighting(actor, item) || false;
 
             const hasPiercer = actor?.items?.some(i => {
                 const n = (i.name || "").toLowerCase();
@@ -2211,6 +2211,7 @@ Hooks.once("ready", () => {
                     };
 
                     if (isSavage && globalThis.notDiceEspeciales) {
+                        await globalThis.notDiceEspeciales.useSavageAttacker(item?.actor);
                         return await globalThis.notDiceEspeciales.rollSavageAttacker(formula, flavorBase, modsString, actorSpeaker, idx, buildPiercerButtons);
                     } else {
                         const r = await new Roll(formula).evaluate();
