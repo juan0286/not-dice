@@ -2567,6 +2567,38 @@ thunder: { color: "#7c4dff", icon: "🔊" },
                                     <input type="text" value="${formula}" readonly style="width: 100%; padding:4px 6px; border:1px solid var(--color-border-light-2, #ccc); border-radius:4px; background:rgba(128,128,128,0.1); color:inherit; font-family:monospace; font-size:1.1em;"/>
                                 </div>
                             </div>
+                            
+                            ${(() => {
+                                const targets = resolveTargets();
+                                let partTargetMultipliersHtml = "";
+                                if (targets.length > 0) {
+                                    partTargetMultipliersHtml += `<div style="display:flex; flex-direction:column; gap:4px; margin-bottom:8px; padding-top:8px; border-top:1px dashed var(--color-border-light-2, #ccc);">`;
+                                    partTargetMultipliersHtml += `<span style="font-size:0.8em; font-weight:bold; opacity:0.8; margin-bottom:2px;">Multiplicadores por Objetivo:</span>`;
+                                    for (const t of targets) {
+                                        const traits = t.actor?.system?.traits;
+                                        let detectedMultiplier = 1;
+                                        if (traits) {
+                                            if (traits.di?.value?.has(type)) detectedMultiplier = 0;
+                                            else if (traits.dv?.value?.has(type)) detectedMultiplier = 2;
+                                            else if (traits.dr?.value?.has(type)) detectedMultiplier = 0.5;
+                                        }
+                                        const baseMult = passedMultipliers[t.id] !== undefined ? passedMultipliers[t.id] : 1;
+                                        detectedMultiplier = detectedMultiplier * baseMult;
+
+                                        const selectName = `target-multiplier-${t.id}-part-${newIndex}`;
+                                        partTargetMultipliersHtml += `
+                                        <div style="display:flex; justify-content:space-between; align-items:center; font-size:0.85em; background: rgba(128,128,128,0.05); padding: 2px 6px; border-radius: 4px;">
+                                            <span style="white-space:nowrap; overflow:hidden; text-overflow:ellipsis; margin-right: 10px;" title="${t.name}">${t.name}</span>
+                                            <select name="${selectName}" style="padding:1px 2px; border:1px solid var(--color-border-light-2, #ccc); background:rgba(128,128,128,0.1); color:inherit; border-radius:4px; cursor:pointer; font-weight:bold;">
+                                                ${multiplierOptions.map(o => `<option value="${o.val}" ${o.val === detectedMultiplier ? "selected" : ""}>${o.label}</option>`).join("")}
+                                            </select>
+                                        </div>`;
+                                    }
+                                    partTargetMultipliersHtml += `</div>`;
+                                }
+                                return partTargetMultipliersHtml;
+                            })()}
+                            
                             <div style="display:flex; gap:10px; align-items:flex-end;">
                                 <div style="flex:1;">
                                     <label style="font-size:0.85em; color:inherit; opacity:0.7;">Total Daño:</label>
