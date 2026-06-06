@@ -1305,15 +1305,6 @@ Hooks.once("ready", () => {
                         badgesHtml += `<div style="font-size:0.8em; color:inherit; opacity:0.75; font-style:italic; margin-top:4px;"><i class="fas fa-exclamation-circle"></i> ${conditionLabels.join(", ")}</div>`;
                     }
 
-                    let baseMult = passedMultipliers[t.id] !== undefined ? passedMultipliers[t.id] : 1;
-                    let detectedMultiplier = 1;
-                    for (const dt of allDamageTypes) {
-                        if (traits.di?.value?.has(dt)) detectedMultiplier = 0;
-                        else if (traits.dv?.value?.has(dt) && detectedMultiplier !== 0) detectedMultiplier = 2;
-                        else if (traits.dr?.value?.has(dt) && detectedMultiplier !== 2 && detectedMultiplier !== 0) detectedMultiplier = 0.5;
-                    }
-                    detectedMultiplier = detectedMultiplier * baseMult;
-
                     targetHtml += `
                     <div style="display:flex; align-items:flex-start; gap:10px; padding: 8px; border-radius: 6px; ${borderStyle} ${bgStyle}">
                         ${tokenImgHtml}
@@ -1323,12 +1314,6 @@ Hooks.once("ready", () => {
                                 ${ac !== undefined ? `<span style="font-size:0.85em; font-weight:bold; background:rgba(128,128,128,0.2); color:inherit; padding:2px 6px; border-radius:4px; border:1px solid var(--color-border-light-2, #ccc); box-shadow:0 1px 1px rgba(0,0,0,0.1);" title="Clase de Armadura">CA ${ac}</span>` : ""}
                             </div>
                             <div>${badgesHtml}</div>
-                        </div>
-                        <div style="flex-shrink:0; display:flex; flex-direction:column; align-items:flex-end; gap:4px;">
-                            <label style="font-size:0.75em; color:inherit; opacity:0.7;">Multiplicador:</label>
-                            <select name="target-multiplier-${t.id}" style="padding:2px 4px; border:1px solid var(--color-border-light-2, #ccc); background:rgba(128,128,128,0.1); color:inherit; border-radius:4px; font-size:0.9em; cursor:pointer;">
-                                ${multiplierOptions.map(o => `<option value="${o.val}" style="color:inherit;" ${o.val === detectedMultiplier ? "selected" : ""}>${o.label}</option>`).join("")}
-                            </select>
                         </div>
                     </div>`;
                 }
@@ -1695,6 +1680,36 @@ thunder: { color: "#7c4dff", icon: "🔊" },
                     
                     ${specialModsHtml}
                     
+                    ${(() => {
+                        let partTargetMultipliersHtml = "";
+                        if (targets.length > 0) {
+                            partTargetMultipliersHtml += `<div style="display:flex; flex-direction:column; gap:4px; margin-bottom:8px; padding-top:8px; border-top:1px dashed var(--color-border-light-2, #ccc);">`;
+                            partTargetMultipliersHtml += `<span style="font-size:0.8em; font-weight:bold; opacity:0.8; margin-bottom:2px;">Multiplicadores por Objetivo:</span>`;
+                            for (const t of targets) {
+                                const traits = t.actor?.system?.traits;
+                                let detectedMultiplier = 1;
+                                if (traits) {
+                                    if (traits.di?.value?.has(currentDamageType)) detectedMultiplier = 0;
+                                    else if (traits.dv?.value?.has(currentDamageType)) detectedMultiplier = 2;
+                                    else if (traits.dr?.value?.has(currentDamageType)) detectedMultiplier = 0.5;
+                                }
+                                const baseMult = passedMultipliers[t.id] !== undefined ? passedMultipliers[t.id] : 1;
+                                detectedMultiplier = detectedMultiplier * baseMult;
+
+                                const selectName = `target-multiplier-${t.id}-part-${part.index}`;
+                                partTargetMultipliersHtml += `
+                                <div style="display:flex; justify-content:space-between; align-items:center; font-size:0.85em; background: rgba(128,128,128,0.05); padding: 2px 6px; border-radius: 4px;">
+                                    <span style="white-space:nowrap; overflow:hidden; text-overflow:ellipsis; margin-right: 10px;" title="${t.name}">${t.name}</span>
+                                    <select name="${selectName}" style="padding:1px 2px; border:1px solid var(--color-border-light-2, #ccc); background:rgba(128,128,128,0.1); color:inherit; border-radius:4px; cursor:pointer; font-weight:bold;">
+                                        ${multiplierOptions.map(o => `<option value="${o.val}" ${o.val === detectedMultiplier ? "selected" : ""}>${o.label}</option>`).join("")}
+                                    </select>
+                                </div>`;
+                            }
+                            partTargetMultipliersHtml += `</div>`;
+                        }
+                        return partTargetMultipliersHtml;
+                    })()}
+                    
                     <div style="display:flex; gap:10px; align-items:flex-end;">
                         <div style="flex:1;">
                             <label style="font-size:0.85em; color:inherit; opacity:0.7;">Total Daño:</label>
@@ -1798,7 +1813,7 @@ thunder: { color: "#7c4dff", icon: "🔊" },
                     newTerm._evaluated = true;
                     roll.terms = [newTerm];
 
-                    totalValues.push({ value: val, type: selectedType });
+                    totalValues.push({ value: val, type: selectedType, index: part.index });
                 }
 
                 // Apply Damage
@@ -1988,16 +2003,22 @@ thunder: { color: "#7c4dff", icon: "🔊" },
                     for (const t of targetsLocal) {
                         if (t.actor) {
                             const hpBefore = Number(t.actor.system?.attributes?.hp?.value ?? 0);
-                            const targetMultRaw = root.querySelector(`[name='target-multiplier-${t.id}']`)?.value || "1";
-                            let targetMult = parseFloat(targetMultRaw);
-                            if (isNaN(targetMult)) targetMult = 1;
-
                             const hasHeavyArmorMaster = t.actor.items?.some(i => {
                                 const n = (i.name || "").toLowerCase();
                                 return i.type === "feat" && (n.includes("heavy armor master") || n.includes("maestro en armadura pesada"));
                             });
 
-                            let finalValues = isDamage ? totalValues.map(tv => ({ ...tv, value: Math.floor(tv.value * targetMult) })) : totalValues;
+                            let finalValues = [];
+                            if (isDamage) {
+                                for (const tv of totalValues) {
+                                    const partMultRaw = root.querySelector(`[name='target-multiplier-${t.id}-part-${tv.index}']`)?.value || "1";
+                                    let partMult = parseFloat(partMultRaw);
+                                    if (isNaN(partMult)) partMult = 1;
+                                    finalValues.push({ ...tv, value: Math.floor(tv.value * partMult) });
+                                }
+                            } else {
+                                finalValues = totalValues;
+                            }
 
                             if (hasHeavyArmorMaster) {
                                 const attackerProf = actor?.system?.attributes?.prof ?? 3;
@@ -2122,13 +2143,15 @@ thunder: { color: "#7c4dff", icon: "🔊" },
                 const forcedSet = forcedTargetIds ? new Set(forcedTargetIds) : null;
 
                 root.querySelectorAll("select[name^='target-multiplier-']").forEach(select => {
-                    const tId = select.name.replace("target-multiplier-", "");
+                    const match = select.name.match(/target-multiplier-([^-]+)-part/);
+                    if (!match) return;
+                    const tId = match[1];
                     if (forcedSet && !forcedSet.has(tId)) return;
 
                     const mult = parseFloat(select.value);
                     if (mult > 0 || mult === -1) {
-                        targetIds.push(tId);
-                        targetMultipliers[tId] = mult;
+                        if (!targetIds.includes(tId)) targetIds.push(tId);
+                        if (targetMultipliers[tId] === undefined) targetMultipliers[tId] = mult;
                     }
                 });
 
@@ -2320,23 +2343,24 @@ thunder: { color: "#7c4dff", icon: "🔊" },
                 root.querySelectorAll("select[name^='type-']").forEach(select => {
                     select.addEventListener("change", (ev) => {
                         const newType = ev.currentTarget.value;
-                        const currentTypes = Array.from(root.querySelectorAll("select[name^='type-'], input[type='hidden'][name^='type-']")).map(el => el.value);
+                        const partIndexMatch = ev.currentTarget.name.match(/type-(\d+)/);
+                        const partIndex = partIndexMatch ? partIndexMatch[1] : null;
 
-                        targets.forEach(t => {
-                            let baseMult = passedMultipliers[t.id] !== undefined ? passedMultipliers[t.id] : 1;
-                            let detectedMultiplier = 1;
-                            const traits = t.actor?.system?.traits;
-                            if (traits) {
-                                for (const dt of currentTypes) {
-                                    if (traits.di?.value?.has(dt)) detectedMultiplier = 0;
-                                    else if (traits.dv?.value?.has(dt) && detectedMultiplier !== 0) detectedMultiplier = 2;
-                                    else if (traits.dr?.value?.has(dt) && detectedMultiplier !== 2 && detectedMultiplier !== 0) detectedMultiplier = 0.5;
+                        if (partIndex !== null) {
+                            targets.forEach(t => {
+                                let baseMult = passedMultipliers[t.id] !== undefined ? passedMultipliers[t.id] : 1;
+                                let detectedMultiplier = 1;
+                                const traits = t.actor?.system?.traits;
+                                if (traits) {
+                                    if (traits.di?.value?.has(newType)) detectedMultiplier = 0;
+                                    else if (traits.dv?.value?.has(newType)) detectedMultiplier = 2;
+                                    else if (traits.dr?.value?.has(newType)) detectedMultiplier = 0.5;
                                 }
-                            }
-                            detectedMultiplier = detectedMultiplier * baseMult;
-                            const targetSelect = root.querySelector(`select[name='target-multiplier-${t.id}']`);
-                            if (targetSelect) targetSelect.value = detectedMultiplier;
-                        });
+                                detectedMultiplier = detectedMultiplier * baseMult;
+                                const targetSelect = root.querySelector(`select[name='target-multiplier-${t.id}-part-${partIndex}']`);
+                                if (targetSelect) targetSelect.value = detectedMultiplier;
+                            });
+                        }
 
                         const style = damageStyle[newType] || { color: "inherit" };
                         ev.currentTarget.style.color = style.color;
