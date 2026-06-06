@@ -355,10 +355,9 @@ globalThis.notDiceOpenDamageDialog = async ({
 
             ${hasSavageAttacker ? `
             <div style="display:flex; align-items:center; gap:8px; margin-top:8px; padding:8px 10px; border:1px solid var(--color-border-light-2, #ddd); border-radius:6px; background:rgba(197,34,31,0.08); ${isSavageUsed ? 'opacity:0.65;' : ''}">
-                <input type="checkbox" id="${dialogId}-savage-cb" class="not-dice-savage-cb" style="margin:0; cursor:pointer;" ${isSavageUsed ? 'disabled' : 'checked'} />
-                <label for="${dialogId}-savage-cb" style="font-size:0.85em; font-weight:bold; color:#ff5252; cursor:pointer; margin:0; display:flex; align-items:center; gap:4px;">
-                    <i class="fas fa-paw"></i> Atacante Salvaje${isSavageUsed ? " (Ya Usado)" : ""}
-                </label>
+                <span style="font-size:0.85em; font-weight:bold; color:#ff5252; margin:0; display:flex; align-items:center; gap:4px;">
+                    <i class="fas fa-paw"></i> Atacante Salvaje${isSavageUsed ? " (Ya Usado)" : " (Disponible)"}
+                </span>
             </div>
             ` : ""}
 
@@ -410,7 +409,6 @@ globalThis.notDiceOpenDamageDialog = async ({
         if (isCritical) formula = doubleDice(formula);
 
         const rootEl = root instanceof HTMLElement ? root : (root?.[0] || root);
-        const isSavage = rootEl?.querySelector?.(".not-dice-savage-cb")?.checked ?? false;
         const isGwf = rootEl?.querySelector?.(".not-dice-gwf-cb")?.checked ?? false;
 
         if (isGwf && globalThis.notDiceEspeciales) {
@@ -421,7 +419,6 @@ globalThis.notDiceOpenDamageDialog = async ({
         const damageLabel = damageType ? (damageTypeLabels[damageType]?.label || damageType) : "Sin tipo";
 
         let extraMods = [];
-        if (isSavage) extraMods.push("Salvaje");
         if (isGwf) extraMods.push("Armas a Dos Manos");
         if (hasPiercer && damageType === "piercing") extraMods.push("Perforador");
 
@@ -440,17 +437,17 @@ globalThis.notDiceOpenDamageDialog = async ({
             return buttonsHtml;
         };
 
-        if (isSavage && globalThis.notDiceEspeciales) {
-            await globalThis.notDiceEspeciales.useSavageAttacker(actualItem.actor);
-            return await globalThis.notDiceEspeciales.rollSavageAttacker(formula, `<strong>${flavorBase}</strong> • ${actualItem.name || itemName || "Daño"} <span style="opacity:0.75;">(${damageLabel})</span>`, modsString, speaker, 0, buildPiercerButtons);
-        } else {
-            const roll = await new Roll(formula, actualItem.getRollData()).evaluate();
-            await roll.toMessage({
-                speaker,
-                flavor: `<strong>${flavorBase}</strong> • ${actualItem.name || itemName || "Daño"} <span style="opacity:0.75;">(${damageLabel})</span>${modsString}${buildPiercerButtons(roll, 0)}`
-            });
-            return roll.total;
-        }
+        const buildSavageButton = (r, dmgIdx) => {
+            if (!hasSavageAttacker || isSavageUsed) return "";
+            return `<div style="margin-top:8px;"><button type="button" class="not-dice-savage-reroll" data-uuid="${actualItem.uuid}" data-idx="${dmgIdx}" data-formula="${btoa(formula)}" data-flavor="${btoa(flavorBase)}" data-damagelabel="${btoa(damageLabel)}" data-mods="${btoa(modsString)}" data-original="${r.total}" style="width:100%; font-weight:bold; padding:4px; border:1px solid rgba(197,34,31,0.5); border-radius:4px; background:rgba(197,34,31,0.1); color:#ff5252; cursor:pointer;"><i class="fas fa-paw"></i> Atacante Salvaje (relanza el daño)</button></div>`;
+        };
+
+        const roll = await new Roll(formula, actualItem.getRollData()).evaluate();
+        await roll.toMessage({
+            speaker,
+            flavor: `<strong>${flavorBase}</strong> • ${actualItem.name || itemName || "Daño"} <span style="opacity:0.75;">(${damageLabel})</span>${modsString}${buildPiercerButtons(roll, 0)}${buildSavageButton(roll, 0)}`
+        });
+        return roll.total;
     };
 
     const sendDamageToGM = async (root) => {
@@ -1644,15 +1641,9 @@ thunder: { color: "#7c4dff", icon: "🔊" },
                     </div>`;
                 }
                 if (hasSavageAttacker) {
-                    const initialApplySavage = rollConfig.options?.hasOwnProperty("notDiceApplySavage")
-                        ? rollConfig.options.notDiceApplySavage
-                        : !isSavageUsed;
-                    const disabledAttr = isSavageUsed ? "disabled" : "";
-                    const checkedAttr = (initialApplySavage && !isSavageUsed) ? "checked" : "";
                     specialModsHtml += `
                     <div style="display:flex; justify-content:center; align-items:center; gap:6px; margin-bottom: 4px; padding: 4px 8px; background: rgba(197,34,31,0.08); border: 1px solid rgba(197,34,31,0.3); border-radius: 4px; width: 100%; ${isSavageUsed ? 'opacity:0.65;' : ''}" title="ATACANTE SALVAJE">
-                        <input type="checkbox" id="savage-${part.index}" class="savage-attacker-cb" data-index="${part.index}" style="margin:0; cursor:pointer;" ${checkedAttr} ${disabledAttr}>
-                        <label for="savage-${part.index}" style="font-size:0.85em; color:#ff5252; cursor:pointer; font-weight:bold; letter-spacing: 0.5px; margin:0;"><i class="fas fa-paw"></i> Atacante Salvaje${isSavageUsed ? " (Ya Usado)" : ""}</label>
+                        <span style="font-size:0.85em; color:#ff5252; font-weight:bold; letter-spacing: 0.5px; margin:0; display:flex; align-items:center; gap:4px;"><i class="fas fa-paw"></i> Atacante Salvaje${isSavageUsed ? " (Ya Usado)" : " (Disponible)"}</span>
                     </div>`;
                 }
                 if (hasGreatWeaponFighting) {
@@ -2360,7 +2351,6 @@ thunder: { color: "#7c4dff", icon: "🔊" },
                     let formula = baseFormula;
                     if (isCrit) formula = doubleDice(formula);
 
-                    const isSavage = root.querySelector(`#savage-${idx}`)?.checked;
                     const isGwf = root.querySelector(`#gwf-${idx}`)?.checked;
                     const selectedType = root.querySelector(`[name='type-${idx}']`)?.value || damageParts.find(p => p.index == idx)?.type;
 
@@ -2372,7 +2362,6 @@ thunder: { color: "#7c4dff", icon: "🔊" },
                     const actorSpeaker = ChatMessage.getSpeaker({ actor: actor });
 
                     let extraMods = [];
-                    if (isSavage) extraMods.push("Salvaje");
                     if (isGwf) extraMods.push("Armas a Dos Manos");
                     if (hasPiercer && selectedType === "piercing") extraMods.push("Perforador");
 
@@ -2391,14 +2380,14 @@ thunder: { color: "#7c4dff", icon: "🔊" },
                         return buttonsHtml;
                     };
 
-                    if (isSavage && globalThis.notDiceEspeciales) {
-                        await globalThis.notDiceEspeciales.useSavageAttacker(actor);
-                        return await globalThis.notDiceEspeciales.rollSavageAttacker(formula, flavorBase, modsString, actorSpeaker, idx, buildPiercerButtons);
-                    } else {
-                        const r = await new Roll(formula).evaluate();
-                        await r.toMessage({ flavor: `${flavorBase}${modsString}${buildPiercerButtons(r, idx)}`, speaker: actorSpeaker });
-                        return r.total;
-                    }
+                    const buildSavageButton = (r, dmgIdx) => {
+                        if (!hasSavageAttacker || isSavageUsed) return "";
+                        return `<div style="margin-top:8px;"><button type="button" class="not-dice-savage-reroll" data-uuid="${item.uuid}" data-idx="${dmgIdx}" data-formula="${btoa(formula)}" data-flavor="${btoa(flavorBase)}" data-damagelabel="" data-mods="${btoa(modsString)}" data-original="${r.total}" style="width:100%; font-weight:bold; padding:4px; border:1px solid rgba(197,34,31,0.5); border-radius:4px; background:rgba(197,34,31,0.1); color:#ff5252; cursor:pointer;"><i class="fas fa-paw"></i> Atacante Salvaje (relanza el daño)</button></div>`;
+                    };
+
+                    const r = await new Roll(formula).evaluate();
+                    await r.toMessage({ flavor: `${flavorBase}${modsString}${buildPiercerButtons(r, idx)}${buildSavageButton(r, idx)}`, speaker: actorSpeaker });
+                    return r.total;
                 };
 
                 root.querySelectorAll(".roll-damage-btn").forEach(btn => {
@@ -2648,6 +2637,17 @@ thunder: { color: "#7c4dff", icon: "🔊" },
                         current = current - oldResult + newResult;
                         inputTotal.value = current;
                         return { previous, current };
+                    }
+                    return false;
+                };
+
+                globalThis._notDiceUpdateSavageTotal = globalThis._notDiceUpdateSavageTotal || {};
+                globalThis._notDiceUpdateSavageTotal[item.uuid] = (targetIdx, newTotal) => {
+                    if (!document.body.contains(root)) return false;
+                    const inputTotal = root.querySelector(`[name='total-${targetIdx}']`);
+                    if (inputTotal) {
+                        inputTotal.value = newTotal;
+                        return true;
                     }
                     return false;
                 };
@@ -3099,6 +3099,71 @@ Hooks.on("renderChatMessage", (message, html, data) => {
         btn.style.opacity = "0.5";
         btn.style.textDecoration = "line-through";
         btn.style.color = "#ff5252";
+    });
+
+    html.find(".not-dice-savage-reroll").click(async (ev) => {
+        ev.preventDefault();
+        const btn = ev.currentTarget;
+        const uuid = btn.dataset.uuid;
+        const idx = btn.dataset.idx;
+        const formula = atob(btn.dataset.formula);
+        const flavorBase = atob(btn.dataset.flavor);
+        const damageLabel = atob(btn.dataset.damagelabel || "");
+        const modsString = atob(btn.dataset.mods || "");
+        const originalTotal = parseInt(btn.dataset.original);
+
+        if (!formula) return;
+
+        const item = await fromUuid(uuid);
+        if (item?.actor && globalThis.notDiceEspeciales) {
+            await globalThis.notDiceEspeciales.useSavageAttacker(item.actor);
+        }
+
+        const rNew = await new Roll(formula).evaluate();
+        const newTotal = rNew.total;
+
+        let finalTotal = originalTotal;
+        if (newTotal > originalTotal) {
+            finalTotal = newTotal;
+            if (globalThis._notDiceUpdateSavageTotal && globalThis._notDiceUpdateSavageTotal[uuid]) {
+                globalThis._notDiceUpdateSavageTotal[uuid](idx, finalTotal);
+            }
+        }
+
+        const choicesHtml = `
+            <div style="margin-top: 8px; text-align:center;">
+                <p style="margin-bottom: 4px; font-weight:bold;">Atacante Salvaje: Elige el daño</p>
+                <div style="display:flex; gap:6px; justify-content:center;">
+                    <button type="button" class="not-dice-savage-choice" data-uuid="${uuid}" data-idx="${idx}" data-total="${originalTotal}" style="padding:4px 8px; cursor:pointer;">Original: ${originalTotal}</button>
+                    <button type="button" class="not-dice-savage-choice" data-uuid="${uuid}" data-idx="${idx}" data-total="${newTotal}" style="padding:4px 8px; cursor:pointer;">Nuevo: ${newTotal}</button>
+                </div>
+            </div>
+        `;
+
+        await rNew.toMessage({
+            speaker: message.speaker,
+            flavor: `<strong>${flavorBase}</strong> • ${item?.name || "Daño"} <span style="opacity:0.75;">(${damageLabel})</span>${modsString}${choicesHtml}`
+        });
+
+        btn.disabled = true;
+        btn.style.opacity = "0.5";
+        btn.style.textDecoration = "line-through";
+        btn.innerHTML = `<i class="fas fa-paw"></i> Atacante Salvaje (Usado)`;
+    });
+
+    html.find(".not-dice-savage-choice").click(async (ev) => {
+        ev.preventDefault();
+        const btn = ev.currentTarget;
+        const uuid = btn.dataset.uuid;
+        const idx = btn.dataset.idx;
+        const total = parseInt(btn.dataset.total);
+
+        if (globalThis._notDiceUpdateSavageTotal && globalThis._notDiceUpdateSavageTotal[uuid]) {
+            globalThis._notDiceUpdateSavageTotal[uuid](idx, total);
+            ui.notifications?.info(`Not Dice | Daño actualizado a ${total}`);
+        } else {
+            ui.notifications?.warn("Not Dice | No se pudo actualizar la caja de ataque (es posible que ya esté cerrada o resuelta).");
+        }
     });
 
     html.find(".not-dice-cleave-attack-btn").click(async (ev) => {
