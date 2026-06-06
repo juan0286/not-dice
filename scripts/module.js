@@ -1803,7 +1803,7 @@ thunder: { color: "#7c4dff", icon: "🔊" },
                     ${attackHtml}
                     ${targetHtml}
                     <h3 style="border-bottom: 1px solid var(--color-border-light-2, #ccc); padding-bottom: 4px; margin-bottom: 10px; font-size:1.1em; color:inherit; opacity:0.9;">Desglose de Daño</h3>
-                    <div style="max-height: 380px; overflow-y: auto; padding-right: 6px;">
+                    <div style="max-height: ${damageParts.length > 2 ? '220px' : '380px'}; overflow-y: auto; padding-right: 6px;">
                         ${damageInputsHtml}
                     </div>
                     ${requestDamageBtnHtml}
