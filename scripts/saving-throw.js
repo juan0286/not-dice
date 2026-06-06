@@ -289,6 +289,16 @@ Hooks.on("createMeasuredTemplate", async (document, operation, userId) => handle
  * @returns {void}
  */
 const showCaughtTokensDialog = (spellData, tokens, templateDocument) => {
+    // Ordenar tokens: Primero Personajes Jugadores (PCs), luego NPCs, ordenados alfabéticamente en cada grupo.
+    tokens = [...tokens].sort((a, b) => {
+        const aIsPC = a.actor?.type === "character";
+        const bIsPC = b.actor?.type === "character";
+        if (aIsPC !== bIsPC) {
+            return aIsPC ? -1 : 1;
+        }
+        return (a.name || "").localeCompare(b.name || "");
+    });
+
     const { name, caster, img, level, saveAbilityKey, saveAbility, saveDC, description, effects } = spellData;
     const enableTranslation = game.settings.get("not-dice", "enableTranslation");
     const uniqueId = "nd-ui-" + Math.random().toString(36).substring(2, 9);
