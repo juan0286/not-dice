@@ -4,17 +4,17 @@
 // ============================================================
 
 globalThis.notDiceApplyColorset = (rollObj, damageType) => {
-    if (!game.dice3d || !damageType || damageType === "none" || !globalThis.notDiceConstants?.damageStyle) return;
-    const style = globalThis.notDiceConstants.damageStyle[damageType];
-    if (style && style.color !== "inherit") {
+    if (!game.dice3d || !damageType || damageType === "none" || !globalThis.notDiceConstants?.diceStyle) return;
+    const style = globalThis.notDiceConstants.diceStyle[damageType];
+    if (style) {
         const colorSetName = `not-dice-${damageType}`;
         if (!game.dice3d.colorsets?.[colorSetName] && game.dice3d.addColorset) {
             game.dice3d.addColorset({
                 name: colorSetName,
                 description: `Not Dice - ${damageType}`,
                 category: "Not Dice",
-                foreground: "#ffffff",
-                background: style.color,
+                foreground: style.foreground,
+                background: style.background,
                 outline: "none",
                 edge: "#222222",
                 material: "plastic"

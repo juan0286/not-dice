@@ -31,6 +31,24 @@ globalThis.notDiceConstants = {
          temphp: { color: "inherit", bg: "rgba(128, 128, 128, 0.15)", border: "var(--color-border-light-2, #ccc)" }
     },
     
+    diceStyle: {
+         acid: { background: "#aeea00", foreground: "#ff0000" },
+         bludgeoning: { background: "#808080", foreground: "#ffffff" },
+         cold: { background: "#4fc3f7", foreground: "#ffffff" },
+         fire: { background: "#ff5252", foreground: "#ffd600" },
+         force: { background: "#e040fb", foreground: "#ffffff" },
+         lightning: { background: "#ffd600", foreground: "#000000" },
+         necrotic: { background: "#37474f", foreground: "#ffffff" },
+         piercing: { background: "#9e9e9e", foreground: "#ffffff" },
+         poison: { background: "#00c853", foreground: "#ffffff" },
+         psychic: { background: "#ff4081", foreground: "#ffffff" },
+         radiant: { background: "#ffca28", foreground: "#ffffff" },
+         slashing: { background: "#757575", foreground: "#ffffff" },
+         thunder: { background: "#7c4dff", foreground: "#ffd600" },
+         healing: { background: "#69f0ae", foreground: "#000000" },
+         temphp: { background: "#9e9e9e", foreground: "#ffffff" }
+    },
+    
     multiplierOptions: [
         { val: -1, label: "Curar (-1)" },
         { val: 0, label: "x0" },
