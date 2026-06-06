@@ -1286,33 +1286,38 @@ Hooks.once("ready", () => {
 
                     const tokenImgHtml = tokenImg ? `<img src="${tokenImg}" style="width:38px; height:38px; border-radius:50%; border:1px solid var(--color-border-light-2, #aaa); object-fit:cover; flex-shrink:0; box-shadow: 0 1px 3px rgba(0,0,0,0.3);" />` : "";
 
-                    let badgesHtml = "";
-                    if (dr) badgesHtml += `<span style="display:inline-block; font-size:0.75em; background:rgba(176,96,0,0.15); color:#ffb300; padding:2px 6px; border-radius:8px; border:1px solid rgba(176,96,0,0.3); margin-top:4px; margin-right:4px;"><i class="fas fa-shield-alt"></i> Res: ${dr}</span>`;
-                    if (di) badgesHtml += `<span style="display:inline-block; font-size:0.75em; background:rgba(197,34,31,0.15); color:#ff5252; padding:2px 6px; border-radius:8px; border:1px solid rgba(197,34,31,0.3); margin-top:4px; margin-right:4px;"><i class="fas fa-ban"></i> Inm: ${di}</span>`;
-                    if (dv) badgesHtml += `<span style="display:inline-block; font-size:0.75em; background:rgba(11,87,208,0.15); color:#4fc3f7; padding:2px 6px; border-radius:8px; border:1px solid rgba(11,87,208,0.3); margin-top:4px; margin-right:4px;"><i class="fas fa-heart-broken"></i> Vul: ${dv}</span>`;
+                    const badges = [];
+                    if (dr) badges.push(`<span style="display:inline-block; font-size:0.75em; background:rgba(176,96,0,0.15); color:#ffb300; padding:2px 6px; border-radius:8px; border:1px solid rgba(176,96,0,0.3); font-weight:bold;"><i class="fas fa-shield-alt"></i> Res: ${dr}</span>`);
+                    if (di) badges.push(`<span style="display:inline-block; font-size:0.75em; background:rgba(197,34,31,0.15); color:#ff5252; padding:2px 6px; border-radius:8px; border:1px solid rgba(197,34,31,0.3); font-weight:bold;"><i class="fas fa-ban"></i> Inm: ${di}</span>`);
+                    if (dv) badges.push(`<span style="display:inline-block; font-size:0.75em; background:rgba(11,87,208,0.15); color:#4fc3f7; padding:2px 6px; border-radius:8px; border:1px solid rgba(11,87,208,0.3); font-weight:bold;"><i class="fas fa-heart-broken"></i> Vul: ${dv}</span>`);
 
                     const hasHAM = t.actor.items?.some(i => {
                         const n = (i.name || "").toLowerCase();
                         return i.type === "feat" && (n.includes("heavy armor master") || n.includes("maestro en armadura pesada"));
                     });
-                    if (hasHAM) badgesHtml += `<span style="display:inline-block; font-size:0.75em; background:rgba(106,27,154,0.15); color:#ba68c8; padding:2px 6px; border-radius:8px; border:1px solid rgba(106,27,154,0.3); margin-top:4px; margin-right:4px;"><i class="fas fa-chess-rook"></i> Armadura Pesada (-Prof)</span>`;
+                    if (hasHAM) badges.push(`<span style="display:inline-block; font-size:0.75em; background:rgba(106,27,154,0.15); color:#ba68c8; padding:2px 6px; border-radius:8px; border:1px solid rgba(106,27,154,0.3); font-weight:bold;"><i class="fas fa-chess-rook"></i> Armadura Pesada (-Prof)</span>`);
 
                     const notDiceStatusES = globalThis.notDiceConstants.statusES;
                     const activeStatuses = t.actor?.statuses ?? new Set();
                     const conditionLabels = [];
                     for (const statusId of activeStatuses) { conditionLabels.push(notDiceStatusES[statusId] || statusId); }
                     if (conditionLabels.length > 0) {
-                        badgesHtml += `<div style="font-size:0.8em; color:inherit; opacity:0.75; font-style:italic; margin-top:4px;"><i class="fas fa-exclamation-circle"></i> ${conditionLabels.join(", ")}</div>`;
+                        badges.push(`<span style="display:inline-block; font-size:0.75em; background:rgba(255,82,82,0.15); color:#ff5252; padding:2px 6px; border-radius:8px; border:1px solid rgba(255,82,82,0.3); font-weight:bold;"><i class="fas fa-exclamation-circle"></i> ${conditionLabels.join(", ")}</span>`);
                     }
 
                     targetHtml += `
-                    <div style="display:flex; align-items:flex-start; gap:10px; padding: 8px; border-radius: 6px; ${borderStyle} ${bgStyle}">
-                        ${tokenImgHtml}
-                        <div style="flex:1; min-width:0; display:flex; flex-direction:column; gap:4px;">
-                            <span style="font-weight:bold; font-size:1.1em; color:inherit; line-height:1.1;">${t.name}</span>
-                            ${ac !== undefined ? `<div><span style="font-size:1em; font-weight:bold; background:rgba(128,128,128,0.2); color:inherit; padding:2px 6px; border-radius:4px; border:1px solid var(--color-border-light-2, #ccc); box-shadow:0 1px 1px rgba(0,0,0,0.1);" title="Clase de Armadura">CA ${ac}</span></div>` : ""}
-                            ${badgesHtml ? `<div>${badgesHtml}</div>` : ""}
+                    <div style="display:flex; align-items:center; justify-content:space-between; gap:10px; padding: 8px; border-radius: 6px; ${borderStyle} ${bgStyle}">
+                        <div style="display:flex; align-items:center; gap:10px; flex:1; min-width:0;">
+                            ${tokenImgHtml}
+                            <div style="display:flex; flex-direction:column; gap:4px; min-width:0; flex:1;">
+                                <span style="font-weight:bold; font-size:1.1em; color:inherit; line-height:1.1; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;" title="${t.name}">${t.name}</span>
+                                ${ac !== undefined ? `<div><span style="font-size:1em; font-weight:bold; background:rgba(128,128,128,0.2); color:inherit; padding:2px 6px; border-radius:4px; border:1px solid var(--color-border-light-2, #ccc); box-shadow:0 1px 1px rgba(0,0,0,0.1);" title="Clase de Armadura">CA ${ac}</span></div>` : ""}
+                            </div>
                         </div>
+                        ${badges.length > 0 ? `
+                        <div style="display:flex; flex-direction:column; align-items:flex-end; gap:4px; flex-shrink:0;">
+                            ${badges.join("")}
+                        </div>` : ""}
                     </div>`;
                 }
                 targetHtml += "</div>";
@@ -1440,7 +1445,7 @@ Hooks.once("ready", () => {
                 const attackImg = item.img || "icons/svg/sword.svg";
                 let headerLabel = "Ataque";
                 let headerValue = "";
-                let headerBadges = "";
+                const headerBadges = [];
 
                 if (isAttackAct) {
                     const toHit = item.labels?.toHit || "";
@@ -1469,22 +1474,27 @@ Hooks.once("ready", () => {
                             }
                         }
                     }
-                    const profBadge = isProficient ? `<span style="display:inline-block; font-size:0.75em; background:rgba(19,115,51,0.15); color:#4caf50; padding:3px 8px; border-radius:12px; border:1px solid rgba(19,115,51,0.3); margin-right:4px; font-weight:bold;"><i class="fas fa-check-circle"></i> Competencia</span>` : `<span style="display:inline-block; font-size:0.75em; background:rgba(127,127,127,0.15); color:inherit; opacity:0.8; padding:3px 8px; border-radius:12px; border:1px solid rgba(127,127,127,0.3); margin-right:4px;">Sin Competencia</span>`;
+                    const profBadge = isProficient ? `<span style="display:inline-block; font-size:0.75em; background:rgba(19,115,51,0.15); color:#4caf50; padding:3px 8px; border-radius:12px; border:1px solid rgba(19,115,51,0.3); font-weight:bold;"><i class="fas fa-check-circle"></i> Competencia</span>` : `<span style="display:inline-block; font-size:0.75em; background:rgba(127,127,127,0.15); color:inherit; opacity:0.8; padding:3px 8px; border-radius:12px; border:1px solid rgba(127,127,127,0.3);">Sin Competencia</span>`;
+                    headerBadges.push(profBadge);
 
-                    let masteryBadge = "";
                     if (activeMastery) {
-                        masteryBadge = `<span style="display:inline-block; font-size:0.75em; background:rgba(106,27,154,0.15); color:#ba68c8; padding:3px 8px; border-radius:12px; border:1px solid rgba(106,27,154,0.3); margin-right:4px; font-weight:bold;"><i class="fas fa-crown"></i> Maestría: ${activeMastery.label}</span>`;
+                        headerBadges.push(`<span style="display:inline-block; font-size:0.75em; background:rgba(106,27,154,0.15); color:#ba68c8; padding:3px 8px; border-radius:12px; border:1px solid rgba(106,27,154,0.3); font-weight:bold;"><i class="fas fa-crown"></i> Maestría: ${activeMastery.label}</span>`);
                     }
 
-                    let sapBadge = hasSapEffect ? `<span style="display:inline-block; font-size:0.75em; background:rgba(197,34,31,0.15); color:#ff5252; padding:3px 8px; border-radius:12px; border:1px solid rgba(197,34,31,0.3); margin-right:4px; font-weight:bold;"><i class="fas fa-arrow-down"></i> Desventaja (Debilitado)</span>` : "";
+                    if (hasSapEffect) {
+                        headerBadges.push(`<span style="display:inline-block; font-size:0.75em; background:rgba(197,34,31,0.15); color:#ff5252; padding:3px 8px; border-radius:12px; border:1px solid rgba(197,34,31,0.3); font-weight:bold;"><i class="fas fa-arrow-down"></i> Desventaja (Debilitado)</span>`);
+                    }
 
-                    let vexBadge = hasVexAdvantage ? `<span style="display:inline-block; font-size:0.75em; background:rgba(19,115,51,0.15); color:#4caf50; padding:3px 8px; border-radius:12px; border:1px solid rgba(19,115,51,0.3); margin-right:4px; font-weight:bold;"><i class="fas fa-arrow-up"></i> Ventaja (Molestar)</span>` : "";
+                    if (hasVexAdvantage) {
+                        headerBadges.push(`<span style="display:inline-block; font-size:0.75em; background:rgba(19,115,51,0.15); color:#4caf50; padding:3px 8px; border-radius:12px; border:1px solid rgba(19,115,51,0.3); font-weight:bold;"><i class="fas fa-arrow-up"></i> Ventaja (Molestar)</span>`);
+                    }
 
-                    let guidingBoltBadge = hasGuidingBoltAdvantage ? `<span style="display:inline-block; font-size:0.75em; background:rgba(176,96,0,0.15); color:#ffb300; padding:3px 8px; border-radius:12px; border:1px solid rgba(176,96,0,0.3); margin-right:4px; font-weight:bold;"><i class="fas fa-star"></i> Ventaja (Saeta Guía)</span>` : "";
+                    if (hasGuidingBoltAdvantage) {
+                        headerBadges.push(`<span style="display:inline-block; font-size:0.75em; background:rgba(176,96,0,0.15); color:#ffb300; padding:3px 8px; border-radius:12px; border:1px solid rgba(176,96,0,0.3); font-weight:bold;"><i class="fas fa-star"></i> Ventaja (Saeta Guía)</span>`);
+                    }
 
                     headerLabel = "Ataque";
                     headerValue = toHit;
-                    headerBadges = `${profBadge} ${masteryBadge} ${sapBadge} ${vexBadge} ${guidingBoltBadge}`;
                 } else {
                     const saveAct = rollConfig.subject?.type === "save" ? rollConfig.subject : (item.system?.activities?.contents?.find(a => a.type === "save") || null);
                     if (saveAct) {
@@ -1495,11 +1505,11 @@ Hooks.once("ready", () => {
                             const dcVal = saveAct.save.dc?.value || item.actor?.system?.attributes?.spelldc || "";
                             headerValue = `CD ${dcVal} ${abilityLabel}`;
                         }
-                        headerBadges = `<span style="display:inline-block; font-size:0.75em; background:rgba(26,115,232,0.15); color:#1a73e8; padding:3px 8px; border-radius:12px; border:1px solid rgba(26,115,232,0.3); margin-right:4px; font-weight:bold;"><i class="fas fa-shield-alt"></i> Salvación</span>`;
+                        headerBadges.push(`<span style="display:inline-block; font-size:0.75em; background:rgba(26,115,232,0.15); color:#1a73e8; padding:3px 8px; border-radius:12px; border:1px solid rgba(26,115,232,0.3); font-weight:bold;"><i class="fas fa-shield-alt"></i> Salvación</span>`);
                     } else {
                         headerLabel = isDamageAct ? "Daño" : "Conjuro";
                         headerValue = item.name || "";
-                        headerBadges = `<span style="display:inline-block; font-size:0.75em; background:rgba(230,124,115,0.15); color:#d50000; padding:3px 8px; border-radius:12px; border:1px solid rgba(230,124,115,0.3); margin-right:4px; font-weight:bold;"><i class="fas fa-bolt"></i> Hechizo</span>`;
+                        headerBadges.push(`<span style="display:inline-block; font-size:0.75em; background:rgba(230,124,115,0.15); color:#d50000; padding:3px 8px; border-radius:12px; border:1px solid rgba(230,124,115,0.3); font-weight:bold;"><i class="fas fa-bolt"></i> Hechizo</span>`);
                     }
                 }
 
@@ -1569,20 +1579,27 @@ Hooks.once("ready", () => {
 
                 const attackerImg = item?.actor?.img || "icons/svg/mystery-man.svg";
                 attackHtml = `
-                <div style="display:flex; align-items:center; gap:12px; margin-bottom:12px; padding:10px; border:1px solid var(--color-border-light-2, #ddd); border-radius:6px; background:rgba(127,127,127,0.1); box-shadow: 0 1px 3px rgba(0,0,0,0.1);">
+                <div style="display:flex; align-items:center; justify-content:space-between; gap:12px; margin-bottom:12px; padding:10px; border:1px solid var(--color-border-light-2, #ddd); border-radius:6px; background:rgba(127,127,127,0.1); box-shadow: 0 1px 3px rgba(0,0,0,0.1);">
+                    <!-- Left: Attacker -->
                     <div style="display:flex; flex-direction:column; align-items:center; gap:4px; width:64px; flex-shrink:0; border-right:1px solid var(--color-border-light-2, #ccc); padding-right:12px;">
                         <img src="${attackerImg}" style="width:48px; height:48px; border:1px solid var(--color-border-light-2, #aaa); border-radius:50%; object-fit:cover; box-shadow:0 1px 2px rgba(0,0,0,0.2);">
                         <span style="font-size:0.7em; font-weight:bold; color:inherit; opacity:0.8; text-align:center; line-height:1; max-width:100%; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;" title="${attackerName}">${attackerName}</span>
                     </div>
+                    
+                    <!-- Middle: Weapon & Attack Info -->
                     <div style="display:flex; align-items:center; gap:12px; flex:1; min-width:0;">
                         <img src="${attackImg}" style="width:48px; height:48px; border:1px solid var(--color-border-light-2, #aaa); border-radius:6px; object-fit:cover; flex-shrink:0;">
                         <div style="flex:1; min-width:0;">
-                            <div style="font-size:1em; margin-bottom:4px; color:inherit; opacity:0.8;">${headerLabel}: <span style="font-weight:900; font-size:1.4em; color:inherit; opacity:1;">${headerValue}</span></div>
-                            <div style="display:flex; flex-wrap:wrap; gap:4px;">
-                                ${headerBadges}
-                            </div>
+                            <div style="font-size:1em; color:inherit; opacity:0.8; line-height:1.2;">${headerLabel}</div>
+                            <div style="font-weight:900; font-size:1.4em; color:inherit; line-height:1.2;">${headerValue}</div>
                         </div>
                     </div>
+
+                    <!-- Right: Badges in rows -->
+                    ${headerBadges.length > 0 ? `
+                    <div style="display:flex; flex-direction:column; align-items:flex-end; gap:4px; flex-shrink:0;">
+                        ${headerBadges.join("")}
+                    </div>` : ""}
                 </div>`;
 
                 if (attackRollHtml) {
