@@ -2099,6 +2099,13 @@ thunder: { color: "#7c4dff", icon: "🔊" },
             const onRenderComplete = (element) => {
                 const root = element instanceof HTMLElement ? element : element[0];
 
+                // --- Auto-roll dados si es curación pura ---
+                if (isHealingOnly) {
+                    setTimeout(() => {
+                        root.querySelectorAll(".roll-damage-btn").forEach(btn => btn.click());
+                    }, 150);
+                }
+
 
                 const attackRollBoxNode = root.querySelector(".not-dice-attack-roll-box");
 
@@ -2517,6 +2524,14 @@ thunder: { color: "#7c4dff", icon: "🔊" },
                 if (attackRollMessageId && handlers[`msg:${attackRollMessageId}`]) delete handlers[`msg:${attackRollMessageId}`];
             };
 
+            // --- Detectar si todos los tipos son curación ---
+            const healingTypes = new Set(["healing", "temphp"]);
+            const isHealingOnly = damageParts.length > 0 && damageParts.every(p => healingTypes.has(p.type));
+
+            const damageButtonLabel = isHealingOnly ? "Aplicar Curación" : "Aplicar Daño";
+            const damageButtonIcon = isHealingOnly ? "fa-solid fa-heart" : "fa-solid fa-skull";
+            const damageButtonIconLegacy = isHealingOnly ? "<i class='fas fa-heart'></i>" : "<i class='fas fa-skull'></i>";
+
             const result = await new Promise(resolve => {
                 const DialogV2 = foundry?.applications?.api?.DialogV2;
                 if (DialogV2) {
@@ -2525,7 +2540,7 @@ thunder: { color: "#7c4dff", icon: "🔊" },
                         content: dialogContent,
                         position: { width: 440 },
                         buttons: [
-                            { action: "damage", icon: "fa-solid fa-skull", label: "Aplicar Daño", default: true },
+                            { action: "damage", icon: damageButtonIcon, label: damageButtonLabel, default: true },
                             { action: "ok", icon: "fa-solid fa-xmark", label: "Falla" }
                         ],
                         submit: async (res) => {
@@ -2547,8 +2562,8 @@ thunder: { color: "#7c4dff", icon: "🔊" },
                         content: dialogContent,
                         buttons: {
                             damage: {
-                                label: "Aplicar Daño",
-                                icon: "<i class='fas fa-skull'></i>",
+                                label: damageButtonLabel,
+                                icon: damageButtonIconLegacy,
                                 callback: async html => {
                                     await applyAndResolve(html, true);
                                     unregisterChatAttackModeHandler();
@@ -2600,11 +2615,20 @@ thunder: { color: "#7c4dff", icon: "🔊" },
             }
 
             const hasMultipliers = rollConfig?.notDiceMultipliers || rollConfig?.options?.notDiceMultipliers || rollConfig?.event?.notDiceMultipliers;
+            
+            const healingTypes = new Set(["healing", "temphp"]);
+            const isHealingOnly = rolls.length > 0 && rolls.every(r => r.options?.type && healingTypes.has(r.options.type));
+
+            if (isHealingOnly && !game.user.isGM) {
+                return notDiceHandlePlayerAttack(rolls, rollConfig);
+            }
+
             const isAutoTriggered = rollConfig?.notDiceAutoTriggered ||
                 rollConfig?.options?.notDiceAutoTriggered ||
                 rollConfig?.event?.notDiceAutoTriggered ||
                 rollConfig?.options?.event?.notDiceAutoTriggered ||
                 !!hasMultipliers ||
+                isHealingOnly ||
                 false;
 
             const hasPreCalculated = rollConfig?.notDicePreCalculatedTotals ||
