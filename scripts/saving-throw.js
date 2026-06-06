@@ -617,9 +617,20 @@ const showCaughtTokensDialog = (spellData, tokens, templateDocument) => {
             epicBtn.addEventListener("click", (e) => {
                 e.preventDefault();
 
-                // Targetear los tokens atrapados para que la UI de Epic Roll los tome automáticamente
-                if (game.user.targets) game.user.targets.clear(); // Limpia los targets actuales
-                tokens.forEach(t => t.setTarget(true, { releaseOthers: false, user: game.user }));
+                // Filtrar solo los tokens con checkbox marcado
+                const checkedTokens = tokens.filter(t => {
+                    const cb = container.querySelector(`.${uniqueId}-cb[data-token-id="${t.id}"]`);
+                    return cb && cb.checked;
+                });
+
+                if (checkedTokens.length === 0) {
+                    ui.notifications.warn("Not Dice | No hay objetivos marcados (checkbox) para Epic Roll.");
+                    return;
+                }
+
+                // Targetear solo los tokens marcados para que la UI de Epic Roll los tome automáticamente
+                if (game.user.targets) game.user.targets.clear();
+                checkedTokens.forEach(t => t.setTarget(true, { releaseOthers: false, user: game.user }));
 
                 let macroFound = false;
 
@@ -632,7 +643,7 @@ const showCaughtTokensDialog = (spellData, tokens, templateDocument) => {
                     console.log("Not Dice | API Epic Rolls encontrada, enviando estructura estricta...");
                     // Opción 2: Fallback a llamar a la API directamente con la estructura estricta
                     const epicData = {
-                        actors: tokens.map(t => t.actor?.uuid).filter(Boolean),
+                        actors: checkedTokens.map(t => t.actor?.uuid).filter(Boolean),
                         contestants: [],
                         type: `save.${spellData.saveAbilityKey}`,
                         contest: null,
@@ -763,6 +774,13 @@ const showCaughtTokensDialog = (spellData, tokens, templateDocument) => {
                 const uId = reqBtn.dataset.user;
                 const uuid = reqBtn.dataset.uuid;
                 const formulas = spellData.damageLabels.map(d => d.formula).join("||");
+                const damagePartsJson = JSON.stringify(
+                    spellData.damageLabels.map(d => ({
+                        formula: d.formula,
+                        type: d.type || "",
+                        availableTypes: d.type ? [d.type] : []
+                    }))
+                ).replace(/"/g, '&quot;');
                 
                 const targetIds = [];
                 const targetMultipliers = {};
@@ -789,7 +807,7 @@ const showCaughtTokensDialog = (spellData, tokens, templateDocument) => {
                         <div class="not-dice-damage-request" style="text-align:center; padding:10px;">
                             <h3 style="margin-bottom:5px;">Daño de ${spellData.name}</h3>
                             <p style="font-size:0.9em; margin-bottom:10px;">El GM solicita tu tirada de daño.</p>
-                            <button class="not-dice-roll-spell-damage" data-uuid="${uuid}" data-formulas="${formulas}" data-targets="${targetIdsStr}" data-multipliers="${multipliersStr}" style="background: rgba(197,34,31,0.1); border: 1px solid #d32f2f; color: #ff5252; font-weight: bold; padding: 6px; border-radius:4px; cursor:pointer; width:100%;">
+                            <button class="not-dice-roll-spell-damage" data-uuid="${uuid}" data-formulas="${formulas}" data-damage-parts="${damagePartsJson}" data-targets="${targetIdsStr}" data-multipliers="${multipliersStr}" style="background: rgba(197,34,31,0.1); border: 1px solid #d32f2f; color: #ff5252; font-weight: bold; padding: 6px; border-radius:4px; cursor:pointer; width:100%;">
                                 <i class="fas fa-dice-d20"></i> Lanzar Daño
                             </button>
                         </div>
