@@ -12,12 +12,24 @@ globalThis.notDiceEspeciales = {
      * @returns {boolean}
      */
     hasSavageAttacker(actor, item) {
-        if (!actor || !item || item.type !== "weapon") return false;
+        console.log("Not Dice Debug | hasSavageAttacker check", { actor: actor?.name, item: item?.name, itemType: item?.type });
+        if (!actor || !item) return false;
+        
+        if (item.type !== "weapon") {
+            console.log("Not Dice Debug | hasSavageAttacker false: item is not weapon");
+            return false;
+        }
 
         const hasFeat = actor.items?.some(i => {
             const n = (i.name || "").toLowerCase();
-            return i.type === "feat" && (n.includes("savage attacker") || n.includes("atacante salvaje"));
+            const sysId = i.system?.identifier || "";
+            return i.type === "feat" && (
+                n.includes("savage attacker") || 
+                n.includes("atacante salvaje") || 
+                sysId === "savage-attacker"
+            );
         });
+        console.log("Not Dice Debug | hasSavageAttacker hasFeat", hasFeat);
         if (!hasFeat) return false;
 
         const lastTurn = actor.getFlag("not-dice", `lastSavageAttacker-${actor.id}`);
@@ -29,6 +41,7 @@ globalThis.notDiceEspeciales = {
             ? lastTurn === currentTurn
             : (typeof lastTurn === "number" && (Date.now() - lastTurn) < 6000);
 
+        console.log("Not Dice Debug | hasSavageAttacker alreadyUsed", alreadyUsed, { lastTurn, currentTurn });
         return !alreadyUsed;
     },
 
@@ -77,7 +90,13 @@ globalThis.notDiceEspeciales = {
         
         const hasFeat = actor.items?.some(i => {
             const name = (i.name || "").toLowerCase();
-            return i.type === "feat" && (name.includes("great weapon master") || name.includes("maestro de armas pesadas") || name.includes("maestro en armas pesadas"));
+            const sysId = i.system?.identifier || "";
+            return i.type === "feat" && (
+                name.includes("great weapon master") || 
+                name.includes("maestro de armas pesadas") || 
+                name.includes("maestro en armas pesadas") ||
+                sysId === "great-weapon-master"
+            );
         });
 
         const isHeavy = item.system?.properties?.has?.("hvy");

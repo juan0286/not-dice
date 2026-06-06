@@ -2099,10 +2099,35 @@ thunder: { color: "#7c4dff", icon: "🔊" },
             const onRenderComplete = (element) => {
                 const root = element instanceof HTMLElement ? element : element[0];
 
-                // --- Auto-roll dados si es curación pura ---
+                // --- Auto-roll dados o valor fijo si es curación pura ---
                 if (isHealingOnly) {
-                    setTimeout(() => {
-                        root.querySelectorAll(".roll-damage-btn").forEach(btn => btn.click());
+                    setTimeout(async () => {
+                        const rollData = typeof item?.getRollData === "function" ? item.getRollData() : {};
+                        for (const part of damageParts) {
+                            const hasDice = /(\d*)d(\d+)/i.test(part.formula);
+                            if (hasDice) {
+                                // Si tiene tirada de dados, lanzamos los dados haciendo clic en el botón de tirar daño
+                                const btn = root.querySelector(`.roll-damage-btn[data-index='${part.index}']`);
+                                if (btn) btn.click();
+                            } else {
+                                // Si no tiene dados, evaluamos el valor fijo y lo ponemos directamente en el resultado (sin toMessage)
+                                try {
+                                    const r = await new Roll(part.formula, rollData).evaluate();
+                                    const total = r.total;
+                                    const inputTotal = root.querySelector(`[name='total-${part.index}']`);
+                                    if (inputTotal) {
+                                        inputTotal.value = total;
+                                    }
+                                } catch (err) {
+                                    console.error("Not Dice | Error evaluando valor fijo de curación:", err);
+                                    const parsed = parseInt(part.formula);
+                                    if (!isNaN(parsed)) {
+                                        const inputTotal = root.querySelector(`[name='total-${part.index}']`);
+                                        if (inputTotal) inputTotal.value = parsed;
+                                    }
+                                }
+                            }
+                        }
                     }, 150);
                 }
 
@@ -2222,7 +2247,7 @@ thunder: { color: "#7c4dff", icon: "🔊" },
                     }
 
                     const flavorBase = isCrit ? "Daño Crítico" : "Daño Normal";
-                    const actorSpeaker = ChatMessage.getSpeaker({ actor: item?.actor });
+                    const actorSpeaker = ChatMessage.getSpeaker({ actor: actor });
 
                     let extraMods = [];
                     if (isSavage) extraMods.push("Salvaje");
@@ -2245,7 +2270,7 @@ thunder: { color: "#7c4dff", icon: "🔊" },
                     };
 
                     if (isSavage && globalThis.notDiceEspeciales) {
-                        await globalThis.notDiceEspeciales.useSavageAttacker(item?.actor);
+                        await globalThis.notDiceEspeciales.useSavageAttacker(actor);
                         return await globalThis.notDiceEspeciales.rollSavageAttacker(formula, flavorBase, modsString, actorSpeaker, idx, buildPiercerButtons);
                     } else {
                         const r = await new Roll(formula).evaluate();
