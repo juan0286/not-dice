@@ -549,11 +549,73 @@ const notDiceHandlePlayerAttack = async (rolls, rollConfig) => {
     return [];
 };
 
+const notDiceExecuteGrazeDamage = async (attackerId, targetIds, abilityMod, damageType, weaponName) => {
+    const attacker = game.actors.get(attackerId) || canvas.tokens.placeables.find(t => t.actor?.id === attackerId)?.actor;
+    const attackerName = attacker ? attacker.name : "Atacante";
+    
+    const damageSummaryLines = [];
+    
+    for (const tId of targetIds) {
+        const targetToken = canvas.tokens.placeables.find(t => t.id === tId);
+        const targetActor = targetToken?.actor || game.actors.get(tId);
+        if (!targetActor) continue;
+        
+        // Aplicar daño
+        const finalValues = [{ value: abilityMod, type: damageType }];
+        await targetActor.applyDamage(finalValues, { ignore: true });
+        
+        damageSummaryLines.push(`<li><strong>${targetActor.name}</strong> recibe <span style="font-weight:bold; color:#ba68c8;">${abilityMod}</span> de daño (${damageType}) por Rozar.</li>`);
+    }
+    
+    if (damageSummaryLines.length > 0) {
+        const whisperUsers = game.users.filter(u => u.isGM || (attacker && attacker.testUserPermission(u, "OWNER"))).map(u => u.id);
+        await ChatMessage.create({
+            whisper: whisperUsers,
+            speaker: { alias: "Not Dice" },
+            content: `
+                <div style="font-family:inherit; padding:8px;">
+                    <h4 style="margin:0 0 6px 0; color:#ba68c8;"><i class="fas fa-bullseye"></i> Maestría: Rozar Aplicado</h4>
+                    <p style="font-size:0.9em; margin:0 0 6px 0;"><strong>${attackerName}</strong> aplicó Rozar con <strong>${weaponName}</strong>:</p>
+                    <ul style="font-size:0.85em; margin:0; padding-left:16px;">
+                        ${damageSummaryLines.join("")}
+                    </ul>
+                </div>
+            `
+        });
+    }
+};
+
 const notDiceHandleAttackSocket = async (data) => {
     if (!data || !game.user.isGM) return;
 
     // Respeta destinatario específico si viene indicado
     if (data.targetUserId && data.targetUserId !== game.user.id) return;
+
+    if (data.type === "not-dice.apply-graze") {
+        try {
+            const item = data.weaponUuid ? await fromUuid(data.weaponUuid) : null;
+            const activity = item?.system?.activities?.find(a => a.type === "save" || a.type === "damage" || a.type === "attack") 
+                || (item?.system?.activities?.size > 0 ? item.system.activities.first() : null)
+                || item;
+
+            if (!item || !activity) return ui.notifications?.warn("Not Dice | No se pudo recuperar el arma/actividad para Rozar.");
+
+            await activity.rollDamage({
+                event: notDiceMockEvent({ targetIds: data.targetIds }),
+                options: {
+                    notDiceAutoTriggered: true,
+                    notDicePreCalculatedTotals: [data.abilityMod],
+                    notDicePreCalculatedParts: [{ formula: data.abilityMod.toString(), type: data.damageType }],
+                    notDiceMultipliers: {},
+                    notDiceApplyMastery: false
+                }
+            });
+            ui.notifications?.info(`Not Dice | Abriendo caja de resolución de Rozar para el GM.`);
+        } catch (e) {
+            console.error("Not Dice | Error en apply-graze socket handler", e);
+        }
+        return;
+    }
 
     if (data.type === "not-dice.show-spell-save-result") {
         Hooks.callAll("notDiceSaveResult", data);
@@ -1565,7 +1627,7 @@ Hooks.once("ready", () => {
                                     ui.notifications.warn(`Not Dice | No tienes un arma secundaria válida equipada para Mellar.`);
                                 }
                             }
-                        } else if (activeMastery.id !== "nick") {
+                        } else if (activeMastery.id !== "nick" && activeMastery.id !== "graze" && !activeMastery.label.toLowerCase().includes("rozar") && !activeMastery.label.toLowerCase().includes("graze")) {
                             for (const t of targetsLocal) {
                                 if (t.actor) {
                                     let effectName = `Maestría: ${activeMastery.label} (${item.actor.name})`;
@@ -1737,6 +1799,62 @@ Hooks.once("ready", () => {
                     }
 
                     // Topple Dialog moved to runToppleSave in masteries.js
+                } else {
+                    // Cuando es Falla (isDamage === false)
+                    const applyMasteryChecked = root.querySelector("#mastery-cb")?.checked ?? false;
+                    if (applyMasteryChecked && activeMastery && (activeMastery.id === "graze" || activeMastery.label.toLowerCase().includes("rozar") || activeMastery.label.toLowerCase().includes("graze"))) {
+                        const targetsLocal = resolveTargets();
+                        const missedTargets = targetsLocal;
+                        if (missedTargets.length > 0) {
+                            const getAbilityUsed = (itm) => {
+                                if (!itm || !itm.actor) return "str";
+                                const act = itm.actor;
+                                if (itm.system.ability) return itm.system.ability;
+                                const actionType = itm.system.actionType;
+                                const properties = itm.system.properties;
+                                
+                                if (properties?.has?.("fin")) {
+                                    const str = act.system.abilities?.str?.mod ?? 0;
+                                    const dex = act.system.abilities?.dex?.mod ?? 0;
+                                    return dex > str ? "dex" : "str";
+                                }
+                                
+                                if (actionType === "rwg" || actionType === "rsb") {
+                                    return "dex";
+                                }
+                                return "str";
+                            };
+                            
+                            const ability = getAbilityUsed(item);
+                            const abilityMod = Math.max(0, item.actor.system?.abilities?.[ability]?.mod ?? 0);
+                            const damageType = damageParts[0]?.type || item.system.damage?.parts?.[0]?.[1] || "slashing";
+                            
+                            const targetIds = missedTargets.map(t => t.id).join(",");
+                            const targetNames = missedTargets.map(t => t.name).join(", ");
+                            
+                            const whisperUsers = game.users.filter(u => u.isGM || item.actor.testUserPermission(u, "OWNER")).map(u => u.id);
+                            
+                            await ChatMessage.create({
+                                whisper: whisperUsers,
+                                content: `
+                                    <div class="not-dice-graze-card" style="text-align:center; padding:10px; font-family:inherit;">
+                                        <h3 style="margin-bottom:5px; color:#ba68c8;"><i class="fas fa-bullseye"></i> Maestría: Rozar (Graze)</h3>
+                                        <p style="font-size:0.9em; margin-bottom:10px;">El ataque falló contra <strong>${targetNames}</strong>. ¿Deseas aplicar Rozar?</p>
+                                        <button class="not-dice-graze-apply-btn" 
+                                                data-attacker-id="${item.actor.id}" 
+                                                data-target-ids="${targetIds}" 
+                                                data-ability-mod="${abilityMod}" 
+                                                data-damage-type="${damageType}" 
+                                                data-weapon-name="${item.name}" 
+                                                data-weapon-uuid="${item.uuid}" 
+                                                style="background: rgba(106,27,154,0.1); border: 1px solid #ba68c8; color: #ba68c8; font-weight: bold; padding: 6px; border-radius:4px; cursor:pointer; width:100%; transition: all 0.2s;">
+                                            <i class="fas fa-gavel"></i> Aplicar Rozar (Daño: ${abilityMod} ${damageType})
+                                        </button>
+                                    </div>
+                                `
+                            });
+                        }
+                    }
                 }
                 return { total: totalValues.reduce((acc, curr) => acc + curr.value, 0) };
             };
@@ -2273,7 +2391,7 @@ Hooks.once("ready", () => {
                         position: { width: 440 },
                         buttons: [
                             { action: "damage", icon: "fa-solid fa-skull", label: "Aplicar Daño", default: true },
-                            { action: "ok", icon: "fa-solid fa-check", label: "Confirmar sin Aplicar" }
+                            { action: "ok", icon: "fa-solid fa-xmark", label: "Falla" }
                         ],
                         submit: async (res) => {
                             const container = app.element;
@@ -2303,8 +2421,8 @@ Hooks.once("ready", () => {
                                 }
                             },
                             ok: {
-                                label: "Confirmar",
-                                icon: "<i class='fas fa-check'></i>",
+                                label: "Falla",
+                                icon: "<i class='fa-solid fa-xmark'></i>",
                                 callback: async html => {
                                     await applyAndResolve(html, false);
                                     unregisterChatAttackModeHandler();
@@ -2725,6 +2843,68 @@ Hooks.on("renderChatMessage", (message, html, data) => {
             });
         } catch (e) {
             console.error("Not Dice | Error launching Nick attack", e);
+        }
+    });
+
+    html.find(".not-dice-graze-apply-btn").click(async (ev) => {
+        ev.preventDefault();
+        const btn = ev.currentTarget;
+        if (btn.disabled) return;
+
+        const attackerId = btn.dataset.attackerId;
+        const attacker = game.actors.get(attackerId) || canvas.tokens.placeables.find(t => t.actor?.id === attackerId)?.actor;
+        if (!attacker) return ui.notifications.warn("Not Dice | Actor no encontrado.");
+        if (!attacker.isOwner && !game.user.isGM) return ui.notifications.warn("Not Dice | No tienes permiso para controlar este personaje.");
+
+        const targetIds = btn.dataset.targetIds.split(",");
+        const abilityMod = parseInt(btn.dataset.abilityMod) || 0;
+        const damageType = btn.dataset.damageType;
+        const weaponName = btn.dataset.weaponName;
+        const weaponUuid = btn.dataset.weaponUuid;
+
+        btn.disabled = true;
+        btn.style.opacity = "0.5";
+        btn.innerHTML = "<i class='fas fa-check'></i> Rozar Iniciado";
+
+        if (game.user.isGM) {
+            const item = weaponUuid ? await fromUuid(weaponUuid) : null;
+            const activity = item?.system?.activities?.find(a => a.type === "save" || a.type === "damage" || a.type === "attack") 
+                || (item?.system?.activities?.size > 0 ? item.system.activities.first() : null)
+                || item;
+
+            if (!item || !activity) return ui.notifications?.warn("Not Dice | No se pudo recuperar el arma/actividad para Rozar.");
+
+            await activity.rollDamage({
+                event: notDiceMockEvent({ targetIds: targetIds }),
+                options: {
+                    notDiceAutoTriggered: true,
+                    notDicePreCalculatedTotals: [abilityMod],
+                    notDicePreCalculatedParts: [{ formula: abilityMod.toString(), type: damageType }],
+                    notDiceMultipliers: {},
+                    notDiceApplyMastery: false
+                }
+            });
+        } else {
+            const gmId = notDiceFirstActiveGmId();
+            if (!gmId || !game.socket) {
+                ui.notifications.warn("Not Dice | No hay ningún GM activo para aplicar el daño.");
+                btn.disabled = false;
+                btn.style.opacity = "1";
+                btn.innerHTML = "<i class='fas fa-gavel'></i> Aplicar Rozar";
+                return;
+            }
+            game.socket.emit("module.not-dice", {
+                type: "not-dice.apply-graze",
+                attackerId,
+                targetIds,
+                abilityMod,
+                damageType,
+                weaponName,
+                weaponUuid,
+                senderName: game.user.name,
+                targetUserId: gmId
+            });
+            ui.notifications.info("Not Dice | Solicitud de Rozar enviada al GM.");
         }
     });
 });
