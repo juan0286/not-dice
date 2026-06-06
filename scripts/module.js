@@ -1519,6 +1519,7 @@ thunder: { color: "#7c4dff", icon: "🔊" },
             };
 
             const hasSavageAttacker = globalThis.notDiceEspeciales?.hasSavageAttacker(actor, item) || false;
+            const isSavageUsed = hasSavageAttacker && (globalThis.notDiceEspeciales?.isSavageAttackerUsed(actor) || false);
             const hasGreatWeaponFighting = globalThis.notDiceEspeciales?.hasGreatWeaponFighting(actor, item) || false;
 
             const hasPiercer = actor?.items?.some(i => {
@@ -1562,10 +1563,12 @@ thunder: { color: "#7c4dff", icon: "🔊" },
                     </div>`;
                 }
                 if (hasSavageAttacker) {
+                    const disabledAttr = isSavageUsed ? "disabled" : "";
+                    const checkedAttr = isSavageUsed ? "" : "checked";
                     specialModsHtml += `
-                    <div style="display:flex; justify-content:center; align-items:center; gap:6px; margin-bottom: 4px; padding: 4px 8px; background: rgba(197,34,31,0.08); border: 1px solid rgba(197,34,31,0.3); border-radius: 4px; width: 100%;" title="ATACANTE SALVAJE">
-                        <input type="checkbox" id="savage-${part.index}" class="savage-attacker-cb" data-index="${part.index}" style="margin:0; cursor:pointer;" checked>
-                        <label for="savage-${part.index}" style="font-size:0.85em; color:#ff5252; cursor:pointer; font-weight:bold; letter-spacing: 0.5px; margin:0;"><i class="fas fa-paw"></i> Atacante Salvaje</label>
+                    <div style="display:flex; justify-content:center; align-items:center; gap:6px; margin-bottom: 4px; padding: 4px 8px; background: rgba(197,34,31,0.08); border: 1px solid rgba(197,34,31,0.3); border-radius: 4px; width: 100%; ${isSavageUsed ? 'opacity:0.65;' : ''}" title="ATACANTE SALVAJE">
+                        <input type="checkbox" id="savage-${part.index}" class="savage-attacker-cb" data-index="${part.index}" style="margin:0; cursor:pointer;" ${checkedAttr} ${disabledAttr}>
+                        <label for="savage-${part.index}" style="font-size:0.85em; color:#ff5252; cursor:pointer; font-weight:bold; letter-spacing: 0.5px; margin:0;"><i class="fas fa-paw"></i> Atacante Salvaje${isSavageUsed ? " (Ya Usado)" : ""}</label>
                     </div>`;
                 }
                 if (hasGreatWeaponFighting) {

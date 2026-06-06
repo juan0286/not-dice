@@ -30,8 +30,16 @@ globalThis.notDiceEspeciales = {
             );
         });
         console.log("Not Dice Debug | hasSavageAttacker hasFeat", hasFeat);
-        if (!hasFeat) return false;
+        return !!hasFeat;
+    },
 
+    /**
+     * Comprueba si el actor ya utilizó Atacante Salvaje en este turno (o hace menos de 6s fuera de combate).
+     * @param {Actor} actor - El actor a evaluar.
+     * @returns {boolean}
+     */
+    isSavageAttackerUsed(actor) {
+        if (!actor) return false;
         const lastTurn = actor.getFlag("not-dice", `lastSavageAttacker-${actor.id}`);
         const currentTurn = game.combat
             ? `${game.combat.id}-${game.combat.round ?? 0}-${game.combat.turn ?? 0}`
@@ -41,8 +49,8 @@ globalThis.notDiceEspeciales = {
             ? lastTurn === currentTurn
             : (typeof lastTurn === "number" && (Date.now() - lastTurn) < 6000);
 
-        console.log("Not Dice Debug | hasSavageAttacker alreadyUsed", alreadyUsed, { lastTurn, currentTurn });
-        return !alreadyUsed;
+        console.log("Not Dice Debug | isSavageAttackerUsed check", alreadyUsed, { lastTurn, currentTurn });
+        return alreadyUsed;
     },
 
     /**
