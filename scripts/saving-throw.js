@@ -7,6 +7,12 @@
 // ============================================================
 
 // 1. Espera a que el objeto visual se cargue en el canvas
+/**
+ * Espera de manera asíncrona a que la geometría u objeto visual de una plantilla
+ * o región se dibuje y esté disponible en el canvas de Foundry.
+ * @param {PlaceableObject|SceneRegion} document - El documento de Foundry VTT.
+ * @returns {Promise<PlaceableObject|null>} El objeto del Canvas cargado o null si expira el tiempo.
+ */
 const waitForAreaObject = (document) => {
     return new Promise((resolve) => {
         let attempts = 0;
@@ -26,6 +32,12 @@ const waitForAreaObject = (document) => {
 };
 
 // 2. Medir colisiones V14
+/**
+ * Obtiene los tokens que colisionan o se encuentran dentro de los límites geométricos
+ * de una plantilla medida o región en el canvas.
+ * @param {PlaceableObject|SceneRegion} areaObj - El objeto de área o plantilla en el canvas.
+ * @returns {Token[]} Colección de tokens que están dentro de los límites del área.
+ */
 const getTokensInsideArea = (areaObj) => {
     const caughtTokens = [];
     if (!areaObj) return caughtTokens;
@@ -60,6 +72,13 @@ const getTokensInsideArea = (areaObj) => {
 };
 
 // 3. Sistema de Traducción Asíncrona (MyMemory API)
+/**
+ * Traduce una descripción en formato HTML usando la API MyMemory y actualiza un
+ * elemento del DOM con el texto traducido de forma asíncrona.
+ * @param {string} htmlDesc - La descripción HTML en inglés/original.
+ * @param {string} targetId - El ID del elemento del DOM a actualizar.
+ * @returns {Promise<void>}
+ */
 async function translateAndUpdate(htmlDesc, targetId) {
     const el = document.getElementById(targetId);
     if (!el) return;
@@ -108,6 +127,15 @@ async function translateAndUpdate(htmlDesc, targetId) {
 }
 
 // 4. Interceptar la creación
+/**
+ * Intercepta la creación de plantillas de medida y regiones en el canvas,
+ * detecta qué hechizo u origen la invocó, localiza a los tokens atrapados y abre
+ * el cuadro interactivo de control de salvaciones del GM.
+ * @param {MeasuredTemplateDocument|RegionDocument} document - Documento creado.
+ * @param {string} userId - ID del usuario de Foundry que creó el área.
+ * @param {string} tipoLog - Tipo de hook ("createRegion" | "createMeasuredTemplate").
+ * @returns {Promise<void>}
+ */
 async function handleAreaCreation(document, userId, tipoLog) {
     if (!game.users.activeGM?.isSelf) return; // Solo el GM activo debe procesar y ver este diálogo
     if (!game.settings.get("not-dice", "enableTemplateIntercept")) return;
@@ -251,6 +279,15 @@ Hooks.on("createRegion", async (document, operation, userId) => handleAreaCreati
 Hooks.on("createMeasuredTemplate", async (document, operation, userId) => handleAreaCreation(document, userId, "createMeasuredTemplate"));
 
 // 5. Mostrar la UI
+/**
+ * Renderiza el cuadro interactivo de salvaciones del GM con los tokens atrapados,
+ * permitiendo configurar ventajas, desventajas, realizar tiradas, aplicar efectos activos
+ * y redirigir el flujo al panel de resolución de daño del GM.
+ * @param {object} spellData - Datos del conjuro de origen (nombre, CD, característica, etc.).
+ * @param {Token[]} tokens - Tokens atrapados en el área.
+ * @param {MeasuredTemplateDocument|RegionDocument} templateDocument - Documento del canvas a borrar si se limpia.
+ * @returns {void}
+ */
 const showCaughtTokensDialog = (spellData, tokens, templateDocument) => {
     const { name, caster, img, level, saveAbilityKey, saveAbility, saveDC, description, effects } = spellData;
     const enableTranslation = game.settings.get("not-dice", "enableTranslation");

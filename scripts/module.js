@@ -130,6 +130,13 @@ const notDiceExtractDiceOnly = (item, formula, negativeMod = 0) => {
     return formula || "";
 };
 
+/**
+ * Construye el payload de datos del ataque/hechizo para ser enviado a través de sockets
+ * desde el cliente del jugador al del GM para su resolución en el panel central.
+ * @param {object} rollConfig - Objeto de configuración de tirada de dnd5e.
+ * @param {boolean} isDamage - Indica si es un flujo de daño directo en vez de ataque.
+ * @returns {object|null} El payload estructurado o null si ocurre un error.
+ */
 const notDiceBuildAttackPayload = (rollConfig, isDamage = false) => {
     try {
         const subject = rollConfig?.subject;
@@ -166,6 +173,12 @@ const notDiceGetDamageTypeOptionsHtml = (selectedType = "", availableTypes = nul
     }).join("");
 };
 
+/**
+ * Extrae las filas de daño (fórmula, tipos de daño, etc.) de un Item o Actividad de dnd5e
+ * resolviendo variables de atributo nativas (como @mod) en valores numéricos.
+ * @param {Item|Activity} actualItem - El Item o Actividad de origen.
+ * @returns {object[]} Lista de filas de daño formateadas.
+ */
 const notDiceExtractDamageRows = (actualItem) => {
     const rows = [];
     const rollData = typeof actualItem?.getRollData === "function"
@@ -539,6 +552,13 @@ globalThis.notDiceOpenDamageDialog = async ({
     return openDialog();
 };
 
+/**
+ * Intercepta y detiene la tirada de daño en el cliente del jugador y la redirige
+ * al GM a través de un mensaje de socket (`not-dice.show-attack-dialog`).
+ * @param {Roll[]} rolls - Colección de rolls de dnd5e.
+ * @param {object} rollConfig - Configuración de la tirada.
+ * @returns {Promise<Roll[]>} Retorna un array vacío para evitar que se resuelva en el cliente local del jugador.
+ */
 const notDiceHandlePlayerAttack = async (rolls, rollConfig) => {
     const payload = notDiceBuildAttackPayload(rollConfig);
     if (!payload.targetUserId || !game.socket) {
@@ -586,6 +606,12 @@ const notDiceExecuteGrazeDamage = async (attackerId, targetIds, abilityMod, dama
     }
 };
 
+/**
+ * Manejador principal de los eventos socket entrantes del módulo.
+ * Permite al GM recibir y procesar solicitudes de ataque de los jugadores en tiempo real.
+ * @param {object} data - Datos enviados a través del socket.
+ * @returns {Promise<void>}
+ */
 const notDiceHandleAttackSocket = async (data) => {
     if (!data || !game.user.isGM) return;
 
@@ -945,6 +971,15 @@ Hooks.once("ready", () => {
         const originalDamageBuildConfigure = DamageRoll.buildConfigure;
         const originalDamageBuildEvaluate = DamageRoll.buildEvaluate;
 
+        /**
+         * Intercepta la evaluación y resolución del daño de dnd5e (DamageRoll.buildEvaluate)
+         * para inyectar y pintar el panel unificado de resolución de daño en el cliente del GM,
+         * evaluando ventajas, aplicando modificadores, maestracías, dotes y reduciendo daño.
+         * @param {DamageRoll[]} rolls - Las instancias de Roll de daño creadas por dnd5e.
+         * @param {object} rollConfig - Configuración del lanzamiento.
+         * @param {object} messageConfig - Configuración del mensaje de chat final.
+         * @returns {Promise<DamageRoll[]>} Las tiradas modificadas y evaluadas de forma final.
+         */
         const notDiceEvaluateDamageRoll = async (rolls, rollConfig, messageConfig) => {
             console.log("Not Dice | Damage buildEvaluate intercepted", rolls);
 
