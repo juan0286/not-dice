@@ -1334,23 +1334,52 @@ Hooks.once("ready", () => {
                 return { contentHtml, boxStyle, selectedD20, total };
             };
 
-            if (rollConfig.subject.type === "attack") {
-                const toHit = item.labels?.toHit || "";
-                const isProficient = item.system.proficient || false;
-                const profBadge = isProficient ? `<span style="display:inline-block; font-size:0.75em; background:rgba(19,115,51,0.15); color:#4caf50; padding:3px 8px; border-radius:12px; border:1px solid rgba(19,115,51,0.3); margin-right:4px; font-weight:bold;"><i class="fas fa-check-circle"></i> Competencia</span>` : `<span style="display:inline-block; font-size:0.75em; background:rgba(127,127,127,0.15); color:inherit; opacity:0.8; padding:3px 8px; border-radius:12px; border:1px solid rgba(127,127,127,0.3); margin-right:4px;">Sin Competencia</span>`;
+            const isAttackAct = rollConfig.subject?.type === "attack";
+            const isSaveAct = rollConfig.subject?.type === "save";
+            const isDamageAct = rollConfig.subject?.type === "damage";
 
-                let masteryBadge = "";
-                if (activeMastery) {
-                    masteryBadge = `<span style="display:inline-block; font-size:0.75em; background:rgba(106,27,154,0.15); color:#ba68c8; padding:3px 8px; border-radius:12px; border:1px solid rgba(106,27,154,0.3); margin-right:4px; font-weight:bold;"><i class="fas fa-crown"></i> Maestría: ${activeMastery.label}</span>`;
+            if (isAttackAct || isSaveAct || isDamageAct) {
+                const attackImg = item.img || "icons/svg/sword.svg";
+                let headerLabel = "Ataque";
+                let headerValue = "";
+                let headerBadges = "";
+
+                if (isAttackAct) {
+                    const toHit = item.labels?.toHit || "";
+                    const isProficient = item.system.proficient || false;
+                    const profBadge = isProficient ? `<span style="display:inline-block; font-size:0.75em; background:rgba(19,115,51,0.15); color:#4caf50; padding:3px 8px; border-radius:12px; border:1px solid rgba(19,115,51,0.3); margin-right:4px; font-weight:bold;"><i class="fas fa-check-circle"></i> Competencia</span>` : `<span style="display:inline-block; font-size:0.75em; background:rgba(127,127,127,0.15); color:inherit; opacity:0.8; padding:3px 8px; border-radius:12px; border:1px solid rgba(127,127,127,0.3); margin-right:4px;">Sin Competencia</span>`;
+
+                    let masteryBadge = "";
+                    if (activeMastery) {
+                        masteryBadge = `<span style="display:inline-block; font-size:0.75em; background:rgba(106,27,154,0.15); color:#ba68c8; padding:3px 8px; border-radius:12px; border:1px solid rgba(106,27,154,0.3); margin-right:4px; font-weight:bold;"><i class="fas fa-crown"></i> Maestría: ${activeMastery.label}</span>`;
+                    }
+
+                    let sapBadge = hasSapEffect ? `<span style="display:inline-block; font-size:0.75em; background:rgba(197,34,31,0.15); color:#ff5252; padding:3px 8px; border-radius:12px; border:1px solid rgba(197,34,31,0.3); margin-right:4px; font-weight:bold;"><i class="fas fa-arrow-down"></i> Desventaja (Debilitado)</span>` : "";
+
+                    let vexBadge = hasVexAdvantage ? `<span style="display:inline-block; font-size:0.75em; background:rgba(19,115,51,0.15); color:#4caf50; padding:3px 8px; border-radius:12px; border:1px solid rgba(19,115,51,0.3); margin-right:4px; font-weight:bold;"><i class="fas fa-arrow-up"></i> Ventaja (Molestar)</span>` : "";
+
+                    let guidingBoltBadge = hasGuidingBoltAdvantage ? `<span style="display:inline-block; font-size:0.75em; background:rgba(176,96,0,0.15); color:#ffb300; padding:3px 8px; border-radius:12px; border:1px solid rgba(176,96,0,0.3); margin-right:4px; font-weight:bold;"><i class="fas fa-star"></i> Ventaja (Saeta Guía)</span>` : "";
+
+                    headerLabel = "Ataque";
+                    headerValue = toHit;
+                    headerBadges = `${profBadge} ${masteryBadge} ${sapBadge} ${vexBadge} ${guidingBoltBadge}`;
+                } else {
+                    const saveAct = rollConfig.subject?.type === "save" ? rollConfig.subject : (item.system?.activities?.contents?.find(a => a.type === "save") || null);
+                    if (saveAct) {
+                        headerLabel = "Salvación";
+                        headerValue = saveAct.labels?.save || "";
+                        if (!headerValue && saveAct.save?.ability) {
+                            const abilityLabel = CONFIG.DND5E?.abilities?.[saveAct.save.ability]?.label || saveAct.save.ability.toUpperCase();
+                            const dcVal = saveAct.save.dc?.value || item.actor?.system?.attributes?.spelldc || "";
+                            headerValue = `CD ${dcVal} ${abilityLabel}`;
+                        }
+                        headerBadges = `<span style="display:inline-block; font-size:0.75em; background:rgba(26,115,232,0.15); color:#1a73e8; padding:3px 8px; border-radius:12px; border:1px solid rgba(26,115,232,0.3); margin-right:4px; font-weight:bold;"><i class="fas fa-shield-alt"></i> Salvación</span>`;
+                    } else {
+                        headerLabel = isDamageAct ? "Daño" : "Conjuro";
+                        headerValue = item.name || "";
+                        headerBadges = `<span style="display:inline-block; font-size:0.75em; background:rgba(230,124,115,0.15); color:#d50000; padding:3px 8px; border-radius:12px; border:1px solid rgba(230,124,115,0.3); margin-right:4px; font-weight:bold;"><i class="fas fa-bolt"></i> Hechizo</span>`;
+                    }
                 }
-
-                let sapBadge = hasSapEffect ? `<span style="display:inline-block; font-size:0.75em; background:rgba(197,34,31,0.15); color:#ff5252; padding:3px 8px; border-radius:12px; border:1px solid rgba(197,34,31,0.3); margin-right:4px; font-weight:bold;"><i class="fas fa-arrow-down"></i> Desventaja (Debilitado)</span>` : "";
-
-                const targetsLocal = targets;
-
-                let vexBadge = hasVexAdvantage ? `<span style="display:inline-block; font-size:0.75em; background:rgba(19,115,51,0.15); color:#4caf50; padding:3px 8px; border-radius:12px; border:1px solid rgba(19,115,51,0.3); margin-right:4px; font-weight:bold;"><i class="fas fa-arrow-up"></i> Ventaja (Molestar)</span>` : "";
-
-                let guidingBoltBadge = hasGuidingBoltAdvantage ? `<span style="display:inline-block; font-size:0.75em; background:rgba(176,96,0,0.15); color:#ffb300; padding:3px 8px; border-radius:12px; border:1px solid rgba(176,96,0,0.3); margin-right:4px; font-weight:bold;"><i class="fas fa-star"></i> Ventaja (Saeta Guía)</span>` : "";
 
                 // --- Simultaneous Attack Roll ---
                 let attackRollHtml = "";
@@ -1360,15 +1389,15 @@ Hooks.once("ready", () => {
                     rollConfig?.event?.notDiceAutoTriggered ||
                     rollConfig?.options?.event?.notDiceAutoTriggered ||
                     false;
-                if (game.settings.get("not-dice", "enableSimultaneousRoll") && isAutoTriggered) {
+                if (isAttackAct && game.settings.get("not-dice", "enableSimultaneousRoll") && isAutoTriggered) {
                     try {
                         let d20Term = "1d20";
                         let rollMode = "normal";
 
                         let formula = `${d20Term}`;
                         let parts = [];
-                        if (toHit) {
-                            let cleanToHit = toHit.trim();
+                        if (headerValue) {
+                            let cleanToHit = headerValue.trim();
                             if (cleanToHit && !cleanToHit.startsWith("+") && !cleanToHit.startsWith("-")) {
                                 cleanToHit = "+ " + cleanToHit;
                             }
@@ -1416,15 +1445,13 @@ Hooks.once("ready", () => {
                     }
                 }
 
-                const attackImg = item.img || "icons/svg/sword.svg";
-
                 attackHtml = `
                 <div style="display:flex; align-items:center; gap:12px; margin-bottom:12px; padding:10px; border:1px solid var(--color-border-light-2, #ddd); border-radius:6px; background:rgba(127,127,127,0.1); box-shadow: 0 1px 3px rgba(0,0,0,0.1);">
                     <img src="${attackImg}" style="width:48px; height:48px; border:1px solid var(--color-border-light-2, #aaa); border-radius:6px; object-fit:cover; flex-shrink:0;">
                     <div style="flex:1; min-width:0;">
-                        <div style="font-size:1em; margin-bottom:4px; color:inherit; opacity:0.8;">Ataque: <span style="font-weight:900; font-size:1.4em; color:inherit; opacity:1;">${toHit}</span></div>
+                        <div style="font-size:1em; margin-bottom:4px; color:inherit; opacity:0.8;">${headerLabel}: <span style="font-weight:900; font-size:1.4em; color:inherit; opacity:1;">${headerValue}</span></div>
                         <div style="display:flex; flex-wrap:wrap; gap:4px;">
-                            ${profBadge} ${masteryBadge} ${sapBadge} ${vexBadge} ${guidingBoltBadge}
+                            ${headerBadges}
                         </div>
                     </div>
                 </div>`;
@@ -2572,10 +2599,12 @@ thunder: { color: "#7c4dff", icon: "🔊" },
                 return originalDamageBuildEvaluate.call(this, rolls, rollConfig, messageConfig);
             }
 
+            const hasMultipliers = rollConfig?.notDiceMultipliers || rollConfig?.options?.notDiceMultipliers || rollConfig?.event?.notDiceMultipliers;
             const isAutoTriggered = rollConfig?.notDiceAutoTriggered ||
                 rollConfig?.options?.notDiceAutoTriggered ||
                 rollConfig?.event?.notDiceAutoTriggered ||
                 rollConfig?.options?.event?.notDiceAutoTriggered ||
+                !!hasMultipliers ||
                 false;
 
             const hasPreCalculated = rollConfig?.notDicePreCalculatedTotals ||

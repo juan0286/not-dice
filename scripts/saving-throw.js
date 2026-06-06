@@ -599,9 +599,9 @@ const showCaughtTokensDialog = (spellData, tokens, templateDocument) => {
                     e.targetIds = targetIds;
 
                     if (dmgAct && typeof dmgAct.rollDamage === "function") {
-                        await dmgAct.rollDamage({ event: e, notDiceMultipliers: targetMultipliers });
+                        await dmgAct.rollDamage({ event: e, notDiceMultipliers: targetMultipliers, notDiceAutoTriggered: true });
                     } else if (typeof actualItem.rollDamage === "function") {
-                        await actualItem.rollDamage({ event: e, notDiceMultipliers: targetMultipliers });
+                        await actualItem.rollDamage({ event: e, notDiceMultipliers: targetMultipliers, notDiceAutoTriggered: true });
                     } else {
                         ui.notifications.warn("Not Dice | Este hechizo no tiene un bloque de daño configurado.");
                     }
