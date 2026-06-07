@@ -449,6 +449,65 @@ globalThis.notDiceOpenDamageDialog = async ({
             speaker,
             flavor: `<strong>${flavorBase}</strong> • ${actualItem.name || itemName || "Daño"} <span style="opacity:0.75;">(${damageLabel})</span>${modsString}${buildPiercerButtons(roll, 0)}${buildSavageButton(roll, 0)}`
         });
+
+        // --- Mensaje resumen público con barra de porcentaje ---
+        try {
+            let maxPossible = 0;
+            let minPossible = 0;
+            let sign = 1;
+            for (const term of roll.terms) {
+                if (term.operator) {
+                    sign = term.operator === "-" ? -1 : 1;
+                } else if (term.faces && term.number) {
+                    maxPossible += sign * term.number * term.faces;
+                    minPossible += sign * term.number;
+                } else if (typeof term.number === "number") {
+                    maxPossible += sign * term.number;
+                    minPossible += sign * term.number;
+                }
+            }
+
+            const total = roll.total;
+            const range = maxPossible - minPossible;
+            const pct = range > 0 ? Math.round(((total - minPossible) / range) * 100) : 100;
+            const pctClamped = Math.max(0, Math.min(100, pct));
+
+            let barColor;
+            if (pctClamped >= 80) barColor = "rgba(76, 175, 80, 0.4)";
+            else if (pctClamped >= 50) barColor = "rgba(255, 193, 7, 0.4)";
+            else barColor = "rgba(244, 67, 54, 0.35)";
+
+            const dmgStyleMap = globalThis.notDiceConstants?.damageStyle || {};
+            const typeStyleObj = dmgStyleMap[damageType] || {};
+            const typeIcon = typeStyleObj.icon || "";
+
+            const summaryContent = `
+                <div style="position:relative; overflow:hidden; border-radius:6px; border:1px solid rgba(128,128,128,0.3); font-family:inherit;">
+                    <div style="position:absolute; top:0; left:0; height:100%; width:${pctClamped}%; background:${barColor}; transition:width 0.3s;"></div>
+                    <div style="position:relative; display:flex; align-items:center; justify-content:space-between; padding:6px 12px; gap:8px;">
+                        <div style="display:flex; align-items:center; gap:6px;">
+                            <span style="font-size:1.6em; font-weight:900; color:inherit;">${total}</span>
+                            <span style="font-size:0.8em; opacity:0.7; color:inherit;">/ ${maxPossible}</span>
+                        </div>
+                        <div style="display:flex; align-items:center; gap:6px; font-size:0.85em; opacity:0.85;">
+                            ${typeIcon ? `<span>${typeIcon}</span>` : ""}
+                            <span style="font-weight:bold; color:inherit;">${damageLabel}</span>
+                            <span style="font-weight:900; color:inherit;">${pctClamped}%</span>
+                        </div>
+                    </div>
+                </div>
+            `;
+
+            await ChatMessage.create({
+                style: CONST.CHAT_MESSAGE_STYLES.OTHER,
+                speaker,
+                flags: { "not-dice": { hideHeader: true, damageSummaryBar: true } },
+                content: summaryContent
+            });
+        } catch (summaryErr) {
+            console.error("Not Dice | Error creating damage summary bar (custom)", summaryErr);
+        }
+
         return roll.total;
     };
 
@@ -2492,6 +2551,71 @@ thunder: { color: "#7c4dff", icon: "🔊" },
                     if (globalThis.notDiceApplyColorset) globalThis.notDiceApplyColorset(rollObj, selectedType);
                     const r = await rollObj.evaluate();
                     await r.toMessage({ flavor: `${flavorBase}${modsString}${buildPiercerButtons(r, idx)}${buildSavageButton(r, idx)}`, speaker: actorSpeaker });
+
+                    // --- Mensaje resumen público con barra de porcentaje ---
+                    try {
+                        // Calcular el máximo y mínimo posible a partir de los términos del roll
+                        let maxPossible = 0;
+                        let minPossible = 0;
+                        let sign = 1;
+                        for (const term of r.terms) {
+                            if (term.operator) {
+                                sign = term.operator === "-" ? -1 : 1;
+                            } else if (term.faces && term.number) {
+                                // Dado: NdX
+                                maxPossible += sign * term.number * term.faces;
+                                minPossible += sign * term.number; // min de NdX = N * 1
+                            } else if (typeof term.number === "number") {
+                                maxPossible += sign * term.number;
+                                minPossible += sign * term.number;
+                            }
+                        }
+
+                        const total = r.total;
+                        const range = maxPossible - minPossible;
+                        const pct = range > 0 ? Math.round(((total - minPossible) / range) * 100) : 100;
+                        const pctClamped = Math.max(0, Math.min(100, pct));
+
+                        // Elegir color según porcentaje
+                        let barColor;
+                        if (pctClamped >= 80) barColor = "rgba(76, 175, 80, 0.4)";       // verde
+                        else if (pctClamped >= 50) barColor = "rgba(255, 193, 7, 0.4)";   // amarillo
+                        else barColor = "rgba(244, 67, 54, 0.35)";                        // rojo
+
+                        const damageStyle = globalThis.notDiceConstants?.damageStyle || {};
+                        const typeStyle = damageStyle[selectedType] || {};
+                        const typeLabel = selectedType
+                            ? (CONFIG.DND5E?.damageTypes?.[selectedType]?.label || selectedType.charAt(0).toUpperCase() + selectedType.slice(1))
+                            : "";
+                        const typeIcon = typeStyle.icon || "";
+
+                        const summaryContent = `
+                            <div style="position:relative; overflow:hidden; border-radius:6px; border:1px solid rgba(128,128,128,0.3); font-family:inherit;">
+                                <div style="position:absolute; top:0; left:0; height:100%; width:${pctClamped}%; background:${barColor}; transition:width 0.3s;"></div>
+                                <div style="position:relative; display:flex; align-items:center; justify-content:space-between; padding:6px 12px; gap:8px;">
+                                    <div style="display:flex; align-items:center; gap:6px;">
+                                        <span style="font-size:1.6em; font-weight:900; color:inherit;">${total}</span>
+                                        <span style="font-size:0.8em; opacity:0.7; color:inherit;">/ ${maxPossible}</span>
+                                    </div>
+                                    <div style="display:flex; align-items:center; gap:6px; font-size:0.85em; opacity:0.85;">
+                                        ${typeIcon ? `<span>${typeIcon}</span>` : ""}
+                                        <span style="font-weight:bold; color:inherit;">${typeLabel}</span>
+                                        <span style="font-weight:900; color:inherit;">${pctClamped}%</span>
+                                    </div>
+                                </div>
+                            </div>
+                        `;
+
+                        await ChatMessage.create({
+                            style: CONST.CHAT_MESSAGE_STYLES.OTHER,
+                            speaker: actorSpeaker,
+                            flags: { "not-dice": { hideHeader: true, damageSummaryBar: true } },
+                            content: summaryContent
+                        });
+                    } catch (summaryErr) {
+                        console.error("Not Dice | Error creating damage summary bar", summaryErr);
+                    }
+
                     return r.total;
                 };
 
