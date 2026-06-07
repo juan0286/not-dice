@@ -820,9 +820,6 @@ Hooks.once("ready", () => {
         globalThis._notDiceSocketReady = true;
         game.socket.on("module.not-dice", notDiceHandleAttackSocket);
     }
-
-    if (!game.settings.get("not-dice", "enableModule")) return;
-
     console.log("Not Dice | Module Ready");
 
     // --- D20Roll (Attack) Patching ---
