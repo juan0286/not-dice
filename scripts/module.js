@@ -287,6 +287,13 @@ const notDiceGetDamageFormulaBreakdown = (formula, isOffhandWithoutStyle, item, 
     return lines.join("\n");
 };
 
+const notDiceGetMasteryDescription = (masteryId) => {
+    if (!masteryId) return "";
+    const id = String(masteryId).toLowerCase();
+    const descriptions = globalThis.notDiceConstants?.masteryDescriptions || {};
+    return descriptions[id] || "";
+};
+
 globalThis.notDiceOpenDamageDialog = async ({
     uuid,
     itemName,
@@ -391,13 +398,13 @@ globalThis.notDiceOpenDamageDialog = async ({
             </div>
 
             ${activeMastery ? `
-            <div style="display:flex; align-items:center; gap:8px; margin-top:8px; padding:8px 10px; border:1px solid var(--color-border-light-2, #ddd); border-radius:6px; background:rgba(106,27,154,0.08); ${isMasteryDisabled ? 'opacity:0.65;' : ''}">
-                <input type="checkbox" id="${dialogId}-mastery-cb" class="not-dice-mastery-cb" style="margin:0; cursor:pointer;" ${isMasteryDisabled ? 'disabled' : 'checked'} />
-                <label for="${dialogId}-mastery-cb" style="font-size:0.85em; font-weight:bold; color:#ba68c8; cursor:pointer; margin:0; display:flex; align-items:center; gap:4px;">
-                    <i class="fas fa-crown"></i> Aplicar Maestría: ${activeMastery.label}${isMasteryDisabled ? " (Ya Usada)" : ""}
-                </label>
-            </div>
-            ` : ""}
+             <div style="display:flex; align-items:center; gap:8px; margin-top:8px; padding:8px 10px; border:1px solid var(--color-border-light-2, #ddd); border-radius:6px; background:rgba(106,27,154,0.08); ${isMasteryDisabled ? 'opacity:0.65;' : ''}; cursor:help;" title="${notDiceGetMasteryDescription(activeMastery.id)}">
+                 <input type="checkbox" id="${dialogId}-mastery-cb" class="not-dice-mastery-cb" style="margin:0; cursor:pointer;" ${isMasteryDisabled ? 'disabled' : 'checked'} />
+                 <label for="${dialogId}-mastery-cb" style="font-size:0.85em; font-weight:bold; color:#ba68c8; cursor:pointer; margin:0; display:flex; align-items:center; gap:4px;">
+                     <i class="fas fa-crown"></i> Aplicar Maestría: ${activeMastery.label}${isMasteryDisabled ? " (Ya Usada)" : ""}
+                 </label>
+             </div>
+             ` : ""}
 
             ${hasSavageAttacker ? `
             <div style="display:flex; align-items:center; gap:8px; margin-top:8px; padding:8px 10px; border:1px solid var(--color-border-light-2, #ddd); border-radius:6px; background:rgba(197,34,31,0.08); ${isSavageUsed ? 'opacity:0.65;' : ''}">
@@ -1712,7 +1719,7 @@ thunder: { color: "#7c4dff", icon: "🔊" },
                     const disabledAttr = isMasteryDisabled ? "disabled" : "";
                     const checkedAttr = (initialApplyMastery && !isMasteryDisabled) ? "checked" : "";
                     specialModsHtml += `
-                    <div style="display:flex; justify-content:center; align-items:center; gap:6px; margin-bottom: 4px; padding: 2px 6px; background: rgba(106,27,154,0.08); border: 1px solid rgba(106,27,154,0.3); border-radius: 4px; width: 100%; ${isMasteryDisabled ? 'opacity:0.65;' : ''}" title="MAESTRÍA: ${activeMastery.label.toUpperCase()}">
+                    <div style="display:flex; justify-content:center; align-items:center; gap:6px; margin-bottom: 4px; padding: 2px 6px; background: rgba(106,27,154,0.08); border: 1px solid rgba(106,27,154,0.3); border-radius: 4px; width: 100%; ${isMasteryDisabled ? 'opacity:0.65;' : ''}; cursor:help;" title="${notDiceGetMasteryDescription(activeMastery.id)}">
                         <input type="checkbox" id="mastery-cb" class="mastery-cb" style="margin:0; transform:scale(0.85); cursor:pointer;" ${checkedAttr} ${disabledAttr}>
                         <label for="mastery-cb" style="font-size:0.8em; color:#ba68c8; cursor:pointer; font-weight:bold; letter-spacing: 0.5px; margin:0;"><i class="fas fa-crown"></i> ${activeMastery.label}${isMasteryDisabled ? " (Usada)" : ""}</label>
                     </div>`;
@@ -1760,7 +1767,7 @@ thunder: { color: "#7c4dff", icon: "🔊" },
                 <div class="damage-part-container" data-index="${part.index}" style="margin-bottom: 8px; padding: 6px 8px; border: 1px solid var(--color-border-light-2, #ddd); border-radius: 6px; background: rgba(127,127,127,0.05); box-shadow: 0 1px 2px rgba(0,0,0,0.1);">
                     <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom: 6px; border-bottom: 1px dashed var(--color-border-light-2, #ddd); padding-bottom: 4px;">
                         <div>${labelHtml}</div>
-                        <div style="font-size:1.2em; font-weight:bold; opacity:0.95; font-family:monospace; background:rgba(128,128,128,0.12); padding:3px 10px; border-radius:4px; border:1px solid var(--color-border-light-2, #aaa); text-align:right;" title="${notDiceGetDamageFormulaBreakdown(part.formula, part.isOffhandWithoutStyle, item, actor)}">
+                        <div style="font-size:1.25em; font-weight:800; opacity:0.95; font-family:monospace; background:rgba(128,128,128,0.12); padding:4px 12px; border-radius:4px; border:1px solid var(--color-border-light-1, #888); text-align:right; cursor:help;" title="${notDiceGetDamageFormulaBreakdown(part.formula, part.isOffhandWithoutStyle, item, actor)}">
                             ${part.formula} ${part.isOffhandWithoutStyle ? '<span style="color:#ff5252;" title="Sin mod. de característica">*</span>' : ''}
                         </div>
                     </div>
@@ -2740,7 +2747,7 @@ thunder: { color: "#7c4dff", icon: "🔊" },
                         <div class="damage-part-container" data-index="${newIndex}" style="margin-bottom: 8px; padding: 6px 8px; border: 1px solid rgba(26,115,232,0.4); border-radius: 6px; background: rgba(26,115,232,0.05); box-shadow: 0 1px 2px rgba(0,0,0,0.1);">
                             <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom: 6px; border-bottom: 1px dashed var(--color-border-light-2, #ddd); padding-bottom: 4px; color:${style.color}; font-weight:bold;">
                                 <div>${label} <span style="font-size:0.8em; opacity:0.75; margin-left:4px; font-weight:normal;">(Jugador)</span>${hiddenTypeInput}</div>
-                                <div style="font-size:1.2em; font-weight:bold; opacity:0.95; font-family:monospace; background:rgba(128,128,128,0.12); padding:3px 10px; border-radius:4px; border:1px solid var(--color-border-light-2, #aaa); text-align:right;" title="${notDiceGetDamageFormulaBreakdown(formula, false, item, actor)}">${formula}</div>
+                                <div style="font-size:1.25em; font-weight:800; opacity:0.95; font-family:monospace; background:rgba(128,128,128,0.12); padding:4px 12px; border-radius:4px; border:1px solid var(--color-border-light-1, #888); text-align:right; cursor:help;" title="${notDiceGetDamageFormulaBreakdown(formula, false, item, actor)}">${formula}</div>
                             </div>
                             
                             <div style="display:flex; align-items:center; gap:6px; width:100%;">
