@@ -2167,8 +2167,10 @@ thunder: { color: "#7c4dff", icon: "🔊" },
                         const pctClamped = Math.max(0, Math.min(100, pct));
 
                         let barColor;
-                        if (pctClamped >= 80) barColor = "rgba(76, 175, 80, 0.45)";
-                        else if (pctClamped >= 50) barColor = "rgba(255, 193, 7, 0.45)";
+                        if (pctClamped >= 100) barColor = "linear-gradient(90deg, rgba(255,215,0,0.55), rgba(255,180,0,0.45))";
+                        else if (pctClamped >= 86) barColor = "linear-gradient(90deg, rgba(192,192,192,0.5), rgba(160,170,180,0.4))";
+                        else if (pctClamped >= 51) barColor = "rgba(76, 175, 80, 0.45)";
+                        else if (pctClamped >= 26) barColor = "rgba(255, 193, 7, 0.45)";
                         else barColor = "rgba(244, 67, 54, 0.4)";
 
                         const barContent = `
