@@ -7,10 +7,32 @@ globalThis.notDiceMasteries = {
     /**
      * Detección de la maestría activa para un item/actor.
      */
-    getActiveMastery(item) {
+    getActiveMastery(item, actor = null) {
         if (!item) return null;
         const masteryId = item.system?.mastery;
         if (!masteryId) return null;
+
+        // Si se proporciona el actor, comprobar si tiene la maestría de este arma
+        if (actor) {
+            // Para personajes jugadores (PCs), comprobamos estrictamente sus rasgos de maestría de armas.
+            // Los NPCs por defecto tienen acceso si el arma lo tiene configurado.
+            if (actor.type === "character") {
+                const baseItem = item.system?.type?.baseItem || item.system?.baseItem;
+                if (!baseItem) return null;
+
+                const masteryTraits = actor.system?.traits?.weaponProf?.mastery?.value;
+                let hasMastery = false;
+                if (masteryTraits instanceof Set) {
+                    hasMastery = masteryTraits.has(baseItem);
+                } else if (Array.isArray(masteryTraits)) {
+                    hasMastery = masteryTraits.includes(baseItem);
+                } else if (masteryTraits && typeof masteryTraits === "object") {
+                    hasMastery = !!masteryTraits[baseItem];
+                }
+
+                if (!hasMastery) return null;
+            }
+        }
 
         return {
             id: masteryId,

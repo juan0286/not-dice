@@ -1139,7 +1139,7 @@ Hooks.once("ready", () => {
             }
 
             // --- Detect Mastery ---
-            const activeMastery = globalThis.notDiceMasteries?.getActiveMastery(item) || null;
+            const activeMastery = globalThis.notDiceMasteries?.getActiveMastery(item, actor) || null;
 
             // --- Detect Guiding Bolt / Saeta Guía ---
             let isGuidingBolt = false;
@@ -3025,7 +3025,7 @@ thunder: { color: "#7c4dff", icon: "🔊" },
                     );
                     const isOffhandWithoutStyle = isNickAttack && !hasTwoWeaponStyle;
 
-                    const activeMastery = globalThis.notDiceMasteries?.getActiveMastery(item) || null;
+                    const activeMastery = globalThis.notDiceMasteries?.getActiveMastery(item, actor) || null;
                     let masteryAlreadyUsed = false;
                     if (activeMastery && actor) {
                         let flagKey = "";
