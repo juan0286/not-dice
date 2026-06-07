@@ -241,6 +241,52 @@ const notDiceExtractDamageRows = (actualItem) => {
     return rows.length > 0 ? rows : [{ formula: "1d8", type: "", availableTypes: [] }];
 };
 
+const notDiceGetDamageFormulaBreakdown = (formula, isOffhandWithoutStyle, item, actor) => {
+    if (!formula) return "";
+    let lines = [];
+    
+    // 1. Identificar dados base
+    const diceMatches = formula.match(/\b\d+d\d+/g) || [];
+    if (diceMatches.length > 0) {
+        lines.push(`Dado base: ${diceMatches.join(" + ")}`);
+    }
+
+    // 2. Modificador de característica
+    let abilityModVal = 0;
+    let abilityLabel = "";
+    if (actor && item && !isOffhandWithoutStyle) {
+        const abilityId = item.abilityMod || item.system?.ability || (item.system?.properties?.has("fin") ? (actor.system?.abilities?.dex?.mod > actor.system?.abilities?.str?.mod ? "dex" : "str") : "str");
+        abilityModVal = actor.system?.abilities?.[abilityId]?.mod ?? 0;
+        abilityLabel = CONFIG.DND5E?.abilities?.[abilityId]?.label || abilityId.toUpperCase();
+    }
+
+    // Evaluar la parte constante restante
+    let totalConstant = 0;
+    let cleanFormula = formula.replace(/\b\d+d\d+/g, "").trim();
+    try {
+        if (cleanFormula) {
+            const safeExpression = cleanFormula.replace(/[^0-9+\-*/().\s]/g, "");
+            if (safeExpression.trim()) {
+                totalConstant = Function("return (" + safeExpression + ")")() || 0;
+            }
+        }
+    } catch (e) {
+        console.warn("Not Dice | Error parseando parte constante de la formula de daño", e);
+    }
+
+    if (abilityModVal !== 0) {
+        lines.push(`Modificador de ${abilityLabel}: ${abilityModVal >= 0 ? "+" : ""}${abilityModVal}`);
+    }
+
+    const otherBonus = totalConstant - abilityModVal;
+    if (otherBonus !== 0) {
+        lines.push(`Otros Bonos: ${otherBonus >= 0 ? "+" : ""}${otherBonus}`);
+    }
+
+    lines.push(`Fórmula Completa: ${formula}`);
+    return lines.join("\n");
+};
+
 globalThis.notDiceOpenDamageDialog = async ({
     uuid,
     itemName,
@@ -1714,7 +1760,7 @@ thunder: { color: "#7c4dff", icon: "🔊" },
                 <div class="damage-part-container" data-index="${part.index}" style="margin-bottom: 8px; padding: 6px 8px; border: 1px solid var(--color-border-light-2, #ddd); border-radius: 6px; background: rgba(127,127,127,0.05); box-shadow: 0 1px 2px rgba(0,0,0,0.1);">
                     <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom: 6px; border-bottom: 1px dashed var(--color-border-light-2, #ddd); padding-bottom: 4px;">
                         <div>${labelHtml}</div>
-                        <div style="font-size:0.95em; opacity:0.8; font-family:monospace; background:rgba(128,128,128,0.1); padding:2px 8px; border-radius:4px; border:1px solid var(--color-border-light-2, #ccc); text-align:right;" title="Fórmula de Daño">
+                        <div style="font-size:1.2em; font-weight:bold; opacity:0.95; font-family:monospace; background:rgba(128,128,128,0.12); padding:3px 10px; border-radius:4px; border:1px solid var(--color-border-light-2, #aaa); text-align:right;" title="${notDiceGetDamageFormulaBreakdown(part.formula, part.isOffhandWithoutStyle, item, actor)}">
                             ${part.formula} ${part.isOffhandWithoutStyle ? '<span style="color:#ff5252;" title="Sin mod. de característica">*</span>' : ''}
                         </div>
                     </div>
@@ -2694,7 +2740,7 @@ thunder: { color: "#7c4dff", icon: "🔊" },
                         <div class="damage-part-container" data-index="${newIndex}" style="margin-bottom: 8px; padding: 6px 8px; border: 1px solid rgba(26,115,232,0.4); border-radius: 6px; background: rgba(26,115,232,0.05); box-shadow: 0 1px 2px rgba(0,0,0,0.1);">
                             <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom: 6px; border-bottom: 1px dashed var(--color-border-light-2, #ddd); padding-bottom: 4px; color:${style.color}; font-weight:bold;">
                                 <div>${label} <span style="font-size:0.8em; opacity:0.75; margin-left:4px; font-weight:normal;">(Jugador)</span>${hiddenTypeInput}</div>
-                                <div style="font-size:0.95em; opacity:0.8; font-family:monospace; background:rgba(128,128,128,0.1); padding:2px 8px; border-radius:4px; border:1px solid var(--color-border-light-2, #ccc); text-align:right;" title="Fórmula de Daño">${formula}</div>
+                                <div style="font-size:1.2em; font-weight:bold; opacity:0.95; font-family:monospace; background:rgba(128,128,128,0.12); padding:3px 10px; border-radius:4px; border:1px solid var(--color-border-light-2, #aaa); text-align:right;" title="${notDiceGetDamageFormulaBreakdown(formula, false, item, actor)}">${formula}</div>
                             </div>
                             
                             <div style="display:flex; align-items:center; gap:6px; width:100%;">
