@@ -7,23 +7,14 @@ Hooks.once("init", () => {
     console.log("Not Dice | Registrando configuraciones...");
 
     // --- Configuraciones Generales (module.js) ---
-    game.settings.register("not-dice", "enableModule", {
-        name: "Habilitar Módulo",
-        hint: "Activa o desactiva la funcionalidad completa del módulo. Requiere recargar.",
-        scope: "client",
-        config: true,
-        type: Boolean,
-        default: true,
-        onChange: () => window.location.reload()
-    });
-
     game.settings.register("not-dice", "enableSimultaneousRoll", {
         name: "Tirada de Ataque Simultánea",
         hint: "Realiza la tirada de ataque automáticamente al abrir el diálogo de daño.",
         scope: "client",
         config: true,
         type: Boolean,
-        default: true
+        default: true,
+        restricted: true
     });
 
     game.settings.register("not-dice", "enableAutoDamageRequestOnHit", {
@@ -32,7 +23,8 @@ Hooks.once("init", () => {
         scope: "client",
         config: true,
         type: Boolean,
-        default: false
+        default: false,
+        restricted: true
     });
 
     game.settings.register("not-dice", "enableSound", {
@@ -60,7 +52,8 @@ Hooks.once("init", () => {
         scope: "client",
         config: true,
         type: Boolean,
-        default: true
+        default: true,
+        restricted: true
     });
 
     game.settings.register("not-dice", "enableTranslation", {
@@ -69,7 +62,8 @@ Hooks.once("init", () => {
         scope: "client",
         config: true,
         type: Boolean,
-        default: true
+        default: true,
+        restricted: true
     });
 
     game.settings.register("not-dice", "myMemoryEmail", {
@@ -78,6 +72,7 @@ Hooks.once("init", () => {
         scope: "client",
         config: true,
         type: String,
-        default: ""
+        default: "",
+        restricted: true
     });
 });

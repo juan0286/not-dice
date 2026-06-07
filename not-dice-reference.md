@@ -57,8 +57,7 @@ Define variables globales bajo el namespace `globalThis.notDiceConstants`:
 
 ### 3.3 [scripts/settings.js](file:///d:/Foundry/FoundryVTT/Data/modules/not-dice/scripts/settings.js)
 Registra los ajustes en Foundry bajo el namespace `"not-dice"`:
-- `enableModule` (Boolean): Habilita o deshabilita por completo el módulo (recarga la pestaña al cambiar).
-- `enableSimultaneousRoll` (Boolean): Realiza la tirada de ataque simultáneamente al abrir el diálogo de daño.
+- `enableSimultaneousRoll` (Boolean): Realiza la tirada de ataque automáticamente al abrir el diálogo de daño.
 - `enableSound` (Boolean): Sonidos de dados nativos si el módulo *Dice So Nice* no está activo.
 - `enableTemplateIntercept` (Boolean): Intercepta plantillas/regiones para abrir el panel de salvación de área.
 - `enableTranslation` (Boolean): Habilita traducción con MyMemory.
