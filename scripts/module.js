@@ -543,7 +543,8 @@ globalThis.notDiceOpenDamageDialog = async ({
             applySavage: applySavage,
             applyGwf: applyGwf,
             isCleaveAttack: isCleaveAttack,
-            isNickAttack: isNickAttack
+            isNickAttack: isNickAttack,
+            isCritical: isCritical
         });
 
         ui.notifications?.info("Not Dice | Resultado de daño enviado al GM.");
@@ -808,7 +809,8 @@ const notDiceHandleAttackSocket = async (data) => {
                     data.preCalculatedParts,
                     data.applyMastery,
                     data.applySavage,
-                    data.applyGwf
+                    data.applyGwf,
+                    data.isCritical
                 );
                 if (wasUpdated) {
                     ui.notifications?.info(`Not Dice | Daño actualizado por ${data.senderName || "jugador"}.`);
@@ -830,7 +832,8 @@ const notDiceHandleAttackSocket = async (data) => {
                     notDiceApplyMastery: data.applyMastery,
                     notDiceApplySavage: data.applySavage,
                     notDiceApplyGwf: data.applyGwf,
-                    isCleaveAttack: data.isCleaveAttack
+                    isCleaveAttack: data.isCleaveAttack,
+                    isCritical: data.isCritical
                 },
                 isNickAttack: data.isNickAttack
             });
@@ -1114,6 +1117,15 @@ Hooks.once("ready", () => {
         const notDiceEvaluateDamageRoll = async (rolls, rollConfig, messageConfig) => {
             console.log("Not Dice | Damage buildEvaluate intercepted", rolls);
 
+            const doubleDice = (formula) => {
+                return formula.replace(/(\d+)d(\d+)/g, (match, num, sides) => {
+                    return `${parseInt(num) * 2}d${sides}`;
+                });
+            };
+
+            const isSpellCrit = !!(rollConfig.isCritical || rollConfig.options?.isCritical || rollConfig.event?.isCritical);
+            let isAttackCrit = false;
+
             const passedMultipliers = rollConfig?.notDiceMultipliers || rollConfig?.options?.notDiceMultipliers || rollConfig?.event?.notDiceMultipliers || {};
             const forcedParts = Array.isArray(rollConfig?.options?.notDicePreCalculatedParts) ? rollConfig.options.notDicePreCalculatedParts : [];
             const hasForcedParts = forcedParts.length > 0;
@@ -1281,7 +1293,8 @@ Hooks.once("ready", () => {
                     label: damageTypeLabel,
                     type: damageTypeKey,
                     availableTypes: availableTypes,
-                    isOffhandWithoutStyle: isOffhandWithoutStyle
+                    isOffhandWithoutStyle: isOffhandWithoutStyle,
+                    isCritical: isSpellCrit || isAttackCrit
                 });
             }
 
@@ -1612,6 +1625,19 @@ Hooks.once("ready", () => {
                         const dieResults = activeDie?.results ?? [];
                         const originalD20 = dieResults[0]?.result ?? 0;
                         const extraD20 = dieResults[1]?.result ?? null;
+
+                        const selectedD20 = rollMode === "advantage"
+                            ? Math.max(originalD20, extraD20 ?? originalD20)
+                            : rollMode === "disadvantage"
+                                ? Math.min(originalD20, extraD20 ?? originalD20)
+                                : originalD20;
+
+                        if (selectedD20 === 20) {
+                            isAttackCrit = true;
+                            for (const p of damageParts) {
+                                p.isCritical = true;
+                            }
+                        }
 
                         attackRollState = {
                             mode: rollMode,
@@ -2196,7 +2222,11 @@ thunder: { color: "#7c4dff", icon: "🔊" },
                         let combinedMax = 0;
                         let combinedMin = 0;
                         for (const part of damageParts) {
-                            const tempRoll = new Roll(part.formula);
+                            let formula = part.formula;
+                            if (part.isCritical || isAttackCrit || isSpellCrit) {
+                                formula = doubleDice(formula);
+                            }
+                            const tempRoll = new Roll(formula);
                             // Parsear los términos de la fórmula sin evaluar
                             let sign = 1;
                             for (const term of tempRoll.terms) {
@@ -2217,30 +2247,55 @@ thunder: { color: "#7c4dff", icon: "🔊" },
                         const pctClamped = Math.max(0, Math.min(100, pct));
 
                         let barColor;
-                        if (pctClamped >= 100) barColor = "linear-gradient(90deg, rgba(255,215,0,0.55), rgba(255,180,0,0.45))";
-                        else if (pctClamped >= 86) barColor = "linear-gradient(90deg, rgba(192,192,192,0.5), rgba(160,170,180,0.4))";
-                        else if (pctClamped >= 51) barColor = "rgba(76, 175, 80, 0.45)";
-                        else if (pctClamped >= 26) barColor = "rgba(255, 193, 7, 0.45)";
-                        else barColor = "rgba(244, 67, 54, 0.4)";
+                        let containerStyle = "position:relative; overflow:hidden; border-radius:6px; border:1px solid rgba(128,128,128,0.3); font-family:inherit;";
+                        if (pctClamped >= 100) {
+                            barColor = "linear-gradient(180deg, rgba(255,255,255,0.2) 0%, rgba(255,255,255,0) 50%, rgba(0,0,0,0.1) 100%), linear-gradient(90deg, #bf953f 0%, #fcf6ba 25%, #b38728 50%, #fbf5b7 75%, #aa771c 100%)";
+                            containerStyle = "position:relative; overflow:hidden; border-radius:6px; border:1px solid #d4af37; box-shadow: 0 0 12px rgba(212, 175, 55, 0.45); font-family:inherit; background: rgba(30, 25, 10, 0.35);";
+                        } else if (pctClamped >= 86) {
+                            barColor = "linear-gradient(180deg, rgba(255,255,255,0.25) 0%, rgba(255,255,255,0) 50%, rgba(0,0,0,0.1) 100%), linear-gradient(90deg, #8a8a8a 0%, #e0e0e0 25%, #8a8a8a 50%, #f0f0f0 75%, #7e7e7e 100%)";
+                            containerStyle = "position:relative; overflow:hidden; border-radius:6px; border:1px solid #a0a0a0; box-shadow: 0 0 12px rgba(192, 192, 192, 0.45); font-family:inherit; background: rgba(30, 30, 30, 0.25);";
+                        } else if (pctClamped >= 51) {
+                            barColor = "rgba(76, 175, 80, 0.45)";
+                        } else if (pctClamped >= 26) {
+                            barColor = "rgba(255, 193, 7, 0.45)";
+                        } else {
+                            barColor = "rgba(244, 67, 54, 0.4)";
+                        }
 
                         const barContent = `
-                            <div style="position:relative; overflow:hidden; border-radius:6px; border:1px solid rgba(128,128,128,0.3); font-family:inherit;">
-                                <div style="position:absolute; top:0; left:0; height:100%; width:${pctClamped}%; background:${barColor}; transition:width 0.3s;"></div>
-                                <div style="position:relative; display:flex; align-items:center; justify-content:center; padding:8px 14px; gap:8px;">
-                                    <i class="fas fa-burst" style="font-size:1.1em; opacity:0.7;"></i>
-                                    <span style="font-size:1.6em; font-weight:900; color:inherit;">${grandTotal}</span>
-                                    <span style="font-size:0.85em; opacity:0.6; color:inherit;">/ ${combinedMax}</span>
+                            <style>
+                                @keyframes notDiceShimmer {
+                                    0% { background-position: -150% 0; }
+                                    100% { background-position: 150% 0; }
+                                }
+                                .not-dice-shimmer-effect {
+                                    background: linear-gradient(120deg, rgba(255,255,255,0) 35%, rgba(255,255,255,0.45) 50%, rgba(255,255,255,0) 65%);
+                                    background-size: 250% 100%;
+                                    animation: notDiceShimmer 4s infinite linear;
+                                }
+                            </style>
+                            <div style="${containerStyle}">
+                                <div style="position:absolute; top:0; left:0; height:100%; width:${pctClamped}%; background:${barColor}; transition:width 0.3s;">
+                                    ${(pctClamped >= 86) ? '<div class="not-dice-shimmer-effect" style="position:absolute; top:0; left:0; width:100%; height:100%; mix-blend-mode:overlay; pointer-events:none;"></div>' : ''}
+                                </div>
+                                <div style="position:relative; display:flex; align-items:center; justify-content:center; padding:8px 14px; gap:8px; text-shadow: ${(pctClamped >= 86) ? '0 1px 2px rgba(0,0,0,0.9), 0 2px 4px rgba(0,0,0,0.9), 0 0 8px rgba(0,0,0,0.8)' : 'none'}; color: ${(pctClamped >= 86) ? '#fff' : 'inherit'};">
+                                    <i class="fas fa-burst" style="font-size:1.1em; opacity:0.85;"></i>
+                                    <span style="font-size:1.6em; font-weight:900;">${grandTotal}</span>
+                                    <span style="font-size:0.85em; opacity:0.9; font-weight:700;">/ (${combinedMin} - ${combinedMax})</span>
                                 </div>
                             </div>
                         `;
 
-                        const actorSpeaker = ChatMessage.getSpeaker({ actor: actor });
-                        await ChatMessage.create({
-                            style: CONST.CHAT_MESSAGE_STYLES.OTHER,
-                            speaker: actorSpeaker,
-                            flags: { "not-dice": { hideHeader: true, damageSummaryBar: true } },
-                            content: barContent
-                        });
+                        const hasDice = damageParts.some(part => /\b\d*d\d+/i.test(part.formula));
+                        if (hasDice) {
+                            const actorSpeaker = ChatMessage.getSpeaker({ actor: actor });
+                            await ChatMessage.create({
+                                style: CONST.CHAT_MESSAGE_STYLES.OTHER,
+                                speaker: actorSpeaker,
+                                flags: { "not-dice": { hideHeader: true, damageSummaryBar: true } },
+                                content: barContent
+                            });
+                        }
                     } catch (barErr) {
                         console.error("Not Dice | Error creating total damage bar", barErr);
                     }
@@ -2469,6 +2524,15 @@ thunder: { color: "#7c4dff", icon: "🔊" },
                             ? Math.max(attackRollState.originalD20, extraD20)
                             : Math.min(attackRollState.originalD20, extraD20);
                         const total = selectedD20 + attackRollState.bonus;
+                        const isCrit = selectedD20 === 20;
+                        if (isCrit) {
+                            isAttackCrit = true;
+                            for (const p of damageParts) {
+                                p.isCritical = true;
+                            }
+                        } else {
+                            isAttackCrit = false;
+                        }
                         const actorSpeaker = ChatMessage.getSpeaker({ actor: item?.actor });
                         const modeLabel = mode === "advantage" ? "Ventaja" : "Desventaja";
 
@@ -2613,6 +2677,8 @@ thunder: { color: "#7c4dff", icon: "🔊" },
                                 const total = await executeDamageRoll(formula, false, idx);
                                 const inputTotal = root.querySelector(`[name='total-${idx}']`);
                                 if (inputTotal) inputTotal.value = total;
+                                const part = damageParts.find(p => p.index == idx);
+                                if (part) part.isCritical = false;
                             } catch (err) { console.error("Not Dice | Error rolling normal damage", err); }
                         }
                     });
@@ -2628,13 +2694,15 @@ thunder: { color: "#7c4dff", icon: "🔊" },
                                 const total = await executeDamageRoll(formula, true, idx);
                                 const inputTotal = root.querySelector(`[name='total-${idx}']`);
                                 if (inputTotal) inputTotal.value = total;
+                                const part = damageParts.find(p => p.index == idx);
+                                if (part) part.isCritical = true;
                             } catch (err) { console.error("Not Dice | Error rolling crit damage", err); }
                         }
                     });
                 });
 
                  globalThis._notDiceActiveAttackDialogs = globalThis._notDiceActiveAttackDialogs || {};
-                globalThis._notDiceActiveAttackDialogs[item.uuid] = (totals, parts = null, applyMastery = null, applySavage = null, applyGwf = null) => {
+                globalThis._notDiceActiveAttackDialogs[item.uuid] = (totals, parts = null, applyMastery = null, applySavage = null, applyGwf = null, isCritical = false) => {
                     const reqBtn = root.querySelector(`#not-dice-btn-request-damage-attack`);
                     if (!document.body.contains(root)) return false; // El DOM del dialog ya no existe
 
@@ -2678,6 +2746,9 @@ thunder: { color: "#7c4dff", icon: "🔊" },
                         if (!inputTotal) return false;
                         inputTotal.value = Number.isFinite(value) ? value : 0;
                         assigned.add(partIdx);
+                        if (isCritical) {
+                            part.isCritical = true;
+                        }
                         return true;
                     };
 
@@ -2738,7 +2809,8 @@ thunder: { color: "#7c4dff", icon: "🔊" },
                             label,
                             type,
                             availableTypes,
-                            isOffhandWithoutStyle: false
+                            isOffhandWithoutStyle: false,
+                            isCritical: isCritical
                         });
 
                         const style = type ? (damageStyle[type] || { color: "inherit", icon: "" }) : { color: "inherit", icon: "" };
