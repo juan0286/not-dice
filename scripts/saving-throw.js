@@ -126,6 +126,8 @@ async function translateAndUpdate(htmlDesc, targetId) {
     el.innerHTML = finalTranslation;
 }
 
+globalThis.notDiceTranslateAndUpdate = translateAndUpdate;
+
 // 4. Interceptar la creación
 /**
  * Intercepta la creación de plantillas de medida y regiones en el canvas,
@@ -1044,7 +1046,11 @@ Hooks.on("renderChatMessage", (message, html) => {
                 targetUserId: targetUserId
             };
 
-            game.socket.emit("module.not-dice", payload);
+            if (targetUserId === game.user.id) {
+                Hooks.callAll("notDiceSaveResult", payload);
+            } else {
+                game.socket.emit("module.not-dice", payload);
+            }
             ui.notifications.info("Not Dice | Resultado de salvación enviado al GM.");
 
             btn.innerHTML = `<i class='fas fa-check'></i> Salvaciones Enviadas`;
@@ -1170,7 +1176,18 @@ Hooks.on("renderChatMessage", (message, html) => {
                 preCalculatedTotals: totals
             };
 
-            game.socket.emit("module.not-dice", payload);
+            if (targetUserId === game.user.id) {
+                // If it's the GM sending it, and notDiceHandleAttackSocket isn't available globally, 
+                // we'll just emit it. But wait, we can't easily access notDiceHandleAttackSocket here.
+                // However, the fallback isn't even reached if notDiceOpenDamageDialog is a function!
+                if (typeof globalThis.notDiceHandleAttackSocket === "function") {
+                    globalThis.notDiceHandleAttackSocket(payload);
+                } else {
+                    game.socket.emit("module.not-dice", payload);
+                }
+            } else {
+                game.socket.emit("module.not-dice", payload);
+            }
             ui.notifications.info("Not Dice | Resultado de daño enviado al GM.");
 
             btn.innerHTML = `<i class='fas fa-check'></i> Daño Enviado (${grandTotal})`;

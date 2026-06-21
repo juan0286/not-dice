@@ -12,7 +12,13 @@ globalThis.notDiceGetActorEffects = (act) => {
     if (act.appliedEffects) {
         effs = Array.from(act.appliedEffects);
     } else if (act.effects) {
-        effs = Array.from(act.effects.contents || act.effects.values() || act.effects);
+        if (act.effects.contents) {
+            effs = Array.from(act.effects.contents);
+        } else if (typeof act.effects.values === "function") {
+            effs = Array.from(act.effects.values());
+        } else {
+            effs = Array.from(act.effects);
+        }
     }
     return effs.map(e => Array.isArray(e) ? e[1] : e).filter(Boolean);
 };
@@ -21,34 +27,34 @@ const notDiceIsSlowEffect = (e) => {
     if (!e) return false;
     const name = (e.name || e.label || "").toLowerCase();
     const flags = e.flags?.["not-dice"] || (typeof e.getFlag === "function" ? e.getFlag("not-dice") : null) || {};
-    return name.includes("slow") || 
-           name.includes("ralentizar") || 
-           name.includes("ralentizacion") || 
-           name.includes("ralentización") || 
-           name.includes("frenar") || 
-           name.includes("freno") || 
-           name.includes("lentitud") || 
-           !!flags.isSlowEffect;
+    return name.includes("slow") ||
+        name.includes("ralentizar") ||
+        name.includes("ralentizacion") ||
+        name.includes("ralentización") ||
+        name.includes("frenar") ||
+        name.includes("freno") ||
+        name.includes("lentitud") ||
+        !!flags.isSlowEffect;
 };
 
 const notDiceIsSapEffect = (e) => {
     if (!e) return false;
     const name = (e.name || e.label || "").toLowerCase();
     const flags = e.flags?.["not-dice"] || (typeof e.getFlag === "function" ? e.getFlag("not-dice") : null) || {};
-    return name.includes("sap") || 
-           name.includes("debilitar") || 
-           name.includes("minar") || 
-           !!flags.isSapEffect;
+    return name.includes("sap") ||
+        name.includes("debilitar") ||
+        name.includes("minar") ||
+        !!flags.isSapEffect;
 };
 
 const notDiceIsVexEffect = (e) => {
     if (!e) return false;
     const name = (e.name || e.label || "").toLowerCase();
     const flags = e.flags?.["not-dice"] || (typeof e.getFlag === "function" ? e.getFlag("not-dice") : null) || {};
-    return name.includes("vex") || 
-           name.includes("molestar") || 
-           name.includes("irritar") || 
-           !!flags.isVexEffect;
+    return name.includes("vex") ||
+        name.includes("molestar") ||
+        name.includes("irritar") ||
+        !!flags.isVexEffect;
 };
 
 const notDiceIsAttack = (subject) => {
@@ -244,7 +250,7 @@ const notDiceExtractDamageRows = (actualItem) => {
 const notDiceGetDamageFormulaBreakdown = (formula, isOffhandWithoutStyle, item, actor) => {
     if (!formula) return "";
     let lines = [];
-    
+
     // 1. Identificar dados base
     const diceMatches = formula.match(/\b\d+d\d+/g) || [];
     if (diceMatches.length > 0) {
@@ -530,7 +536,7 @@ globalThis.notDiceOpenDamageDialog = async ({
         const applySavage = rootEl?.querySelector?.(".not-dice-savage-cb")?.checked ?? false;
         const applyGwf = rootEl?.querySelector?.(".not-dice-gwf-cb")?.checked ?? false;
 
-        game.socket.emit("module.not-dice", {
+        const payload = {
             type: "not-dice.show-spell-damage",
             itemUuid: uuid,
             targetIds,
@@ -545,7 +551,13 @@ globalThis.notDiceOpenDamageDialog = async ({
             isCleaveAttack: isCleaveAttack,
             isNickAttack: isNickAttack,
             isCritical: isCritical
-        });
+        };
+
+        if (gmUserId === game.user.id) {
+            notDiceHandleAttackSocket(payload);
+        } else {
+            game.socket.emit("module.not-dice", payload);
+        }
 
         ui.notifications?.info("Not Dice | Resultado de daño enviado al GM.");
         return true;
@@ -700,21 +712,21 @@ const notDiceHandlePlayerAttack = async (rolls, rollConfig) => {
 const notDiceExecuteGrazeDamage = async (attackerId, targetIds, abilityMod, damageType, weaponName) => {
     const attacker = game.actors.get(attackerId) || canvas.tokens.placeables.find(t => t.actor?.id === attackerId)?.actor;
     const attackerName = attacker ? attacker.name : "Atacante";
-    
+
     const damageSummaryLines = [];
-    
+
     for (const tId of targetIds) {
         const targetToken = canvas.tokens.placeables.find(t => t.id === tId);
         const targetActor = targetToken?.actor || game.actors.get(tId);
         if (!targetActor) continue;
-        
+
         // Aplicar daño
         const finalValues = [{ value: abilityMod, type: damageType }];
         await targetActor.applyDamage(finalValues, { ignore: true });
-        
+
         damageSummaryLines.push(`<li><strong>${targetActor.name}</strong> recibe <span style="font-weight:bold; color:#ba68c8;">${abilityMod}</span> de daño (${damageType}) por Rozar.</li>`);
     }
-    
+
     if (damageSummaryLines.length > 0) {
         const whisperUsers = game.users.filter(u => u.isGM || (attacker && attacker.testUserPermission(u, "OWNER"))).map(u => u.id);
         await ChatMessage.create({
@@ -748,7 +760,7 @@ const notDiceHandleAttackSocket = async (data) => {
     if (data.type === "not-dice.apply-graze") {
         try {
             const item = data.weaponUuid ? await fromUuid(data.weaponUuid) : null;
-            const activity = item?.system?.activities?.find(a => a.type === "save" || a.type === "damage" || a.type === "attack") 
+            const activity = item?.system?.activities?.find(a => a.type === "save" || a.type === "damage" || a.type === "attack")
                 || (item?.system?.activities?.size > 0 ? item.system.activities.first() : null)
                 || item;
 
@@ -871,6 +883,8 @@ const notDiceHandleAttackSocket = async (data) => {
     }
 };
 
+globalThis.notDiceHandleAttackSocket = notDiceHandleAttackSocket;
+
 Hooks.once("ready", () => {
     if (!globalThis._notDiceSocketReady) {
         globalThis._notDiceSocketReady = true;
@@ -926,10 +940,10 @@ Hooks.once("ready", () => {
                 const act = activity || item.system.activities?.find(a => a.type === "attack" || a.type === "damage") || item.system.activities?.first();
                 const firstPart = act?.damage?.parts?.[0];
 
-                const baseFormula = firstPart?.formula || 
-                                    (firstPart?.number && firstPart?.denomination ? `${firstPart.number}d${firstPart.denomination}` : "") || 
-                                    item.system.damage?.parts?.[0]?.[0] || 
-                                    "1d8";
+                const baseFormula = firstPart?.formula ||
+                    (firstPart?.number && firstPart?.denomination ? `${firstPart.number}d${firstPart.denomination}` : "") ||
+                    item.system.damage?.parts?.[0]?.[0] ||
+                    "1d8";
                 const baseDie = baseFormula.match(/\d+d\d+/)?.[0] || "1d8";
 
                 // Buscar el dado versátil nativo del item, si no, aplicar la escala de dados clásica
@@ -940,9 +954,9 @@ Hooks.once("ready", () => {
                     if (match) versatileDie = match[0];
                 }
                 if (!versatileDie) {
-                    versatileDie = (baseDie.includes("d6") ? baseDie.replace("d6", "d8") : 
-                                   (baseDie.includes("d8") ? baseDie.replace("d8", "d10") : 
-                                   (baseDie.includes("d10") ? baseDie.replace("d10", "d12") : baseDie)));
+                    versatileDie = (baseDie.includes("d6") ? baseDie.replace("d6", "d8") :
+                        (baseDie.includes("d8") ? baseDie.replace("d8", "d10") :
+                            (baseDie.includes("d10") ? baseDie.replace("d10", "d12") : baseDie)));
                 }
 
                 const DialogV2 = foundry?.applications?.api?.DialogV2;
@@ -1655,6 +1669,7 @@ Hooks.once("ready", () => {
                 }
 
                 const attackerImg = item?.actor?.img || "icons/svg/mystery-man.svg";
+                const attackDescId = `hover-desc-${Math.random().toString(36).substring(2, 9)}`;
                 attackHtml = `
                 <div style="display:flex; align-items:center; justify-content:space-between; gap:12px; margin-bottom:12px; padding:10px; border:1px solid var(--color-border-light-2, #ddd); border-radius:6px; background:rgba(127,127,127,0.1); box-shadow: 0 1px 3px rgba(0,0,0,0.1);">
                     <!-- Left: Attacker -->
@@ -1664,8 +1679,11 @@ Hooks.once("ready", () => {
                     </div>
                     
                     <!-- Middle: Weapon & Attack Info -->
-                    <div style="display:flex; align-items:center; gap:12px; flex:1; min-width:0;">
-                        <img src="${attackImg}" style="width:48px; height:48px; border:1px solid var(--color-border-light-2, #aaa); border-radius:6px; object-fit:cover; flex-shrink:0;">
+                    <div style="display:flex; align-items:center; gap:12px; flex:1; min-width:0; position:relative;">
+                        <img src="${attackImg}" class="not-dice-attack-img-hover" data-desc-id="${attackDescId}" style="width:48px; height:48px; border:1px solid var(--color-border-light-2, #aaa); border-radius:6px; object-fit:cover; flex-shrink:0; cursor:pointer;" title="Haz clic para ver la descripción traducida">
+                        <div id="${attackDescId}" class="not-dice-attack-hover-box" style="display:none; position:absolute; top:55px; left:0; width:320px; background:rgba(20, 20, 20, 0.96); border:1px solid #ffca28; border-radius:8px; padding:10px; box-shadow:0 6px 16px rgba(0,0,0,0.5); z-index:100; font-size:0.9em; color:#f0f0f0; max-height:220px; overflow-y:auto; line-height:1.4; text-shadow:1px 1px 1px rgba(0,0,0,0.8);">
+                            <span style="color: #bbb;"><em>Traduciendo descripción... <i class="fas fa-spinner fa-spin"></i></em></span>
+                        </div>
                         <div style="flex:1; min-width:0;">
                             <div style="font-size:1em; color:inherit; opacity:0.8; line-height:1.2;">${headerLabel}</div>
                             <div style="font-weight:900; font-size:1.4em; color:inherit; line-height:1.2;">${headerValue}</div>
@@ -1701,7 +1719,7 @@ Hooks.once("ready", () => {
                 psychic: { color: "#ff4081", icon: "🧠" },
                 radiant: { color: "#ffca28", icon: "☀️" },
                 slashing: { color: "inherit", icon: "⚔️" },
-thunder: { color: "#7c4dff", icon: "🔊" },
+                thunder: { color: "#7c4dff", icon: "🔊" },
                 healing: { color: "#69f0ae", icon: "💚" },
                 temphp: { color: "inherit", icon: "🛡️" }
             };
@@ -1806,10 +1824,28 @@ thunder: { color: "#7c4dff", icon: "🔊" },
                         
                         <!-- 2. Multiplicador(es) -->
                         ${(() => {
-                            let partTargetMultipliersHtml = "";
-                            if (targets.length > 0) {
-                                if (targets.length === 1) {
-                                    const t = targets[0];
+                        let partTargetMultipliersHtml = "";
+                        if (targets.length > 0) {
+                            if (targets.length === 1) {
+                                const t = targets[0];
+                                const traits = t.actor?.system?.traits;
+                                let detectedMultiplier = 1;
+                                if (traits) {
+                                    if (traits.di?.value?.has(currentDamageType)) detectedMultiplier = 0;
+                                    else if (traits.dv?.value?.has(currentDamageType)) detectedMultiplier = 2;
+                                    else if (traits.dr?.value?.has(currentDamageType)) detectedMultiplier = 0.5;
+                                }
+                                const baseMult = passedMultipliers[t.id] !== undefined ? passedMultipliers[t.id] : 1;
+                                detectedMultiplier = detectedMultiplier * baseMult;
+
+                                const selectName = `target-multiplier-${t.id}-part-${part.index}`;
+                                partTargetMultipliersHtml = `
+                                    <select name="${selectName}" style="width:65px; height:32px; border:1px solid var(--color-border-light-2, #ccc); background:rgba(128,128,128,0.1); color:inherit; border-radius:4px; cursor:pointer; font-weight:bold; font-size:1.05em; flex-shrink:0; text-align:center; box-sizing:border-box; margin:0; padding:0;" title="Multiplicador para ${t.name}">
+                                        ${multiplierOptions.map(o => `<option value="${o.val}" ${o.val === detectedMultiplier ? "selected" : ""}>${o.label}</option>`).join("")}
+                                    </select>`;
+                            } else {
+                                partTargetMultipliersHtml += `<div style="display:flex; flex-direction:column; gap:2px; flex-shrink:0;">`;
+                                for (const t of targets) {
                                     const traits = t.actor?.system?.traits;
                                     let detectedMultiplier = 1;
                                     if (traits) {
@@ -1821,37 +1857,19 @@ thunder: { color: "#7c4dff", icon: "🔊" },
                                     detectedMultiplier = detectedMultiplier * baseMult;
 
                                     const selectName = `target-multiplier-${t.id}-part-${part.index}`;
-                                    partTargetMultipliersHtml = `
-                                    <select name="${selectName}" style="width:65px; height:32px; border:1px solid var(--color-border-light-2, #ccc); background:rgba(128,128,128,0.1); color:inherit; border-radius:4px; cursor:pointer; font-weight:bold; font-size:1.05em; flex-shrink:0; text-align:center; box-sizing:border-box; margin:0; padding:0;" title="Multiplicador para ${t.name}">
-                                        ${multiplierOptions.map(o => `<option value="${o.val}" ${o.val === detectedMultiplier ? "selected" : ""}>${o.label}</option>`).join("")}
-                                    </select>`;
-                                } else {
-                                    partTargetMultipliersHtml += `<div style="display:flex; flex-direction:column; gap:2px; flex-shrink:0;">`;
-                                    for (const t of targets) {
-                                        const traits = t.actor?.system?.traits;
-                                        let detectedMultiplier = 1;
-                                        if (traits) {
-                                            if (traits.di?.value?.has(currentDamageType)) detectedMultiplier = 0;
-                                            else if (traits.dv?.value?.has(currentDamageType)) detectedMultiplier = 2;
-                                            else if (traits.dr?.value?.has(currentDamageType)) detectedMultiplier = 0.5;
-                                        }
-                                        const baseMult = passedMultipliers[t.id] !== undefined ? passedMultipliers[t.id] : 1;
-                                        detectedMultiplier = detectedMultiplier * baseMult;
-
-                                        const selectName = `target-multiplier-${t.id}-part-${part.index}`;
-                                        partTargetMultipliersHtml += `
+                                    partTargetMultipliersHtml += `
                                         <div style="display:flex; justify-content:space-between; align-items:center; font-size:0.8em; background: rgba(128,128,128,0.08); padding: 1px 4px; border-radius: 4px; border:1px solid var(--color-border-light-2, #eee); min-height:30px; gap:4px; max-width:140px; box-sizing:border-box;">
                                             <span style="white-space:nowrap; overflow:hidden; text-overflow:ellipsis; flex:1;" title="${t.name}">${t.name}</span>
                                             <select name="${selectName}" style="width:55px; height:24px; padding:0; border:1px solid var(--color-border-light-2, #ccc); background:transparent; color:inherit; border-radius:3px; cursor:pointer; font-weight:bold; font-size:0.95em; flex-shrink:0; text-align:center; box-sizing:border-box; margin:0;">
                                                 ${multiplierOptions.map(o => `<option value="${o.val}" ${o.val === detectedMultiplier ? "selected" : ""}>${o.label}</option>`).join("")}
                                             </select>
                                         </div>`;
-                                    }
-                                    partTargetMultipliersHtml += `</div>`;
                                 }
+                                partTargetMultipliersHtml += `</div>`;
                             }
-                            return partTargetMultipliersHtml;
-                        })()}
+                        }
+                        return partTargetMultipliersHtml;
+                    })()}
 
                         <!-- 3. Botones de tirar dados (Normal y Crítico, estirados, en columnas si hay múltiples objetivos) -->
                         <div style="display:flex; ${targets.length > 1 ? 'flex-direction:column;' : ''} gap:4px; flex:1;">
@@ -2054,10 +2072,10 @@ thunder: { color: "#7c4dff", icon: "🔊" },
                                     }
 
                                     const isVex = (activeMastery.id === "vex" || activeMastery.label.toLowerCase().includes("molestar"));
-                                    const isSlow = (activeMastery.id === "slow" || 
-                                                    activeMastery.label.toLowerCase().includes("ralentizar") || 
-                                                    activeMastery.label.toLowerCase().includes("frenar") || 
-                                                    activeMastery.label.toLowerCase().includes("lentitud"));
+                                    const isSlow = (activeMastery.id === "slow" ||
+                                        activeMastery.label.toLowerCase().includes("ralentizar") ||
+                                        activeMastery.label.toLowerCase().includes("frenar") ||
+                                        activeMastery.label.toLowerCase().includes("lentitud"));
 
                                     const effectData = {
                                         name: effectName,
@@ -2078,11 +2096,11 @@ thunder: { color: "#7c4dff", icon: "🔊" },
 
                                     if (isVex || isSlow) {
                                         effectData.duration.rounds = 99; // Evitar expiración prematura por el turno del objetivo
-                                        if (activeMastery.id === "slow" || 
-                                            activeMastery.label.toLowerCase().includes("ralentizar") || 
-                                            activeMastery.label.toLowerCase().includes("frenar") || 
+                                        if (activeMastery.id === "slow" ||
+                                            activeMastery.label.toLowerCase().includes("ralentizar") ||
+                                            activeMastery.label.toLowerCase().includes("frenar") ||
                                             activeMastery.label.toLowerCase().includes("lentitud")) {
-                                            
+
                                             const hasExistingSlowWithChanges = existingEffects.some(e => {
                                                 return notDiceIsSlowEffect(e) && e.changes && e.changes.length > 0;
                                             });
@@ -2314,28 +2332,28 @@ thunder: { color: "#7c4dff", icon: "🔊" },
                                 if (itm.system.ability) return itm.system.ability;
                                 const actionType = itm.system.actionType;
                                 const properties = itm.system.properties;
-                                
+
                                 if (properties?.has?.("fin")) {
                                     const str = act.system.abilities?.str?.mod ?? 0;
                                     const dex = act.system.abilities?.dex?.mod ?? 0;
                                     return dex > str ? "dex" : "str";
                                 }
-                                
+
                                 if (actionType === "rwg" || actionType === "rsb") {
                                     return "dex";
                                 }
                                 return "str";
                             };
-                            
+
                             const ability = getAbilityUsed(item);
                             const abilityMod = Math.max(0, item.actor.system?.abilities?.[ability]?.mod ?? 0);
                             const damageType = damageParts[0]?.type || item.system.damage?.parts?.[0]?.[1] || "slashing";
-                            
+
                             const targetIds = missedTargets.map(t => t.id).join(",");
                             const targetNames = missedTargets.map(t => t.name).join(", ");
-                            
+
                             const whisperUsers = game.users.filter(u => u.isGM || item.actor.testUserPermission(u, "OWNER")).map(u => u.id);
-                            
+
                             await ChatMessage.create({
                                 whisper: whisperUsers,
                                 content: `
@@ -2588,6 +2606,53 @@ thunder: { color: "#7c4dff", icon: "🔊" },
                     registerChatAttackModeHandler();
                 }
 
+                // --- HOVER PARA LA DESCRIPCION DEL ATAQUE ---
+                const attackImgHover = root.querySelector(".not-dice-attack-img-hover");
+                if (attackImgHover) {
+                    attackImgHover.addEventListener("click", async (ev) => {
+                        ev.preventDefault();
+                        ev.stopPropagation();
+                        const descId = attackImgHover.dataset.descId;
+                        const hoverBox = root.querySelector(`#${descId}`);
+                        if (!hoverBox) return;
+
+                        if (hoverBox.style.display === "none") {
+                            hoverBox.style.display = "block";
+                            if (!hoverBox.dataset.translated) {
+                                hoverBox.dataset.translated = "true";
+                                let description = "";
+                                if (item) {
+                                    if (globalThis.notDiceEnrichDescription) {
+                                        description = await globalThis.notDiceEnrichDescription(item);
+                                    } else {
+                                        description = item?.system?.description?.value || "<p>Sin descripción.</p>";
+                                    }
+                                } else {
+                                    description = "<p>Sin descripción.</p>";
+                                }
+                                hoverBox.innerHTML = description;
+                                if (globalThis.notDiceTranslateAndUpdate) {
+                                    globalThis.notDiceTranslateAndUpdate(description, descId);
+                                }
+                            }
+                        } else {
+                            hoverBox.style.display = "none";
+                        }
+                    });
+
+                    const middleSection = attackImgHover.parentElement;
+                    if (middleSection) {
+                        middleSection.addEventListener("mouseleave", () => {
+                            const descId = attackImgHover.dataset.descId;
+                            const hoverBox = root.querySelector(`#${descId}`);
+                            if (hoverBox && hoverBox.style.display === "block") {
+                                hoverBox.style.display = "none";
+                            }
+                        });
+                    }
+                }
+                // ---------------------------------------------
+
                 root.querySelectorAll("select[name^='type-']").forEach(select => {
                     select.addEventListener("change", (ev) => {
                         const newType = ev.currentTarget.value;
@@ -2701,7 +2766,7 @@ thunder: { color: "#7c4dff", icon: "🔊" },
                     });
                 });
 
-                 globalThis._notDiceActiveAttackDialogs = globalThis._notDiceActiveAttackDialogs || {};
+                globalThis._notDiceActiveAttackDialogs = globalThis._notDiceActiveAttackDialogs || {};
                 globalThis._notDiceActiveAttackDialogs[item.uuid] = (totals, parts = null, applyMastery = null, applySavage = null, applyGwf = null, isCritical = false) => {
                     const reqBtn = root.querySelector(`#not-dice-btn-request-damage-attack`);
                     if (!document.body.contains(root)) return false; // El DOM del dialog ya no existe
@@ -2828,11 +2893,29 @@ thunder: { color: "#7c4dff", icon: "🔊" },
                                 
                                 <!-- 2. Multiplicador(es) (estirado) -->
                                 ${(() => {
-                                    const targets = resolveTargets();
-                                    let partTargetMultipliersHtml = "";
-                                    if (targets.length > 0) {
-                                        if (targets.length === 1) {
-                                            const t = targets[0];
+                                const targets = resolveTargets();
+                                let partTargetMultipliersHtml = "";
+                                if (targets.length > 0) {
+                                    if (targets.length === 1) {
+                                        const t = targets[0];
+                                        const traits = t.actor?.system?.traits;
+                                        let detectedMultiplier = 1;
+                                        if (traits) {
+                                            if (traits.di?.value?.has(type)) detectedMultiplier = 0;
+                                            else if (traits.dv?.value?.has(type)) detectedMultiplier = 2;
+                                            else if (traits.dr?.value?.has(type)) detectedMultiplier = 0.5;
+                                        }
+                                        const baseMult = passedMultipliers[t.id] !== undefined ? passedMultipliers[t.id] : 1;
+                                        detectedMultiplier = detectedMultiplier * baseMult;
+
+                                        const selectName = `target-multiplier-${t.id}-part-${newIndex}`;
+                                        partTargetMultipliersHtml = `
+                                            <select name="${selectName}" style="flex:1; height:32px; border:1px solid var(--color-border-light-2, #ccc); background:rgba(128,128,128,0.1); color:inherit; border-radius:4px; cursor:pointer; font-weight:bold; font-size:1.05em; text-align:center; box-sizing:border-box; margin:0; padding:0;" title="Multiplicador para ${t.name}">
+                                                ${multiplierOptions.map(o => `<option value="${o.val}" ${o.val === detectedMultiplier ? "selected" : ""}>${o.label}</option>`).join("")}
+                                            </select>`;
+                                    } else {
+                                        partTargetMultipliersHtml += `<div style="display:flex; flex-direction:column; gap:2px; flex:1;">`;
+                                        for (const t of targets) {
                                             const traits = t.actor?.system?.traits;
                                             let detectedMultiplier = 1;
                                             if (traits) {
@@ -2844,37 +2927,19 @@ thunder: { color: "#7c4dff", icon: "🔊" },
                                             detectedMultiplier = detectedMultiplier * baseMult;
 
                                             const selectName = `target-multiplier-${t.id}-part-${newIndex}`;
-                                            partTargetMultipliersHtml = `
-                                            <select name="${selectName}" style="flex:1; height:32px; border:1px solid var(--color-border-light-2, #ccc); background:rgba(128,128,128,0.1); color:inherit; border-radius:4px; cursor:pointer; font-weight:bold; font-size:1.05em; text-align:center; box-sizing:border-box; margin:0; padding:0;" title="Multiplicador para ${t.name}">
-                                                ${multiplierOptions.map(o => `<option value="${o.val}" ${o.val === detectedMultiplier ? "selected" : ""}>${o.label}</option>`).join("")}
-                                            </select>`;
-                                        } else {
-                                            partTargetMultipliersHtml += `<div style="display:flex; flex-direction:column; gap:2px; flex:1;">`;
-                                            for (const t of targets) {
-                                                const traits = t.actor?.system?.traits;
-                                                let detectedMultiplier = 1;
-                                                if (traits) {
-                                                    if (traits.di?.value?.has(type)) detectedMultiplier = 0;
-                                                    else if (traits.dv?.value?.has(type)) detectedMultiplier = 2;
-                                                    else if (traits.dr?.value?.has(type)) detectedMultiplier = 0.5;
-                                                }
-                                                const baseMult = passedMultipliers[t.id] !== undefined ? passedMultipliers[t.id] : 1;
-                                                detectedMultiplier = detectedMultiplier * baseMult;
-
-                                                const selectName = `target-multiplier-${t.id}-part-${newIndex}`;
-                                                partTargetMultipliersHtml += `
+                                            partTargetMultipliersHtml += `
                                                 <div style="display:flex; justify-content:space-between; align-items:center; font-size:0.8em; background: rgba(128,128,128,0.08); padding: 1px 4px; border-radius: 4px; border:1px solid var(--color-border-light-2, #eee); min-height:30px; gap:4px; box-sizing:border-box; width:100%;">
                                                     <span style="white-space:nowrap; overflow:hidden; text-overflow:ellipsis; flex:1;" title="${t.name}">${t.name}</span>
                                                     <select name="${selectName}" style="width:55px; height:24px; padding:0; border:1px solid var(--color-border-light-2, #ccc); background:transparent; color:inherit; border-radius:3px; cursor:pointer; font-weight:bold; font-size:0.95em; flex-shrink:0; text-align:center; box-sizing:border-box; margin:0;">
                                                         ${multiplierOptions.map(o => `<option value="${o.val}" ${o.val === detectedMultiplier ? "selected" : ""}>${o.label}</option>`).join("")}
                                                     </select>
                                                 </div>`;
-                                            }
-                                            partTargetMultipliersHtml += `</div>`;
                                         }
+                                        partTargetMultipliersHtml += `</div>`;
                                     }
-                                    return partTargetMultipliersHtml;
-                                })()}
+                                }
+                                return partTargetMultipliersHtml;
+                            })()}
                             </div>
                         </div>`;
 
@@ -3110,7 +3175,7 @@ thunder: { color: "#7c4dff", icon: "🔊" },
             }
 
             const hasMultipliers = rollConfig?.notDiceMultipliers || rollConfig?.options?.notDiceMultipliers || rollConfig?.event?.notDiceMultipliers;
-            
+
             const healingTypes = new Set(["healing", "temphp"]);
             const isHealingOnly = rolls.length > 0 && rolls.every(r => r.options?.type && healingTypes.has(r.options.type));
 
@@ -3597,7 +3662,7 @@ Hooks.on("renderChatMessage", (message, html, data) => {
 
         if (game.user.isGM) {
             const item = weaponUuid ? await fromUuid(weaponUuid) : null;
-            const activity = item?.system?.activities?.find(a => a.type === "save" || a.type === "damage" || a.type === "attack") 
+            const activity = item?.system?.activities?.find(a => a.type === "save" || a.type === "damage" || a.type === "attack")
                 || (item?.system?.activities?.size > 0 ? item.system.activities.first() : null)
                 || item;
 
@@ -3780,9 +3845,9 @@ Hooks.on("updateActiveEffect", (effect, changed, options, userId) => {
     if (changed.hasOwnProperty("disabled") && changed.disabled === true) {
         const name = (effect.name || effect.label || "").toLowerCase();
         const flags = effect.flags?.["not-dice"] || effect.getFlag?.("not-dice") || {};
-        
+
         const isMasteryEffect = notDiceIsVexEffect(effect) || notDiceIsSapEffect(effect) || notDiceIsSlowEffect(effect);
-        
+
         if (isMasteryEffect) {
             const actor = effect.parent;
             if (actor && actor.documentName === "Actor") {
