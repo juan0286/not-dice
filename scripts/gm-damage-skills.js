@@ -21,6 +21,14 @@ globalThis.notDiceGetGMDamageSkillsHtml = function(actor, currentItemId) {
             return false;
         }
 
+        const activationType = i.system?.activation?.type || "";
+        
+        // Excluir habilidades o hechizos que cuesten una "action" principal,
+        // ya que el popup de GM es para DAÑO EXTRA (Bonus Action, Special, Reaction, None) y no ataques principales.
+        if (activationType === "action") {
+            return false;
+        }
+
         // V2 legacy support
         if (i.system?.damage?.parts?.length > 0) {
             return true;
