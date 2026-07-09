@@ -3533,7 +3533,11 @@ Hooks.on("renderChatMessage", (message, html, data) => {
 
         const item = await fromUuid(uuid);
         if (item?.actor && globalThis.notDiceEspeciales) {
-            await globalThis.notDiceEspeciales.useSavageAttacker(item.actor);
+            try {
+                await globalThis.notDiceEspeciales.useSavageAttacker(item.actor);
+            } catch (err) {
+                console.warn("Not Dice | Error setting Savage Attacker flag (User may lack permission):", err);
+            }
         }
 
         const rollObj = new Roll(formula);
