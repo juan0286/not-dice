@@ -22,6 +22,7 @@
     "scripts/module.js",
     "scripts/saving-throw.js",
     "scripts/damage-effects.js",
+    "scripts/gm-damage-skills.js",
     "scripts/description-parser.js"
   ],
   "styles": [
