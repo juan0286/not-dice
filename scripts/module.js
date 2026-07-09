@@ -1951,8 +1951,13 @@ Hooks.once("ready", () => {
                 <div style="font-family:inherit; padding:4px 2px;">
                     ${attackHtml}
                     ${targetHtml}
-                    <h3 style="border-bottom: 1px solid var(--color-border-light-2, #ccc); padding-bottom: 4px; margin-bottom: 10px; font-size:1.1em; color:inherit; opacity:0.9;">Desglose de Daño</h3>
-                    <div style="max-height: ${damageParts.length > 2 ? '220px' : '380px'}; overflow-y: auto; padding-right: 6px;">
+                    <div style="display:flex; justify-content:space-between; align-items:center; border-bottom: 1px solid var(--color-border-light-2, #ccc); padding-bottom: 4px; margin-bottom: 10px;">
+                        <h3 style="margin:0; font-size:1.1em; color:inherit; opacity:0.9;">Desglose de Daño</h3>
+                        <div style="position:relative;">
+                            <button type="button" class="not-dice-add-gm-damage-btn" style="width:24px; height:24px; padding:0; line-height:24px; border-radius:4px; border:1px solid var(--color-border-light-2, #aaa); background:rgba(0,0,0,0.05); cursor:pointer;" title="Agregar daño extra"><i class="fas fa-plus"></i></button>
+                        </div>
+                    </div>
+                    <div id="not-dice-damage-list" style="max-height: ${damageParts.length > 2 ? '220px' : '380px'}; overflow-y: auto; padding-right: 6px;">
                         ${damageInputsHtml}
                     </div>
                     ${requestDamageBtnHtml}
@@ -2822,6 +2827,234 @@ Hooks.once("ready", () => {
                         }
                     });
                 });
+
+                // Add GM Extra Damage Popup Logic
+                const addGmDamageBtn = root.querySelector(".not-dice-add-gm-damage-btn");
+                if (addGmDamageBtn) {
+                    addGmDamageBtn.addEventListener("click", (ev) => {
+                        ev.preventDefault();
+                        const existingPopup = root.querySelector(".not-dice-gm-damage-popup");
+                        if (existingPopup) {
+                            existingPopup.remove();
+                            return;
+                        }
+                        const popupHtml = `
+                            <div class="not-dice-gm-damage-popup" style="position:absolute; top:30px; right:0; width: 180px; background:var(--color-bg-1, rgba(30,30,30,0.95)); color:var(--color-text-light-1, #f0f0f0); border:1px solid var(--color-border-light-1, #555); border-radius:6px; box-shadow:0 4px 12px rgba(0,0,0,0.5); z-index:100; padding:8px; backdrop-filter: blur(4px);">
+                                <div class="not-dice-gm-damage-step1">
+                                    <div style="font-weight:bold; font-size:0.9em; margin-bottom:6px; text-align:center; color:inherit;">Seleccionar Dado</div>
+                                    <div style="display:grid; grid-template-columns:1fr 1fr 1fr; gap:4px;">
+                                        ${["d4","d6","d8","d10","d12","d20"].map(d => `<button class="not-dice-gm-damage-die-btn" data-die="${d}" style="padding:4px; font-weight:bold; font-size:0.9em; border-radius:4px; border:1px solid var(--color-border-light-2, #777); background:rgba(128,128,128,0.1); color:inherit; cursor:pointer;">${d}</button>`).join('')}
+                                    </div>
+                                </div>
+                                <div class="not-dice-gm-damage-step2" style="display:none;">
+                                    <div style="font-weight:bold; font-size:0.9em; margin-bottom:6px; text-align:center; color:inherit;">
+                                        <div style="display:flex; justify-content:center; align-items:center; gap:8px; margin-bottom:8px;">
+                                            <button class="not-dice-gm-damage-qty-minus" style="width:24px; height:24px; padding:0; border:1px solid var(--color-border-light-2, #777); background:rgba(128,128,128,0.1); border-radius:4px; cursor:pointer; color:inherit; font-weight:bold;">-</button>
+                                            <span class="not-dice-gm-damage-qty" style="font-size:1.2em;">1</span>
+                                            <button class="not-dice-gm-damage-qty-plus" style="width:24px; height:24px; padding:0; border:1px solid var(--color-border-light-2, #777); background:rgba(128,128,128,0.1); border-radius:4px; cursor:pointer; color:inherit; font-weight:bold;">+</button>
+                                        </div>
+                                        Seleccionar Tipo
+                                    </div>
+                                    <div style="display:flex; flex-direction:column; gap:2px; max-height:150px; overflow-y:auto; padding-right:4px;">
+                                        <!-- Types will be injected here -->
+                                    </div>
+                                </div>
+                            </div>
+                        `;
+                        const wrapper = document.createElement("div");
+                        wrapper.innerHTML = popupHtml;
+                        const popupNode = wrapper.firstElementChild;
+                        addGmDamageBtn.parentElement.appendChild(popupNode);
+
+                        // Close popup when clicking outside
+                        const closePopup = (e) => {
+                            if (!popupNode.contains(e.target) && e.target !== addGmDamageBtn && !addGmDamageBtn.contains(e.target)) {
+                                popupNode.remove();
+                                document.removeEventListener("click", closePopup);
+                            }
+                        };
+                        setTimeout(() => document.addEventListener("click", closePopup), 50);
+
+                        // Step 1 clicks
+                        let selectedDie = "";
+                        let selectedQty = 1;
+                        
+                        const qtySpan = popupNode.querySelector(".not-dice-gm-damage-qty");
+                        popupNode.querySelector(".not-dice-gm-damage-qty-minus").addEventListener("click", (e) => {
+                            e.preventDefault();
+                            if (selectedQty > 1) {
+                                selectedQty--;
+                                qtySpan.textContent = selectedQty;
+                            }
+                        });
+                        popupNode.querySelector(".not-dice-gm-damage-qty-plus").addEventListener("click", (e) => {
+                            e.preventDefault();
+                            selectedQty++;
+                            qtySpan.textContent = selectedQty;
+                        });
+
+                        popupNode.querySelectorAll(".not-dice-gm-damage-die-btn").forEach(btn => {
+                            btn.addEventListener("click", (e) => {
+                                e.preventDefault();
+                                selectedDie = e.currentTarget.dataset.die;
+                                popupNode.querySelector(".not-dice-gm-damage-step1").style.display = "none";
+                                const step2 = popupNode.querySelector(".not-dice-gm-damage-step2");
+                                step2.style.display = "block";
+                                
+                                const types = Object.entries(CONFIG.DND5E.damageTypes).map(([k,v]) => ({id:k, label:v.label||v})).sort((a,b) => a.label.localeCompare(b.label));
+                                const typesContainer = step2.querySelector("div:nth-child(2)");
+                                typesContainer.innerHTML = types.map(t => {
+                                    const st = damageStyle[t.id] || {color:"inherit"};
+                                    return `<button class="not-dice-gm-damage-type-btn" data-type="${t.id}" style="padding:4px; font-size:0.85em; font-weight:bold; border-radius:4px; border:1px solid var(--color-border-light-2, #555); background:transparent; cursor:pointer; color:${st.color}; text-align:left;">${t.label}</button>`;
+                                }).join("");
+
+                                typesContainer.querySelectorAll(".not-dice-gm-damage-type-btn").forEach(typeBtn => {
+                                    typeBtn.addEventListener("click", async (e2) => {
+                                        e2.preventDefault();
+                                        const selectedType = e2.currentTarget.dataset.type;
+                                        const selectedFormula = `${selectedQty}${selectedDie}`;
+                                        popupNode.remove();
+                                        document.removeEventListener("click", closePopup);
+                                        
+                                        // Execute Damage Roll locally and append row
+                                        const dmgIdx = damageParts.reduce((max, part) => Math.max(max, Number(part.index) || 0), -1) + 1;
+                                        let rollTotal = 0;
+                                        try {
+                                            const r = await new Roll(selectedFormula).evaluate();
+                                            rollTotal = r.total;
+                                            await r.toMessage({ speaker: ChatMessage.getSpeaker({actor: item?.actor}), flavor: "Daño Extra (GM)" });
+                                        } catch (err) {}
+                                        
+                                        const cnf = CONFIG.DND5E.damageTypes[selectedType];
+                                        const stl = damageStyle[selectedType] || {color:"inherit"};
+                                        
+                                        const targetList = typeof resolveTargets === "function" ? resolveTargets() : [];
+                                        let partTargetMultipliersHtml = "";
+                                        if (targetList.length > 0) {
+                                            const multiplierOptions = globalThis.notDiceConstants?.multiplierOptions || [
+                                                { val: 0, label: "0" },
+                                                { val: 0.5, label: "1/2" },
+                                                { val: 1, label: "1" },
+                                                { val: 2, label: "2" },
+                                            ];
+                                            if (targetList.length === 1) {
+                                                const t = targetList[0];
+                                                const traits = t.actor?.system?.traits;
+                                                let detectedMultiplier = 1;
+                                                if (traits) {
+                                                    if (traits.di?.value?.has(selectedType)) detectedMultiplier = 0;
+                                                    else if (traits.dv?.value?.has(selectedType)) detectedMultiplier = 2;
+                                                    else if (traits.dr?.value?.has(selectedType)) detectedMultiplier = 0.5;
+                                                }
+                                                const selectName = `target-multiplier-${t.id}-part-${dmgIdx}`;
+                                                partTargetMultipliersHtml = `
+                                                    <select name="${selectName}" style="flex:1; height:32px; border:1px solid var(--color-border-light-2, #ccc); background:rgba(128,128,128,0.1); color:inherit; border-radius:4px; cursor:pointer; font-weight:bold; font-size:1.05em; text-align:center; box-sizing:border-box; margin:0; padding:0;" title="Multiplicador para ${t.name}">
+                                                        ${multiplierOptions.map(o => `<option value="${o.val}" ${o.val === detectedMultiplier ? "selected" : ""}>${o.label}</option>`).join("")}
+                                                    </select>`;
+                                            } else {
+                                                partTargetMultipliersHtml += `<div style="display:flex; flex-direction:column; gap:2px; flex:1;">`;
+                                                for (const t of targetList) {
+                                                    const traits = t.actor?.system?.traits;
+                                                    let detectedMultiplier = 1;
+                                                    if (traits) {
+                                                        if (traits.di?.value?.has(selectedType)) detectedMultiplier = 0;
+                                                        else if (traits.dv?.value?.has(selectedType)) detectedMultiplier = 2;
+                                                        else if (traits.dr?.value?.has(selectedType)) detectedMultiplier = 0.5;
+                                                    }
+                                                    const selectName = `target-multiplier-${t.id}-part-${dmgIdx}`;
+                                                    partTargetMultipliersHtml += `
+                                                        <div style="display:flex; justify-content:space-between; align-items:center; font-size:0.8em; background: rgba(128,128,128,0.08); padding: 1px 4px; border-radius: 4px; border:1px solid var(--color-border-light-2, #eee); min-height:30px; gap:4px; box-sizing:border-box; width:100%;">
+                                                            <span style="white-space:nowrap; overflow:hidden; text-overflow:ellipsis; flex:1;" title="${t.name}">${t.name}</span>
+                                                            <select name="${selectName}" style="width:55px; height:24px; padding:0; border:1px solid var(--color-border-light-2, #ccc); background:transparent; color:inherit; border-radius:3px; cursor:pointer; font-weight:bold; font-size:0.95em; flex-shrink:0; text-align:center; box-sizing:border-box; margin:0;">
+                                                                ${multiplierOptions.map(o => `<option value="${o.val}" ${o.val === detectedMultiplier ? "selected" : ""}>${o.label}</option>`).join("")}
+                                                            </select>
+                                                        </div>`;
+                                                }
+                                                partTargetMultipliersHtml += `</div>`;
+                                            }
+                                        }
+
+                                        let finalLabel = cnf?.label || selectedType;
+                                        if (cnf?.icon) {
+                                            finalLabel = `<img src="${cnf.icon}" style="width: 16px; height: 16px; vertical-align: text-bottom; margin-right: 4px; border: none; filter: drop-shadow(0px 1px 1px rgba(0,0,0,0.3));" /> ${finalLabel}`;
+                                        }
+
+                                        const nRow = document.createElement("div");
+                                        nRow.className = "damage-part-container not-dice-added-gm-row";
+                                        nRow.dataset.index = dmgIdx;
+                                        nRow.style.cssText = "margin-bottom: 8px; padding: 6px 8px; border: 1px solid rgba(26,115,232,0.4); border-radius: 6px; background: rgba(26,115,232,0.05); box-shadow: 0 1px 2px rgba(0,0,0,0.1); position:relative;";
+                                        nRow.innerHTML = `
+                                            <div style="position:absolute; top:-8px; right:-8px; background:#ff5252; color:#fff; border-radius:50%; width:20px; height:20px; text-align:center; line-height:20px; font-size:12px; font-weight:bold; cursor:pointer; z-index:10; border:1px solid #d32f2f; box-shadow:0 1px 2px rgba(0,0,0,0.3);" class="not-dice-remove-gm-row-btn" title="Eliminar"><i class="fas fa-times"></i></div>
+                                            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom: 6px; border-bottom: 1px dashed var(--color-border-light-2, #ddd); padding-bottom: 4px; color:${stl.color}; font-weight:bold;">
+                                                <div>${finalLabel} <span style="font-size:0.8em; opacity:0.75; margin-left:4px; font-weight:normal;">(Extra GM)</span><input type="hidden" name="type-${dmgIdx}" value="${selectedType}"></div>
+                                                <div style="font-size:1.25em; font-weight:800; opacity:0.95; font-family:monospace; background:rgba(128,128,128,0.12); padding:4px 12px; border-radius:4px; border:1px solid var(--color-border-light-1, #888); text-align:right; cursor:help;">${selectedFormula}</div>
+                                            </div>
+                                            <div style="display:flex; align-items:center; gap:6px; width:100%;">
+                                                <input type="number" name="total-${dmgIdx}" value="${rollTotal}" class="not-dice-dmg-input" style="width:110px; flex-shrink:0; height:32px; font-size:1.3em; font-weight:bold; text-align:center; padding:2px; border:1px solid var(--color-border-light-2, #aaa); border-radius:4px; color:#ff5252; background:rgba(128,128,128,0.1); box-sizing:border-box; margin:0;" title="Total de daño base" data-index="${dmgIdx}">
+                                                ${partTargetMultipliersHtml}
+                                                <div style="display:flex; ${targetList.length > 1 ? 'flex-direction:column;' : ''} gap:4px; flex:1;">
+                                                    <button type="button" class="roll-damage-btn" data-index="${dmgIdx}" style="flex:1; height:32px; padding:0 6px; border:1px solid var(--color-border-light-2, #bbb); border-radius:4px; background:var(--color-bg-option, rgba(127,127,127,0.1)); color:inherit; cursor:pointer; display:flex; align-items:center; justify-content:center; gap:4px; font-weight:bold; font-size:0.85em; box-sizing:border-box; margin:0;" title="Tirar Daño Normal"><i class="fas fa-dice" style="color:inherit; opacity:0.8; font-size:1.1em;"></i>Normal</button>
+                                                    <button type="button" class="roll-damage-crit-btn" data-index="${dmgIdx}" style="flex:1; height:32px; padding:0 6px; border:1px solid #d32f2f; border-radius:4px; background:rgba(197,34,31,0.1); color:#ff5252; cursor:pointer; display:flex; align-items:center; justify-content:center; gap:4px; font-weight:bold; font-size:0.85em; box-sizing:border-box; margin:0;" title="Tirar Daño Crítico"><i class="fas fa-dice-d20" style="font-size:1.1em;"></i>Crítico</button>
+                                                </div>
+                                            </div>
+                                        `;
+                                        const dmgList = root.querySelector("#not-dice-damage-list");
+                                        if (dmgList) {
+                                            dmgList.appendChild(nRow);
+                                            nRow.querySelector(".not-dice-remove-gm-row-btn").addEventListener("click", () => {
+                                                nRow.remove();
+                                                const pIdx = damageParts.findIndex(p => p.index === dmgIdx);
+                                                if(pIdx !== -1) damageParts.splice(pIdx, 1);
+                                            });
+                                            
+                                            const newRollObj = typeof DamageRoll !== 'undefined' ? new DamageRoll(selectedFormula) : new Roll(selectedFormula);
+                                            newRollObj.options = newRollObj.options || {};
+                                            newRollObj.options.type = selectedType;
+                                            damageParts.push({
+                                                index: dmgIdx,
+                                                roll: newRollObj,
+                                                formula: selectedFormula,
+                                                label: finalLabel,
+                                                type: selectedType,
+                                                availableTypes: [selectedType],
+                                                isOffhandWithoutStyle: false,
+                                                isCritical: isAttackCrit
+                                            });
+
+                                            nRow.querySelector(".roll-damage-btn").addEventListener("click", async (evBtn) => {
+                                                evBtn.preventDefault();
+                                                const formula = damageParts.find(p => p.index == dmgIdx)?.formula;
+                                                if (formula) {
+                                                    try {
+                                                        const total = await executeDamageRoll(formula, false, dmgIdx);
+                                                        const inputTotal = root.querySelector(`[name='total-${dmgIdx}']`);
+                                                        if (inputTotal) inputTotal.value = total;
+                                                        const part = damageParts.find(p => p.index == dmgIdx);
+                                                        if (part) part.isCritical = false;
+                                                    } catch (err) { console.error("Not Dice | Error rolling normal damage", err); }
+                                                }
+                                            });
+                                            
+                                            nRow.querySelector(".roll-damage-crit-btn").addEventListener("click", async (evBtn) => {
+                                                evBtn.preventDefault();
+                                                const formula = damageParts.find(p => p.index == dmgIdx)?.formula;
+                                                if (formula) {
+                                                    try {
+                                                        const total = await executeDamageRoll(formula, true, dmgIdx);
+                                                        const inputTotal = root.querySelector(`[name='total-${dmgIdx}']`);
+                                                        if (inputTotal) inputTotal.value = total;
+                                                        const part = damageParts.find(p => p.index == dmgIdx);
+                                                        if (part) part.isCritical = true;
+                                                    } catch (err) { console.error("Not Dice | Error rolling crit damage", err); }
+                                                }
+                                            });
+                                        }
+                                    });
+                                });
+                            });
+                        });
+                    });
+                }
 
                 globalThis._notDiceActiveAttackDialogs = globalThis._notDiceActiveAttackDialogs || {};
                 globalThis._notDiceActiveAttackDialogs[item.uuid] = (totals, parts = null, applyMastery = null, applySavage = null, applyGwf = null, isCritical = false) => {
