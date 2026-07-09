@@ -227,7 +227,11 @@ const notDiceExtractDamageRows = (actualItem) => {
                     pushPart(part[0], part[1], part[1] ? [part[1]] : []);
                 } else {
                     const formula = part?.formula || (part?.number && part?.denomination ? `${part.number}d${part.denomination}${part.bonus ? `+${part.bonus}` : ""}` : part?.custom?.formula) || "";
-                    const typeList = part?.types instanceof Set ? Array.from(part.types) : (Array.isArray(part?.types) ? part.types : []);
+                    let typeList = [];
+                    if (part?.types instanceof Set) typeList = Array.from(part.types);
+                    else if (Array.isArray(part?.types)) typeList = part.types;
+                    else if (typeof part?.types === "string") typeList = part.types.split(" ");
+                    
                     const type = typeList.length > 0 ? typeList[0] : "";
                     pushPart(formula, type, typeList);
                 }
@@ -2012,7 +2016,8 @@ Hooks.once("ready", () => {
                 // Gather values and update rolls
                 const totalValues = [];
                 for (const part of damageParts) {
-                    const inputVal = root.querySelector(`[name='total-${part.index}']`)?.value || "0";
+                    const inputEl = root.querySelector(`[name='total-${part.index}']`);
+                    const inputVal = inputEl?.value || "0";
                     let val = parseInt(inputVal);
                     if (isNaN(val)) val = 0;
 
@@ -2020,20 +2025,33 @@ Hooks.once("ready", () => {
                     if (!selectedType) selectedType = part.type;
 
                     const roll = part.roll;
-                    roll._total = val;
-                    roll._evaluated = true;
-                    roll.options.type = selectedType;
+                    if (roll && roll.terms) {
+                        roll._total = val;
+                        roll._evaluated = true;
+                        if (roll.options) roll.options.type = selectedType;
 
-                    const options = roll.terms[0]?.options ?? {};
-                    const newTerm = new foundry.dice.terms.NumericTerm({ number: val, options: options });
-                    newTerm._evaluated = true;
-                    roll.terms = [newTerm];
+                        const options = roll.terms[0]?.options ?? {};
+                        const newTerm = new foundry.dice.terms.NumericTerm({ number: val, options: options });
+                        newTerm._evaluated = true;
+                        roll.terms = [newTerm];
+                    }
 
                     totalValues.push({ value: val, type: selectedType, index: part.index });
                 }
 
+                console.log("Not Dice | [DEBUG] damageParts:", damageParts.map(p => ({ index: p.index, type: p.type, formula: p.formula })));
+                console.log("Not Dice | [DEBUG] totalValues:", totalValues);
+
                 // Apply Damage
                 if (isDamage) {
+                    ChatMessage.create({
+                        speaker: ChatMessage.getSpeaker({actor: item?.actor}),
+                        content: `<div style="padding:4px; font-family:monospace; font-size:0.85em; background:rgba(0,0,0,0.8); color:#0f0; border-radius:4px;">
+                            <strong>DEBUG APPLY_DAMAGE:</strong><br/>
+                            ${totalValues.map(tv => `Idx:${tv.index} Type:${tv.type} Val:${tv.value}`).join("<br/>")}
+                        </div>`,
+                        whisper: ChatMessage.getWhisperRecipients("GM")
+                    });
                     const targetsLocal = resolveTargets();
                     const damageSummaryLines = [];
 
@@ -2249,10 +2267,22 @@ Hooks.once("ready", () => {
                                 });
                             }
 
-                            await t.actor.applyDamage(finalValues, { ignore: true });
+                            // Group damages by type to prevent Foundry from ignoring duplicate types
+                            const groupedValuesMap = new Map();
+                            for (const fv of finalValues) {
+                                const tKey = fv.type || "none";
+                                if (groupedValuesMap.has(tKey)) {
+                                    groupedValuesMap.get(tKey).value += (Number(fv.value) || 0);
+                                } else {
+                                    groupedValuesMap.set(tKey, { value: Number(fv.value) || 0, type: fv.type });
+                                }
+                            }
+                            const groupedFinalValues = Array.from(groupedValuesMap.values());
+
+                            await t.actor.applyDamage(groupedFinalValues, { ignore: true });
 
                             const hpAfter = Number(t.actor.system?.attributes?.hp?.value ?? 0);
-                            const totalApplied = finalValues.reduce((acc, entry) => acc + (Number(entry?.value) || 0), 0);
+                            const totalApplied = groupedFinalValues.reduce((acc, entry) => acc + (Number(entry?.value) || 0), 0);
                             const hasHealingType = finalValues.some(entry => String(entry?.type || "").toLowerCase() === "healing");
                             const operator = hasHealingType ? "+" : "-";
                             const amount = Math.abs(totalApplied);
@@ -2881,7 +2911,7 @@ Hooks.once("ready", () => {
                         };
                         setTimeout(() => document.addEventListener("click", closePopup), 50);
 
-                        const appendGmDamageRow = async (selectedFormula, selectedType, flavorText = "Extra GM") => {
+                        const appendGmDamageRow = async (selectedFormula, selectedType, flavorText = "Extra GM", availableTypesStr = "") => {
                             // Execute Damage Roll locally and append row
                             const dmgIdx = damageParts.reduce((max, part) => Math.max(max, Number(part.index) || 0), -1) + 1;
                             let rollTotal = 0;
@@ -2891,7 +2921,6 @@ Hooks.once("ready", () => {
                                 await r.toMessage({ speaker: ChatMessage.getSpeaker({actor: item?.actor}), flavor: flavorText });
                             } catch (err) {}
                             
-                            const cnf = CONFIG.DND5E.damageTypes[selectedType];
                             const stl = damageStyle[selectedType] || {color:"inherit"};
                             
                             const targetList = typeof resolveTargets === "function" ? resolveTargets() : [];
@@ -2940,10 +2969,10 @@ Hooks.once("ready", () => {
                                 }
                             }
 
-                            let finalLabel = cnf?.label || selectedType || "Daño";
-                            if (cnf?.icon) {
-                                finalLabel = `<img src="${cnf.icon}" style="width: 16px; height: 16px; vertical-align: text-bottom; margin-right: 4px; border: none; filter: drop-shadow(0px 1px 1px rgba(0,0,0,0.3));" /> ${finalLabel}`;
-                            }
+                            const availableTypesArr = availableTypesStr ? availableTypesStr.split(",") : null;
+                            const typesDropdownHtml = typeof notDiceGetDamageTypeOptionsHtml === "function" 
+                                ? notDiceGetDamageTypeOptionsHtml(selectedType, availableTypesArr)
+                                : `<option value="${selectedType}" selected>${selectedType}</option>`;
 
                             const nRow = document.createElement("div");
                             nRow.className = "damage-part-container not-dice-added-gm-row";
@@ -2952,7 +2981,12 @@ Hooks.once("ready", () => {
                             nRow.innerHTML = `
                                 <div style="position:absolute; top:-8px; right:-8px; background:#ff5252; color:#fff; border-radius:50%; width:20px; height:20px; text-align:center; line-height:20px; font-size:12px; font-weight:bold; cursor:pointer; z-index:10; border:1px solid #d32f2f; box-shadow:0 1px 2px rgba(0,0,0,0.3);" class="not-dice-remove-gm-row-btn" title="Eliminar"><i class="fas fa-times"></i></div>
                                 <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom: 6px; border-bottom: 1px dashed var(--color-border-light-2, #ddd); padding-bottom: 4px; color:${stl.color}; font-weight:bold;">
-                                    <div>${finalLabel} <span style="font-size:0.8em; opacity:0.75; margin-left:4px; font-weight:normal;">(${flavorText})</span><input type="hidden" name="type-${dmgIdx}" value="${selectedType}"></div>
+                                    <div style="display:flex; align-items:center; gap:4px; max-width:60%;">
+                                        <select name="type-${dmgIdx}" class="not-dice-gm-type-select" style="max-width:120px; text-overflow:ellipsis; height:24px; font-size:0.85em; font-weight:bold; background:transparent; border:1px solid var(--color-border-light-2, #ccc); border-radius:3px; color:inherit; cursor:pointer; padding:0 2px;">
+                                            ${typesDropdownHtml}
+                                        </select>
+                                        <span style="font-size:0.8em; opacity:0.75; font-weight:normal; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;" title="${flavorText}">(${flavorText})</span>
+                                    </div>
                                     <div style="font-size:1.25em; font-weight:800; opacity:0.95; font-family:monospace; background:rgba(128,128,128,0.12); padding:4px 12px; border-radius:4px; border:1px solid var(--color-border-light-1, #888); text-align:right; cursor:help;">${selectedFormula}</div>
                                 </div>
                                 <div style="display:flex; align-items:center; gap:6px; width:100%;">
@@ -2973,6 +3007,20 @@ Hooks.once("ready", () => {
                                     if(pIdx !== -1) damageParts.splice(pIdx, 1);
                                 });
                                 
+                                const selectEl = nRow.querySelector("select.not-dice-gm-type-select");
+                                if (selectEl) {
+                                    selectEl.addEventListener("change", (ev) => {
+                                        const newType = ev.currentTarget.value;
+                                        const p = damageParts.find(dp => dp.index === dmgIdx);
+                                        if (p) p.type = newType;
+                                        const style = damageStyle[newType] || { color: "inherit" };
+                                        ev.currentTarget.style.color = style.color;
+                                        ev.currentTarget.parentElement.style.color = style.color;
+                                    });
+                                    // Trigger once to set initial color
+                                    selectEl.dispatchEvent(new Event("change"));
+                                }
+                                
                                 const newRollObj = typeof DamageRoll !== 'undefined' ? new DamageRoll(selectedFormula) : new Roll(selectedFormula);
                                 newRollObj.options = newRollObj.options || {};
                                 newRollObj.options.type = selectedType;
@@ -2980,9 +3028,9 @@ Hooks.once("ready", () => {
                                     index: dmgIdx,
                                     roll: newRollObj,
                                     formula: selectedFormula,
-                                    label: finalLabel,
+                                    label: flavorText,
                                     type: selectedType,
-                                    availableTypes: [selectedType],
+                                    availableTypes: availableTypesArr || [selectedType],
                                     isOffhandWithoutStyle: false,
                                     isCritical: typeof isAttackCrit !== "undefined" ? isAttackCrit : false
                                 });
@@ -3040,11 +3088,25 @@ Hooks.once("ready", () => {
                             btn.addEventListener("click", async (e) => {
                                 e.preventDefault();
                                 const formula = e.currentTarget.dataset.formula;
-                                const type = e.currentTarget.dataset.type || "bludgeoning";
+                                let type = e.currentTarget.dataset.type;
+                                const availableTypesStr = e.currentTarget.dataset.availableTypes || "";
+                                const availableTypesArr = availableTypesStr ? availableTypesStr.split(",") : [];
+                                
+                                const weaponType = damageParts[0]?.type || "bludgeoning";
+                                const hasManyTypes = availableTypesArr.length > 5;
+                                
+                                if (!type || type === "undefined" || type === "null" || hasManyTypes) {
+                                    type = weaponType;
+                                }
+                                
+                                if (availableTypesArr.length > 0 && !availableTypesArr.includes(type)) {
+                                    type = availableTypesArr[0];
+                                }
                                 const name = e.currentTarget.dataset.name;
+                                const availableTypes = e.currentTarget.dataset.availableTypes || "";
                                 popupNode.remove();
                                 document.removeEventListener("click", closePopup);
-                                await appendGmDamageRow(formula, type, name);
+                                await appendGmDamageRow(formula, type, name, availableTypes);
                             });
                         });
 
