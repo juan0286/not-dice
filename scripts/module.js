@@ -214,7 +214,8 @@ const notDiceExtractDamageRows = (actualItem) => {
         rows.push({
             formula: cleanFormula,
             type: String(type || "").trim().toLowerCase(),
-            availableTypes: Array.isArray(availableTypes) ? availableTypes.map(t => String(t || "").trim().toLowerCase()).filter(Boolean) : []
+            availableTypes: Array.isArray(availableTypes) ? availableTypes.map(t => String(t || "").trim().toLowerCase()).filter(Boolean) : [],
+            weaponDamage: true
         });
     };
 
@@ -348,7 +349,8 @@ globalThis.notDiceOpenDamageDialog = async ({
             type: String(part?.type || "").trim().toLowerCase(),
             availableTypes: Array.isArray(part?.availableTypes)
                 ? part.availableTypes.map(t => String(t || "").trim().toLowerCase()).filter(Boolean)
-                : []
+                : [],
+            weaponDamage: part?.weaponDamage !== undefined ? part.weaponDamage : true
         })).filter(part => part.formula.length > 0)
         : [];
 
@@ -360,7 +362,8 @@ globalThis.notDiceOpenDamageDialog = async ({
         id: `${dialogId}-${index}`,
         formula: row.formula,
         type: row.type,
-        availableTypes: Array.isArray(row.availableTypes) ? row.availableTypes : []
+        availableTypes: Array.isArray(row.availableTypes) ? row.availableTypes : [],
+        weaponDamage: row.weaponDamage !== undefined ? row.weaponDamage : true
     }));
 
     const doubleDice = (formula) => formula.replace(/(\d+)d(\d+)/g, (match, quantity, faces) => `${parseInt(quantity, 10) * 2}d${faces}`);
@@ -456,14 +459,15 @@ globalThis.notDiceOpenDamageDialog = async ({
     const collectDamageRows = (root) => {
         syncRowsFromDom(root);
         return rows
-            .map(row => ({
+            .map((row, index) => ({
                 formula: String(row.formula || "").trim(),
-                type: String(row.type || "").trim()
+                type: String(row.type || "").trim(),
+                weaponDamage: !!row.weaponDamage
             }))
             .filter(row => row.formula.length > 0);
     };
 
-    const executeDamageRoll = async (baseFormula, damageType, root) => {
+    const executeDamageRoll = async (baseFormula, damageType, root, dmgIdx = 0) => {
         let formula = baseFormula;
         if (isCritical) formula = doubleDice(formula);
 
@@ -497,7 +501,8 @@ globalThis.notDiceOpenDamageDialog = async ({
         };
 
         const buildSavageButton = (r, dmgIdx) => {
-            if (!hasSavageAttacker || isSavageUsed) return "";
+            const firstWeaponPartIdx = rows.findIndex(row => row.weaponDamage !== false);
+            if (!hasSavageAttacker || isSavageUsed || rows[dmgIdx]?.weaponDamage === false || (firstWeaponPartIdx !== -1 && firstWeaponPartIdx != dmgIdx)) return "";
             return `<div style="margin-top:8px;"><button type="button" class="not-dice-savage-reroll" data-uuid="${actualItem.uuid}" data-idx="${dmgIdx}" data-formula="${btoa(formula)}" data-flavor="${btoa(flavorBase)}" data-damagelabel="${btoa(damageLabel)}" data-mods="${btoa(modsString)}" data-original="${r.total}" data-damage-type="${damageType}" style="width:100%; font-weight:bold; padding:4px; border:1px solid rgba(197,34,31,0.5); border-radius:4px; background:rgba(197,34,31,0.1); color:#ff5252; cursor:pointer;"><i class="fas fa-paw"></i> Atacante Salvaje (relanza el daño)</button></div>`;
         };
 
@@ -506,7 +511,7 @@ globalThis.notDiceOpenDamageDialog = async ({
         const roll = await rollObj.evaluate();
         await roll.toMessage({
             speaker,
-            flavor: `<strong>${flavorBase}</strong> • ${actualItem.name || itemName || "Daño"} <span style="opacity:0.75;">(${damageLabel})</span>${modsString}${buildPiercerButtons(roll, 0)}${buildSavageButton(roll, 0)}`
+            flavor: `<strong>${flavorBase}</strong> • ${actualItem.name || itemName || "Daño"} <span style="opacity:0.75;">(${damageLabel})</span>${modsString}${buildPiercerButtons(roll, dmgIdx)}${buildSavageButton(roll, dmgIdx)}`
         });
 
         return roll.total;
@@ -526,8 +531,9 @@ globalThis.notDiceOpenDamageDialog = async ({
         }
 
         const totals = [];
+        let dmgIdx = 0;
         for (const row of damageRows) {
-            const total = await executeDamageRoll(row.formula, row.type, root);
+            const total = await executeDamageRoll(row.formula, row.type, root, dmgIdx++);
             totals.push(total);
         }
 
@@ -1248,6 +1254,7 @@ Hooks.once("ready", () => {
             const damageParts = [];
             const allDamageTypes = new Set();
             const activityDamageParts = rollConfig?.subject?.damage?.parts || [];
+            const baseWeaponPartsCount = item ? notDiceExtractDamageRows(item).length : 1;
 
             for (let i = 0; i < rolls.length; i++) {
                 const roll = rolls[i];
@@ -1308,7 +1315,8 @@ Hooks.once("ready", () => {
                     type: damageTypeKey,
                     availableTypes: availableTypes,
                     isOffhandWithoutStyle: isOffhandWithoutStyle,
-                    isCritical: isSpellCrit || isAttackCrit
+                    isCritical: isSpellCrit || isAttackCrit,
+                    weaponDamage: hasForcedParts && forcedPart?.weaponDamage !== undefined ? forcedPart.weaponDamage : (i < baseWeaponPartsCount)
                 });
             }
 
@@ -1768,7 +1776,7 @@ Hooks.once("ready", () => {
                         <label for="mastery-cb" style="font-size:0.8em; color:#ba68c8; cursor:pointer; font-weight:bold; letter-spacing: 0.5px; margin:0;"><i class="fas fa-crown"></i> ${activeMastery.label}${isMasteryDisabled ? " (Usada)" : ""}</label>
                     </div>`;
                 }
-                if (hasSavageAttacker) {
+                if (hasSavageAttacker && part.weaponDamage !== false) {
                     specialModsHtml += `
                     <div style="display:flex; justify-content:center; align-items:center; gap:4px; margin-bottom: 4px; padding: 2px 6px; background: rgba(197,34,31,0.08); border: 1px solid rgba(197,34,31,0.3); border-radius: 4px; width: 100%; ${isSavageUsed ? 'opacity:0.65;' : ''}" title="ATACANTE SALVAJE">
                         <span style="font-size:0.8em; color:#ff5252; font-weight:bold; letter-spacing: 0.5px; margin:0; display:flex; align-items:center; gap:4px;"><i class="fas fa-paw"></i> Atacante Salvaje${isSavageUsed ? " (Usado)" : ""}</span>
@@ -2720,8 +2728,11 @@ Hooks.once("ready", () => {
                     };
 
                     const buildSavageButton = (r, dmgIdx) => {
-                        if (!hasSavageAttacker || isSavageUsed) return "";
-                        return `<div style="margin-top:8px;"><button type="button" class="not-dice-savage-reroll" data-uuid="${item.uuid}" data-idx="${dmgIdx}" data-formula="${btoa(formula)}" data-flavor="${btoa(flavorBase)}" data-damagelabel="" data-mods="${btoa(modsString)}" data-original="${r.total}" data-damage-type="${selectedType}" style="width:100%; font-weight:bold; padding:4px; border:1px solid rgba(197,34,31,0.5); border-radius:4px; background:rgba(197,34,31,0.1); color:#ff5252; cursor:pointer;"><i class="fas fa-paw"></i> Atacante Salvaje (relanza el daño)</button></div>`;
+                        const part = damageParts.find(p => p.index == dmgIdx);
+                        const isWeaponDmg = part ? part.weaponDamage !== false : true;
+                        const firstWeaponPart = damageParts.find(p => p.weaponDamage !== false);
+                        if (!hasSavageAttacker || isSavageUsed || !isWeaponDmg || (firstWeaponPart && firstWeaponPart.index != dmgIdx)) return "";
+                        return `<div style="margin-top:8px;"><button type="button" class="not-dice-savage-reroll" data-uuid="${item.uuid}" data-idx="${dmgIdx}" data-formula="${btoa(formula)}" data-flavor="${btoa(flavorBase)}" data-damagelabel="" data-mods="${btoa(modsString)}" data-original="${r.total}" data-damage-type="${selectedType}" style="width:100%; font-weight:bold; padding:4px; border:1px solid rgba(197,34,31,0.5); border-radius:4px; background:rgba(197,34,31,0.1); color:#ff5252; cursor:pointer;"><i class="fas fa-paw"></i> A (relanza el daño)</button></div>`;
                     };
 
                     const rollObj = new Roll(formula);
@@ -3231,7 +3242,10 @@ Hooks.once("ready", () => {
                         }
                     }
 
-                    const requestedDamageParts = rolls.map(r => {
+                    const baseWeaponRows = notDiceExtractDamageRows(item);
+                    const baseWeaponPartsCount = baseWeaponRows.length;
+
+                    const requestedDamageParts = rolls.map((r, i) => {
                         let f = r.formula;
                         if (isCleaveAttack || isOffhandWithoutStyle) {
                             const abilityId = item.abilityMod || item.system?.ability || (item.system?.properties?.has("fin") ? (actor?.system?.abilities?.dex?.mod > actor?.system?.abilities?.str?.mod ? "dex" : "str") : "str");
@@ -3242,7 +3256,8 @@ Hooks.once("ready", () => {
                         return {
                             formula: f,
                             type: r.options?.type || "",
-                            availableTypes: r.options?.availableTypes || []
+                            availableTypes: r.options?.availableTypes || [],
+                            weaponDamage: i < baseWeaponPartsCount
                         };
                     });
 
