@@ -45,6 +45,15 @@ Hooks.once("init", () => {
         default: true
     });
 
+    game.settings.register("not-dice", "enablePlayerColorChat", {
+        name: "Fondo de Chat por Jugador",
+        hint: "Colorea el fondo y los bordes de los mensajes del chat con el color asignado a cada jugador.",
+        scope: "client",
+        config: true,
+        type: Boolean,
+        default: true
+    });
+
     // --- Configuraciones de Áreas y Traducción (saving-throw.js) ---
     game.settings.register("not-dice", "enableTemplateIntercept", {
         name: "Detectar Área de Efecto",

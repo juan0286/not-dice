@@ -1067,6 +1067,34 @@ Hooks.once("ready", () => {
             const isAttack = notDiceIsAttack(rollConfig.subject);
 
             if (isAttack) {
+                // Cooldown logic
+                const now = Date.now();
+                globalThis._notDiceAttackCooldown = globalThis._notDiceAttackCooldown || { lastAttackTime: 0, attackCount: 0, timeoutId: null };
+                const cd = globalThis._notDiceAttackCooldown;
+
+                if (now - cd.lastAttackTime > 10000) {
+                    cd.attackCount = 0;
+                }
+
+                let requiredWait = 0;
+                if (cd.attackCount === 1) requiredWait = 3000;
+                else if (cd.attackCount === 2) requiredWait = 5000;
+                else if (cd.attackCount >= 3) requiredWait = 10000;
+
+                if (cd.attackCount > 0 && now - cd.lastAttackTime < requiredWait) {
+                    const remaining = Math.ceil((requiredWait - (now - cd.lastAttackTime)) / 1000);
+                    ui.notifications.warn(`Not Dice | ¡Demasiado rápido! Debes esperar ${remaining} segundo(s) antes de volver a atacar.`);
+                    return [];
+                }
+
+                cd.lastAttackTime = now;
+                cd.attackCount++;
+
+                if (cd.timeoutId) clearTimeout(cd.timeoutId);
+                cd.timeoutId = setTimeout(() => {
+                    cd.attackCount = 0;
+                }, 10000);
+
                 const targets = game.user.targets;
                 if (!targets || targets.size === 0) {
                     ui.notifications?.warn("Not Dice | Debes seleccionar al menos un objetivo para atacar.");
@@ -3431,6 +3459,21 @@ const notDiceApplyChatAttackMode = async (message, mode) => {
 };
 
 Hooks.on("renderChatMessage", (message, html, data) => {
+    // --- Player Color Background ---
+    if (game.settings.get("not-dice", "enablePlayerColorChat")) {
+        const author = message.author || message.user;
+        if (author && author.color) {
+            const colorVal = author.color.css || (typeof author.color === "string" ? author.color : author.color.toString());
+            if (colorVal && colorVal.startsWith("#")) {
+                const r = parseInt(colorVal.slice(1, 3), 16) || 0;
+                const g = parseInt(colorVal.slice(3, 5), 16) || 0;
+                const b = parseInt(colorVal.slice(5, 7), 16) || 0;
+                html[0].style.boxShadow = `inset 0 0 15px rgba(${r}, ${g}, ${b}, 0.5), inset 0 0 40px rgba(${r}, ${g}, ${b}, 0.1)`;
+                html[0].style.borderColor = colorVal;
+            }
+        }
+    }
+
     if (message.getFlag("not-dice", "attackRoll") && html.find(".not-dice-chat-attack-mode").length === 0) {
         const btnHtml = `
             <div class="not-dice-chat-attack-mode" style="display:flex; gap:6px; margin-top:6px; padding:6px 4px 2px; border-top:1px solid rgba(128,128,128,0.25);">
@@ -3617,7 +3660,7 @@ Hooks.on("renderChatMessage", (message, html, data) => {
     html.find(".not-dice-savage-choice").click(async (ev) => {
         ev.preventDefault();
         const btn = ev.currentTarget;
-        
+
         const container = btn.closest('.not-dice-savage-choice-container');
         if (container) {
             container.querySelectorAll('.not-dice-savage-choice').forEach(b => {
