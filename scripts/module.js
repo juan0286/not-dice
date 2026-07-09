@@ -3588,12 +3588,17 @@ Hooks.on("renderChatMessage", (message, html, data) => {
             }
         }
 
+        const isNewBetter = newTotal > originalTotal;
+        const styleBase = "padding:4px 8px; cursor:pointer; transition:all 0.2s; border: 1px solid var(--color-border-light-2, #ccc); border-radius:4px;";
+        const styleSelected = "background: rgba(19,115,51,0.2); border-color: #4caf50; box-shadow: inset 0 0 4px rgba(19,115,51,0.5); font-weight: bold; opacity: 1;";
+        const styleUnselected = "background: rgba(127,127,127,0.1); font-weight: normal; opacity: 0.8;";
+
         const choicesHtml = `
             <div style="margin-top: 8px; text-align:center;">
                 <p style="margin-bottom: 4px; font-weight:bold;">Atacante Salvaje: Elige el daño</p>
-                <div style="display:flex; gap:6px; justify-content:center;">
-                    <button type="button" class="not-dice-savage-choice" data-uuid="${uuid}" data-idx="${idx}" data-total="${originalTotal}" style="padding:4px 8px; cursor:pointer;">Original: ${originalTotal}</button>
-                    <button type="button" class="not-dice-savage-choice" data-uuid="${uuid}" data-idx="${idx}" data-total="${newTotal}" style="padding:4px 8px; cursor:pointer;">Nuevo: ${newTotal}</button>
+                <div class="not-dice-savage-choice-container" style="display:flex; gap:6px; justify-content:center;">
+                    <button type="button" class="not-dice-savage-choice ${!isNewBetter ? 'selected' : ''}" data-uuid="${uuid}" data-idx="${idx}" data-total="${originalTotal}" style="${styleBase} ${!isNewBetter ? styleSelected : styleUnselected}">Original: ${originalTotal}</button>
+                    <button type="button" class="not-dice-savage-choice ${isNewBetter ? 'selected' : ''}" data-uuid="${uuid}" data-idx="${idx}" data-total="${newTotal}" style="${styleBase} ${isNewBetter ? styleSelected : styleUnselected}">Nuevo: ${newTotal}</button>
                 </div>
             </div>
         `;
@@ -3612,6 +3617,24 @@ Hooks.on("renderChatMessage", (message, html, data) => {
     html.find(".not-dice-savage-choice").click(async (ev) => {
         ev.preventDefault();
         const btn = ev.currentTarget;
+        
+        const container = btn.closest('.not-dice-savage-choice-container');
+        if (container) {
+            container.querySelectorAll('.not-dice-savage-choice').forEach(b => {
+                b.style.background = "rgba(127,127,127,0.1)";
+                b.style.borderColor = "var(--color-border-light-2, #ccc)";
+                b.style.boxShadow = "none";
+                b.style.fontWeight = "normal";
+                b.style.opacity = "0.8";
+                b.classList.remove('selected');
+            });
+            btn.style.background = "rgba(19,115,51,0.2)";
+            btn.style.borderColor = "#4caf50";
+            btn.style.boxShadow = "inset 0 0 4px rgba(19,115,51,0.5)";
+            btn.style.fontWeight = "bold";
+            btn.style.opacity = "1";
+            btn.classList.add('selected');
+        }
         const uuid = btn.dataset.uuid;
         const idx = btn.dataset.idx;
         const total = parseInt(btn.dataset.total);
