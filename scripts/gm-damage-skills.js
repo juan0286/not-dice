@@ -21,16 +21,10 @@ globalThis.notDiceGetGMDamageSkillsHtml = function(actor, currentItemId) {
             return false;
         }
 
-        const activationType = i.system?.activation?.type || "";
-        
-        // Excluir habilidades o hechizos que cuesten una "action" principal,
-        // ya que el popup de GM es para DAÑO EXTRA (Bonus Action, Special, Reaction, None) y no ataques principales.
-        if (activationType === "action") {
-            return false;
-        }
-
         // V2 legacy support
         if (i.system?.damage?.parts?.length > 0) {
+            const activationType = i.system?.activation?.type || "";
+            if (activationType === "action") return false;
             return true;
         }
         
@@ -43,10 +37,31 @@ globalThis.notDiceGetGMDamageSkillsHtml = function(actor, currentItemId) {
                 activitiesArray = Object.values(i.system.activities);
             }
             
+            const parentActivationType = i.system?.activation?.type || "";
+            let hasDamagePart = false;
+            let isAction = false;
+            
             for (const act of activitiesArray) {
                 if (act.damage?.parts?.length > 0) {
-                    return true;
+                    hasDamagePart = true;
+                    // Check if this activity is an action
+                    const actActivationType = act.activation?.type || "";
+                    const actOverride = act.activation?.override || false;
+                    
+                    if (actOverride && actActivationType === "action") {
+                        isAction = true;
+                    } else if (!actOverride) {
+                        if (parentActivationType === "action") {
+                            isAction = true;
+                        } else if (!parentActivationType && actActivationType === "action") {
+                            isAction = true;
+                        }
+                    }
                 }
+            }
+            
+            if (hasDamagePart && !isAction) {
+                return true;
             }
         }
         
