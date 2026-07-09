@@ -819,6 +819,24 @@ const notDiceHandleAttackSocket = async (data) => {
         return;
     }
 
+    if (data.type === "not-dice.update-savage-total") {
+        const { uuid, idx, total } = data;
+        if (globalThis._notDiceUpdateSavageTotal && globalThis._notDiceUpdateSavageTotal[uuid]) {
+            globalThis._notDiceUpdateSavageTotal[uuid](idx, total);
+            ui.notifications?.info(`Not Dice | Atacante Salvaje: daño actualizado por jugador.`);
+        }
+        return;
+    }
+
+    if (data.type === "not-dice.update-piercer-total") {
+        const { uuid, idx, original, newDieResult } = data;
+        if (globalThis._notDiceUpdatePiercerTotal && globalThis._notDiceUpdatePiercerTotal[uuid]) {
+            globalThis._notDiceUpdatePiercerTotal[uuid](idx, original, newDieResult);
+            ui.notifications?.info(`Not Dice | Perforador: daño actualizado por jugador.`);
+        }
+        return;
+    }
+
     if (data.type === "not-dice.show-spell-damage") {
         try {
             if (globalThis._notDiceActiveAttackDialogs && globalThis._notDiceActiveAttackDialogs[data.itemUuid]) {
@@ -3485,11 +3503,21 @@ Hooks.on("renderChatMessage", (message, html, data) => {
         let newTotal = newDieResult;
         let modifier = 0;
 
-        if (uuid && idx !== undefined && globalThis._notDiceUpdatePiercerTotal && globalThis._notDiceUpdatePiercerTotal[uuid]) {
-            const resultObj = globalThis._notDiceUpdatePiercerTotal[uuid](idx, original, newDieResult);
-            if (resultObj) {
-                newTotal = resultObj.current;
-                modifier = resultObj.previous - original;
+        if (uuid && idx !== undefined) {
+            if (globalThis._notDiceUpdatePiercerTotal && globalThis._notDiceUpdatePiercerTotal[uuid]) {
+                const resultObj = globalThis._notDiceUpdatePiercerTotal[uuid](idx, original, newDieResult);
+                if (resultObj) {
+                    newTotal = resultObj.current;
+                    modifier = resultObj.previous - original;
+                }
+            } else {
+                game.socket.emit("module.not-dice", {
+                    type: "not-dice.update-piercer-total",
+                    uuid: uuid,
+                    idx: idx,
+                    original: original,
+                    newDieResult: newDieResult
+                });
             }
         }
 
@@ -3550,6 +3578,13 @@ Hooks.on("renderChatMessage", (message, html, data) => {
             finalTotal = newTotal;
             if (globalThis._notDiceUpdateSavageTotal && globalThis._notDiceUpdateSavageTotal[uuid]) {
                 globalThis._notDiceUpdateSavageTotal[uuid](idx, finalTotal);
+            } else {
+                game.socket.emit("module.not-dice", {
+                    type: "not-dice.update-savage-total",
+                    uuid: uuid,
+                    idx: idx,
+                    total: finalTotal
+                });
             }
         }
 
@@ -3585,7 +3620,13 @@ Hooks.on("renderChatMessage", (message, html, data) => {
             globalThis._notDiceUpdateSavageTotal[uuid](idx, total);
             ui.notifications?.info(`Not Dice | Daño actualizado a ${total}`);
         } else {
-            ui.notifications?.warn("Not Dice | No se pudo actualizar la caja de ataque (es posible que ya esté cerrada o resuelta).");
+            game.socket.emit("module.not-dice", {
+                type: "not-dice.update-savage-total",
+                uuid: uuid,
+                idx: idx,
+                total: total
+            });
+            ui.notifications?.info(`Not Dice | Daño actualizado (enviado al GM).`);
         }
     });
 
