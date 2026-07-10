@@ -2874,7 +2874,7 @@ Hooks.once("ready", () => {
                         }
 
                         const popupHtml = `
-                            <div class="not-dice-gm-damage-popup" style="position:absolute; top:30px; right:0; width: 200px; background:var(--color-bg-1, rgba(30,30,30,0.95)); color:var(--color-text-light-1, #f0f0f0); border:1px solid var(--color-border-light-1, #555); border-radius:6px; box-shadow:0 4px 12px rgba(0,0,0,0.5); z-index:100; padding:8px; backdrop-filter: blur(4px);">
+                            <div class="not-dice-gm-damage-popup" style="position:fixed; width: 200px; background:var(--color-bg-1, rgba(30,30,30,0.95)); color:var(--color-text-light-1, #f0f0f0); border:1px solid var(--color-border-light-1, #555); border-radius:6px; box-shadow:0 4px 12px rgba(0,0,0,0.5); z-index:99999; padding:8px; backdrop-filter: blur(4px);">
                                 <div class="not-dice-gm-damage-step1">
                                     <div style="font-weight:bold; font-size:0.9em; margin-bottom:6px; text-align:center; color:inherit;">Seleccionar Dado</div>
                                     <div style="display:flex; justify-content:space-between; gap:2px;">
@@ -2900,7 +2900,13 @@ Hooks.once("ready", () => {
                         const wrapper = document.createElement("div");
                         wrapper.innerHTML = popupHtml;
                         const popupNode = wrapper.firstElementChild;
-                        addGmDamageBtn.parentElement.appendChild(popupNode);
+                        
+                        document.body.appendChild(popupNode);
+                        const rect = addGmDamageBtn.getBoundingClientRect();
+                        popupNode.style.top = (rect.bottom + 4) + "px";
+                        let leftPos = rect.right - 200;
+                        if (leftPos < 0) leftPos = 4;
+                        popupNode.style.left = leftPos + "px";
 
                         // Close popup when clicking outside
                         const closePopup = (e) => {
