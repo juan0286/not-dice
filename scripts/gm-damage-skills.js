@@ -24,7 +24,7 @@ globalThis.notDiceGetGMDamageSkillsHtml = function(actor, currentItemId) {
         // V2 legacy support
         if (i.system?.damage?.parts?.length > 0) {
             const activationType = i.system?.activation?.type || "";
-            if (activationType === "action") return false;
+            if (activationType === "action" || activationType === "reaction") return false;
             return true;
         }
         
@@ -39,28 +39,33 @@ globalThis.notDiceGetGMDamageSkillsHtml = function(actor, currentItemId) {
             
             const parentActivationType = i.system?.activation?.type || "";
             let hasDamagePart = false;
-            let isAction = false;
+            let isActionOrReaction = false;
+            let isAttack = false;
             
             for (const act of activitiesArray) {
+                if (act.type === "attack") {
+                    isAttack = true;
+                }
                 if (act.damage?.parts?.length > 0) {
                     hasDamagePart = true;
-                    // Check if this activity is an action
-                    const actActivationType = act.activation?.type || "";
-                    const actOverride = act.activation?.override || false;
-                    
-                    if (actOverride && actActivationType === "action") {
-                        isAction = true;
-                    } else if (!actOverride) {
-                        if (parentActivationType === "action") {
-                            isAction = true;
-                        } else if (!parentActivationType && actActivationType === "action") {
-                            isAction = true;
-                        }
+                }
+                
+                // Check if this activity is an action or reaction
+                const actActivationType = act.activation?.type || "";
+                const actOverride = act.activation?.override || false;
+                
+                if (actOverride && (actActivationType === "action" || actActivationType === "reaction")) {
+                    isActionOrReaction = true;
+                } else if (!actOverride) {
+                    if (parentActivationType === "action" || parentActivationType === "reaction") {
+                        isActionOrReaction = true;
+                    } else if (!parentActivationType && (actActivationType === "action" || actActivationType === "reaction")) {
+                        isActionOrReaction = true;
                     }
                 }
             }
             
-            if (hasDamagePart && !isAction) {
+            if (hasDamagePart && !isActionOrReaction && !isAttack) {
                 return true;
             }
         }
