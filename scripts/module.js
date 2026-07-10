@@ -3215,6 +3215,8 @@ Hooks.once("ready", () => {
                                             cancel: { label: "Cancelar" }
                                         },
                                         default: "cast"
+                                    }, {
+                                        classes: ["dnd5e2", "dialog"]
                                     }).render(true);
 
                                 } else {
