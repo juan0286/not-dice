@@ -2039,19 +2039,15 @@ Hooks.once("ready", () => {
                     totalValues.push({ value: val, type: selectedType, index: part.index });
                 }
 
-                console.log("Not Dice | [DEBUG] damageParts:", damageParts.map(p => ({ index: p.index, type: p.type, formula: p.formula })));
-                console.log("Not Dice | [DEBUG] totalValues:", totalValues);
-
                 // Apply Damage
                 if (isDamage) {
-                    ChatMessage.create({
-                        speaker: ChatMessage.getSpeaker({actor: item?.actor}),
-                        content: `<div style="padding:4px; font-family:monospace; font-size:0.85em; background:rgba(0,0,0,0.8); color:#0f0; border-radius:4px;">
-                            <strong>DEBUG APPLY_DAMAGE:</strong><br/>
-                            ${totalValues.map(tv => `Idx:${tv.index} Type:${tv.type} Val:${tv.value}`).join("<br/>")}
-                        </div>`,
-                        whisper: ChatMessage.getWhisperRecipients("GM")
-                    });
+                    for (const part of damageParts) {
+                        if (typeof part.consumeSpellCallback === "function") {
+                            await part.consumeSpellCallback();
+                            part.consumeSpellCallback = null;
+                        }
+                    }
+
                     const targetsLocal = resolveTargets();
                     const damageSummaryLines = [];
 
@@ -2917,7 +2913,7 @@ Hooks.once("ready", () => {
                         };
                         setTimeout(() => document.addEventListener("click", closePopup), 50);
 
-                        const appendGmDamageRow = async (selectedFormula, selectedType, flavorText = "Extra GM", availableTypesStr = "") => {
+                        const appendGmDamageRow = async (selectedFormula, selectedType, flavorText = "Extra GM", availableTypesStr = "", consumeSpellCallback = null) => {
                             const dmgIdx = damageParts.reduce((max, part) => Math.max(max, Number(part.index) || 0), -1) + 1;
                             let rollTotal = 0;
                             // NOTE: Intentionally removed auto-roll here. GM can manually click the roll button in the row.
@@ -3033,7 +3029,8 @@ Hooks.once("ready", () => {
                                     type: selectedType,
                                     availableTypes: availableTypesArr || [selectedType],
                                     isOffhandWithoutStyle: false,
-                                    isCritical: typeof isAttackCrit !== "undefined" ? isAttackCrit : false
+                                    isCritical: typeof isAttackCrit !== "undefined" ? isAttackCrit : false,
+                                    consumeSpellCallback: consumeSpellCallback
                                 });
 
                                 nRow.querySelector(".roll-damage-btn").addEventListener("click", async (evBtn) => {
@@ -3182,16 +3179,18 @@ Hooks.once("ready", () => {
                                                     const consume = html.find("#not-dice-spell-consume").is(":checked");
                                                     const finalFormula = recalculateFormula(formula, selectedLevel);
 
-                                                    if (consume && selectedId !== "innate" && item?.actor) {
-                                                        const slotData = item.actor.system.spells[selectedId];
-                                                        if (slotData && slotData.value > 0) {
-                                                            await item.actor.update({ [`system.spells.${selectedId}.value`]: slotData.value - 1 });
-                                                        } else {
-                                                            ui.notifications.warn(`No quedan espacios de ${selectedOpt.text}, pero se aplicó el daño de todos modos.`);
+                                                    const consumeCallback = async () => {
+                                                        if (consume && selectedId !== "innate" && item?.actor) {
+                                                            const slotData = item.actor.system.spells[selectedId];
+                                                            if (slotData && slotData.value > 0) {
+                                                                await item.actor.update({ [`system.spells.${selectedId}.value`]: slotData.value - 1 });
+                                                            } else {
+                                                                ui.notifications.warn(`No quedan espacios de ${selectedOpt.text}, pero se aplicó el daño de todos modos.`);
+                                                            }
                                                         }
-                                                    }
+                                                    };
 
-                                                    await appendGmDamageRow(finalFormula, type, name, availableTypes);
+                                                    await appendGmDamageRow(finalFormula, type, name, availableTypes, consumeCallback);
 
                                                     if (uuid) {
                                                         const sourceItem = await fromUuid(uuid);

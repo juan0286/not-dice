@@ -1,7 +1,7 @@
 {
   "id": "not-dice",
   "title": "Not Dice",
-  "version": "2.13.11",
+  "version": "2.13.12",
   "compatibility": {
     "minimum": "13",
     "verified": "14"
