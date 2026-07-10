@@ -236,7 +236,6 @@ const notDiceExtractDamageRows = (actualItem) => {
                     pushPart(formula, type, typeList);
                 }
             }
-        }
     } else if (actualItem?.system?.damage?.parts?.length > 0) {
         for (const part of actualItem.system.damage.parts) {
             if (Array.isArray(part)) {
@@ -250,6 +249,260 @@ const notDiceExtractDamageRows = (actualItem) => {
     }
 
     return rows.length > 0 ? rows : [{ formula: "1d8", type: "", availableTypes: [] }];
+};
+
+globalThis.notDiceCreateExtraDamagePopup = async (btnElement, item, actor, appendCallback) => {
+    const existingPopup = document.querySelector(".not-dice-gm-damage-popup");
+    if (existingPopup) {
+        existingPopup.remove();
+        return;
+    }
+    let skillsHtml = "";
+    if (actor && typeof globalThis.notDiceGetGMDamageSkillsHtml === "function") {
+        skillsHtml = globalThis.notDiceGetGMDamageSkillsHtml(actor, item?.id);
+    }
+
+    const popupHtml = `
+        <div class="not-dice-gm-damage-popup" style="position:fixed; width: 200px; background:var(--color-bg-1, rgba(30,30,30,0.95)); color:var(--color-text-light-1, #f0f0f0); border:1px solid var(--color-border-light-1, #555); border-radius:6px; box-shadow:0 4px 12px rgba(0,0,0,0.5); z-index:99999; padding:8px; backdrop-filter: blur(4px);">
+            <div class="not-dice-gm-damage-step1">
+                <div style="font-weight:bold; font-size:0.9em; margin-bottom:6px; text-align:center; color:inherit;">Seleccionar Dado</div>
+                <div style="display:flex; justify-content:space-between; gap:2px;">
+                    ${["d4","d6","d8","d10","d12","d20"].map(d => `<button class="not-dice-gm-damage-die-btn" data-die="${d}" style="flex:1; padding:2px 0; font-weight:bold; font-size:0.75em; border-radius:4px; border:1px solid var(--color-border-light-2, #777); background:rgba(128,128,128,0.1); color:inherit; cursor:pointer;">${d}</button>`).join('')}
+                </div>
+                ${skillsHtml}
+            </div>
+            <div class="not-dice-gm-damage-step2" style="display:none;">
+                <div style="font-weight:bold; font-size:0.9em; margin-bottom:6px; text-align:center; color:inherit;">
+                    <div style="display:flex; justify-content:center; align-items:center; gap:8px; margin-bottom:8px;">
+                        <button class="not-dice-gm-damage-qty-minus" style="width:24px; height:24px; padding:0; border:1px solid var(--color-border-light-2, #777); background:rgba(128,128,128,0.1); border-radius:4px; cursor:pointer; color:inherit; font-weight:bold;">-</button>
+                        <span class="not-dice-gm-damage-qty" style="font-size:1.2em;">1</span>
+                        <button class="not-dice-gm-damage-qty-plus" style="width:24px; height:24px; padding:0; border:1px solid var(--color-border-light-2, #777); background:rgba(128,128,128,0.1); border-radius:4px; cursor:pointer; color:inherit; font-weight:bold;">+</button>
+                    </div>
+                    Seleccionar Tipo
+                </div>
+                <div style="display:flex; flex-direction:column; gap:2px; max-height:150px; overflow-y:auto; padding-right:4px;">
+                    <!-- Types will be injected here -->
+                </div>
+            </div>
+        </div>
+    `;
+    const wrapper = document.createElement("div");
+    wrapper.innerHTML = popupHtml;
+    const popupNode = wrapper.firstElementChild;
+    
+    document.body.appendChild(popupNode);
+    const rect = btnElement.getBoundingClientRect();
+    popupNode.style.top = (rect.bottom + 4) + "px";
+    let leftPos = rect.right - 200;
+    if (leftPos < 0) leftPos = 4;
+    popupNode.style.left = leftPos + "px";
+
+    const closePopup = (e) => {
+        if (!popupNode.contains(e.target) && e.target !== btnElement && !btnElement.contains(e.target)) {
+            popupNode.remove();
+            document.removeEventListener("click", closePopup);
+        }
+    };
+    setTimeout(() => document.addEventListener("click", closePopup), 50);
+
+    let selectedDie = "";
+    let selectedQty = 1;
+    
+    const qtySpan = popupNode.querySelector(".not-dice-gm-damage-qty");
+    popupNode.querySelector(".not-dice-gm-damage-qty-minus").addEventListener("click", (e) => {
+        e.preventDefault();
+        if (selectedQty > 1) {
+            selectedQty--;
+            qtySpan.textContent = selectedQty;
+        }
+    });
+    popupNode.querySelector(".not-dice-gm-damage-qty-plus").addEventListener("click", (e) => {
+        e.preventDefault();
+        selectedQty++;
+        qtySpan.textContent = selectedQty;
+    });
+
+    popupNode.querySelectorAll(".not-dice-gm-damage-skill-btn").forEach(btn => {
+        btn.addEventListener("click", async (e) => {
+            e.preventDefault();
+            const formula = e.currentTarget.dataset.formula;
+            let type = e.currentTarget.dataset.type;
+            const availableTypesStr = e.currentTarget.dataset.availableTypes || "";
+            const availableTypesArr = availableTypesStr ? availableTypesStr.split(",") : [];
+            
+            const weaponType = "bludgeoning"; 
+            const hasManyTypes = availableTypesArr.length > 5;
+            
+            if (!type || type === "undefined" || type === "null" || hasManyTypes) {
+                type = weaponType;
+            }
+            if (availableTypesArr.length > 0 && !availableTypesArr.includes(type)) {
+                type = availableTypesArr[0];
+            }
+            const name = e.currentTarget.dataset.name;
+            const uuid = e.currentTarget.dataset.itemUuid;
+            
+            const isSpell = e.currentTarget.dataset.isSpell === "true";
+            const spellLevel = parseInt(e.currentTarget.dataset.spellLevel) || 1;
+            const scalingMode = e.currentTarget.dataset.scalingMode;
+            const scalingNumber = parseInt(e.currentTarget.dataset.scalingNumber) || 0;
+            
+            popupNode.remove();
+            document.removeEventListener("click", closePopup);
+
+            if (isSpell && actor) {
+                const actorSpells = actor.system?.spells || {};
+                const availableSlots = [];
+                if (actorSpells.pact && actorSpells.pact.max > 0 && actorSpells.pact.level >= spellLevel) {
+                    availableSlots.push({ id: "pact", level: actorSpells.pact.level, name: "Pact Magic", value: actorSpells.pact.value, max: actorSpells.pact.max });
+                }
+                for (let i = spellLevel; i <= 9; i++) {
+                    const sp = actorSpells[`spell${i}`];
+                    if (sp && sp.max > 0) {
+                        availableSlots.push({ id: `spell${i}`, level: i, name: `Nivel ${i}`, value: sp.value, max: sp.max });
+                    }
+                }
+                if (availableSlots.length === 0) {
+                    availableSlots.push({ id: "innate", level: spellLevel, name: `Nivel ${spellLevel} (Innato / Sin ranuras)`, value: 0, max: 0 });
+                }
+
+                const recalculateFormula = (baseFormula, chosenLevel) => {
+                    if (scalingMode !== "whole" || scalingNumber <= 0 || chosenLevel <= spellLevel) return baseFormula;
+                    const delta = (chosenLevel - spellLevel) * scalingNumber;
+                    return baseFormula.replace(/(\d+)d(\d+)/i, (match, n, d) => {
+                        return `${parseInt(n) + delta}d${d}`;
+                    });
+                };
+
+                let slotOptionsHtml = availableSlots.map(s => {
+                    const disabled = s.value <= 0 && s.max > 0 ? " (Agotado)" : "";
+                    return `<option value="${s.id}" data-level="${s.level}">${s.name} - ${s.value}/${s.max}${disabled}</option>`;
+                }).join("");
+
+                const content = `
+                    <div style="font-family: inherit; padding: 4px;">
+                        <div style="margin-bottom: 12px;">
+                            <label style="font-weight: bold; font-size: 0.9em; opacity: 0.9; display: block; margin-bottom: 4px;">Nivel de Conjuro a Gastar</label>
+                            <select id="not-dice-spell-level-select" style="width: 100%; height: 32px; border: 1px solid var(--color-border-light-2, #ccc); background: rgba(128, 128, 128, 0.1); border-radius: 4px; font-size: 0.95em; cursor: pointer;">
+                                ${slotOptionsHtml}
+                            </select>
+                        </div>
+                        <div style="margin-bottom: 12px; padding: 10px; border: 1px solid rgba(26,115,232,0.4); border-radius: 6px; background: rgba(26,115,232,0.05); text-align: center;">
+                            <div style="font-size: 0.85em; opacity: 0.8; font-weight: bold; margin-bottom: 4px;">Daño Resultante</div>
+                            <div style="font-size: 1.5em; font-family: monospace; font-weight: 800; color: #ff5252;" id="not-dice-spell-damage-preview">${recalculateFormula(formula, availableSlots[0].level)}</div>
+                        </div>
+                        <div style="margin-top: 12px; padding-top: 8px; border-top: 1px dashed var(--color-border-light-2, #ddd);">
+                            <label style="display: flex; align-items: center; gap: 8px; cursor: pointer; font-size: 0.9em; font-weight: bold;">
+                                <input type="checkbox" id="not-dice-spell-consume" checked style="width: 16px; height: 16px; cursor: pointer;" />
+                                <span style="opacity: 0.9;">Consumir ranura automáticamente</span>
+                            </label>
+                        </div>
+                    </div>
+                `;
+
+                new Dialog({
+                    title: `Configurar ${name}`,
+                    content: content,
+                    render: (html) => {
+                        html.find("#not-dice-spell-level-select").on("change", (ev) => {
+                            const selectedOpt = ev.currentTarget.options[ev.currentTarget.selectedIndex];
+                            const selectedLevel = parseInt(selectedOpt.dataset.level);
+                            html.find("#not-dice-spell-damage-preview").text(recalculateFormula(formula, selectedLevel));
+                        });
+                    },
+                    buttons: {
+                        cast: {
+                            label: "Aplicar",
+                            callback: async (html) => {
+                                const selectedOpt = html.find("#not-dice-spell-level-select")[0].options[html.find("#not-dice-spell-level-select")[0].selectedIndex];
+                                const selectedId = selectedOpt.value;
+                                const selectedLevel = parseInt(selectedOpt.dataset.level);
+                                const consume = html.find("#not-dice-spell-consume").is(":checked");
+                                const finalFormula = recalculateFormula(formula, selectedLevel);
+
+                                const consumeCallback = async () => {
+                                    if (consume && selectedId !== "innate" && actor) {
+                                        const slotData = actor.system.spells[selectedId];
+                                        if (slotData && slotData.value > 0) {
+                                            await actor.update({ [`system.spells.${selectedId}.value`]: slotData.value - 1 });
+                                        } else {
+                                            ui.notifications.warn(`No quedan espacios de ${selectedOpt.text}, pero se aplicó el daño de todos modos.`);
+                                        }
+                                    }
+                                };
+
+                                await appendCallback(finalFormula, type, name, availableTypesStr, consumeCallback);
+
+                                if (uuid) {
+                                    const sourceItem = await fromUuid(uuid);
+                                    if (sourceItem) {
+                                        const desc = sourceItem.system?.description?.value || "";
+                                        if (desc) {
+                                            ChatMessage.create({
+                                                speaker: ChatMessage.getSpeaker({actor: sourceItem.actor}),
+                                                content: `<div class="dnd5e chat-card item-card"><header class="card-header flexrow" style="align-items:center; gap:8px; padding-bottom:8px; border-bottom:1px solid var(--color-border-light-2); margin-bottom:8px;"><img src="${sourceItem.img}" title="${sourceItem.name}" width="36" height="36" style="flex:0 0 36px; object-fit:cover; border:none; border-radius:4px;"/><h3 class="item-name" style="margin:0; border:none;">${sourceItem.name}</h3></header><div class="card-content">${desc}</div></div>`,
+                                                flavor: `Aplicando Daño Extra (Slot Nivel ${selectedLevel})`
+                                            });
+                                        }
+                                    }
+                                }
+                            }
+                        },
+                        cancel: { label: "Cancelar" }
+                    },
+                    default: "cast"
+                }, {
+                    classes: ["dnd5e2", "dialog"]
+                }).render(true);
+
+            } else {
+                await appendCallback(formula, type, name, availableTypesStr, null);
+
+                if (uuid) {
+                    const sourceItem = await fromUuid(uuid);
+                    if (sourceItem) {
+                        const desc = sourceItem.system?.description?.value || "";
+                        if (desc) {
+                            ChatMessage.create({
+                                speaker: ChatMessage.getSpeaker({actor: sourceItem.actor}),
+                                content: `<div class="dnd5e chat-card item-card"><header class="card-header flexrow" style="align-items:center; gap:8px; padding-bottom:8px; border-bottom:1px solid var(--color-border-light-2); margin-bottom:8px;"><img src="${sourceItem.img}" title="${sourceItem.name}" width="36" height="36" style="flex:0 0 36px; object-fit:cover; border:none; border-radius:4px;"/><h3 class="item-name" style="margin:0; border:none;">${sourceItem.name}</h3></header><div class="card-content">${desc}</div></div>`,
+                                flavor: `Aplicando Daño Extra`
+                            });
+                        }
+                    }
+                }
+            }
+        });
+    });
+
+    popupNode.querySelectorAll(".not-dice-gm-damage-die-btn").forEach(btn => {
+        btn.addEventListener("click", (e) => {
+            e.preventDefault();
+            selectedDie = e.currentTarget.dataset.die;
+            popupNode.querySelector(".not-dice-gm-damage-step1").style.display = "none";
+            const step2 = popupNode.querySelector(".not-dice-gm-damage-step2");
+            step2.style.display = "block";
+            
+            const damageStyle = globalThis.notDiceConstants?.damageStyle || {};
+            const types = Object.entries(CONFIG.DND5E.damageTypes).map(([k,v]) => ({id:k, label:v.label||v})).sort((a,b) => a.label.localeCompare(b.label));
+            const typesContainer = step2.querySelector("div:nth-child(2)");
+            typesContainer.innerHTML = types.map(t => {
+                const st = damageStyle[t.id] || {color:"inherit"};
+                return `<button class="not-dice-gm-damage-type-btn" data-type="${t.id}" style="padding:4px; font-size:0.85em; font-weight:bold; border-radius:4px; border:1px solid var(--color-border-light-2, #555); background:transparent; cursor:pointer; color:${st.color}; text-align:left;">${t.label}</button>`;
+            }).join("");
+
+            typesContainer.querySelectorAll(".not-dice-gm-damage-type-btn").forEach(typeBtn => {
+                typeBtn.addEventListener("click", async (e2) => {
+                    e2.preventDefault();
+                    const selectedType = e2.currentTarget.dataset.type;
+                    const selectedFormula = `${selectedQty}${selectedDie}`;
+                    popupNode.remove();
+                    document.removeEventListener("click", closePopup);
+                    await appendCallback(selectedFormula, selectedType, "Extra GM", "", null);
+                });
+            });
+        });
+    });
 };
 
 const notDiceGetDamageFormulaBreakdown = (formula, isOffhandWithoutStyle, item, actor) => {
@@ -407,6 +660,7 @@ globalThis.notDiceOpenDamageDialog = async ({
 
             <div style="display:flex; align-items:center; gap:6px; flex-wrap:wrap; margin-top:8px; padding:8px 10px; border:1px solid var(--color-border-light-2, #ddd); border-radius:6px; background:rgba(128,128,128,0.08);">
                 <span style="font-size:0.8em; font-weight:bold; opacity:0.85; margin-right:4px;">Agregar daño:</span>
+                <button type="button" class="not-dice-player-add-gm-damage-btn" style="padding:4px 8px; border:1px solid var(--color-border-light-2, #bbb); border-radius:4px; background:rgba(127,127,127,0.1); color:inherit; cursor:pointer; font-size:0.8em;" title="Agregar Daño Extra"><i class="fas fa-plus"></i></button>
                 ${rowFaces.map(faces => `<button type="button" class="not-dice-damage-add-row" data-faces="${faces}" style="padding:4px 8px; border:1px solid var(--color-border-light-2, #bbb); border-radius:4px; background:rgba(127,127,127,0.1); color:inherit; cursor:pointer; font-size:0.8em;">d${faces}</button>`).join("")}
             </div>
 
@@ -466,7 +720,8 @@ globalThis.notDiceOpenDamageDialog = async ({
             .map((row, index) => ({
                 formula: String(row.formula || "").trim(),
                 type: String(row.type || "").trim(),
-                weaponDamage: !!row.weaponDamage
+                weaponDamage: !!row.weaponDamage,
+                consumeSpellCallback: row.consumeSpellCallback
             }))
             .filter(row => row.formula.length > 0);
     };
@@ -537,6 +792,9 @@ globalThis.notDiceOpenDamageDialog = async ({
         const totals = [];
         let dmgIdx = 0;
         for (const row of damageRows) {
+            if (typeof row.consumeSpellCallback === "function") {
+                await row.consumeSpellCallback();
+            }
             const total = await executeDamageRoll(row.formula, row.type, root, dmgIdx++);
             totals.push(total);
         }
@@ -606,6 +864,25 @@ globalThis.notDiceOpenDamageDialog = async ({
                 const root = app.element;
                 const bindEvents = () => {
                     root.addEventListener("click", async (ev) => {
+                        const addExtraBtn = ev.target.closest(".not-dice-player-add-gm-damage-btn");
+                        if (addExtraBtn) {
+                            ev.preventDefault();
+                            const appendPlayerDamageRowWrapper = async (selectedFormula, selectedType, flavorText, availableTypesStr, consumeSpellCallback) => {
+                                syncRowsFromDom(root);
+                                const newRow = {
+                                    id: `${dialogId}-${Math.random().toString(36).slice(2, 8)}`,
+                                    formula: selectedFormula,
+                                    type: selectedType,
+                                    availableTypes: availableTypesStr ? availableTypesStr.split(",") : [],
+                                    consumeSpellCallback: consumeSpellCallback
+                                };
+                                rows.push(newRow);
+                                renderRows(root);
+                            };
+                            globalThis.notDiceCreateExtraDamagePopup(addExtraBtn, actualItem, actor, appendPlayerDamageRowWrapper);
+                            return;
+                        }
+
                         const addBtn = ev.target.closest(".not-dice-damage-add-row");
                         if (addBtn) {
                             ev.preventDefault();
@@ -664,6 +941,25 @@ globalThis.notDiceOpenDamageDialog = async ({
             render: html => {
                 const root = html[0] || html;
                 root.addEventListener("click", async (ev) => {
+                    const addExtraBtn = ev.target.closest(".not-dice-player-add-gm-damage-btn");
+                    if (addExtraBtn) {
+                        ev.preventDefault();
+                        const appendPlayerDamageRowWrapper = async (selectedFormula, selectedType, flavorText, availableTypesStr, consumeSpellCallback) => {
+                            syncRowsFromDom(root);
+                            const newRow = {
+                                id: `${dialogId}-${Math.random().toString(36).slice(2, 8)}`,
+                                formula: selectedFormula,
+                                type: selectedType,
+                                availableTypes: availableTypesStr ? availableTypesStr.split(",") : [],
+                                consumeSpellCallback: consumeSpellCallback
+                            };
+                            rows.push(newRow);
+                            renderRows(root);
+                        };
+                        globalThis.notDiceCreateExtraDamagePopup(addExtraBtn, actualItem, actor, appendPlayerDamageRowWrapper);
+                        return;
+                    }
+
                     const addBtn = ev.target.closest(".not-dice-damage-add-row");
                     if (addBtn) {
                         ev.preventDefault();
@@ -2859,64 +3155,10 @@ Hooks.once("ready", () => {
                 if (addGmDamageBtn) {
                     addGmDamageBtn.addEventListener("click", (ev) => {
                         ev.preventDefault();
-                        const existingPopup = root.querySelector(".not-dice-gm-damage-popup");
-                        if (existingPopup) {
-                            existingPopup.remove();
-                            return;
-                        }
-                        let skillsHtml = "";
-                        if (item?.actor && typeof globalThis.notDiceGetGMDamageSkillsHtml === "function") {
-                            skillsHtml = globalThis.notDiceGetGMDamageSkillsHtml(item.actor, item.id);
-                        }
-
-                        const popupHtml = `
-                            <div class="not-dice-gm-damage-popup" style="position:fixed; width: 200px; background:var(--color-bg-1, rgba(30,30,30,0.95)); color:var(--color-text-light-1, #f0f0f0); border:1px solid var(--color-border-light-1, #555); border-radius:6px; box-shadow:0 4px 12px rgba(0,0,0,0.5); z-index:99999; padding:8px; backdrop-filter: blur(4px);">
-                                <div class="not-dice-gm-damage-step1">
-                                    <div style="font-weight:bold; font-size:0.9em; margin-bottom:6px; text-align:center; color:inherit;">Seleccionar Dado</div>
-                                    <div style="display:flex; justify-content:space-between; gap:2px;">
-                                        ${["d4","d6","d8","d10","d12","d20"].map(d => `<button class="not-dice-gm-damage-die-btn" data-die="${d}" style="flex:1; padding:2px 0; font-weight:bold; font-size:0.75em; border-radius:4px; border:1px solid var(--color-border-light-2, #777); background:rgba(128,128,128,0.1); color:inherit; cursor:pointer;">${d}</button>`).join('')}
-                                    </div>
-                                    ${skillsHtml}
-                                </div>
-                                <div class="not-dice-gm-damage-step2" style="display:none;">
-                                    <div style="font-weight:bold; font-size:0.9em; margin-bottom:6px; text-align:center; color:inherit;">
-                                        <div style="display:flex; justify-content:center; align-items:center; gap:8px; margin-bottom:8px;">
-                                            <button class="not-dice-gm-damage-qty-minus" style="width:24px; height:24px; padding:0; border:1px solid var(--color-border-light-2, #777); background:rgba(128,128,128,0.1); border-radius:4px; cursor:pointer; color:inherit; font-weight:bold;">-</button>
-                                            <span class="not-dice-gm-damage-qty" style="font-size:1.2em;">1</span>
-                                            <button class="not-dice-gm-damage-qty-plus" style="width:24px; height:24px; padding:0; border:1px solid var(--color-border-light-2, #777); background:rgba(128,128,128,0.1); border-radius:4px; cursor:pointer; color:inherit; font-weight:bold;">+</button>
-                                        </div>
-                                        Seleccionar Tipo
-                                    </div>
-                                    <div style="display:flex; flex-direction:column; gap:2px; max-height:150px; overflow-y:auto; padding-right:4px;">
-                                        <!-- Types will be injected here -->
-                                    </div>
-                                </div>
-                            </div>
-                        `;
-                        const wrapper = document.createElement("div");
-                        wrapper.innerHTML = popupHtml;
-                        const popupNode = wrapper.firstElementChild;
-                        
-                        document.body.appendChild(popupNode);
-                        const rect = addGmDamageBtn.getBoundingClientRect();
-                        popupNode.style.top = (rect.bottom + 4) + "px";
-                        let leftPos = rect.right - 200;
-                        if (leftPos < 0) leftPos = 4;
-                        popupNode.style.left = leftPos + "px";
-
-                        // Close popup when clicking outside
-                        const closePopup = (e) => {
-                            if (!popupNode.contains(e.target) && e.target !== addGmDamageBtn && !addGmDamageBtn.contains(e.target)) {
-                                popupNode.remove();
-                                document.removeEventListener("click", closePopup);
-                            }
-                        };
-                        setTimeout(() => document.addEventListener("click", closePopup), 50);
-
-                        const appendGmDamageRow = async (selectedFormula, selectedType, flavorText = "Extra GM", availableTypesStr = "", consumeSpellCallback = null) => {
+                        const appendGmDamageRowWrapper = async (selectedFormula, selectedType, flavorText, availableTypesStr, consumeSpellCallback) => {
+                            // Extract this wrapper inside to capture damageParts context
                             const dmgIdx = damageParts.reduce((max, part) => Math.max(max, Number(part.index) || 0), -1) + 1;
                             let rollTotal = 0;
-                            // NOTE: Intentionally removed auto-roll here. GM can manually click the roll button in the row.
                             
                             const stl = damageStyle[selectedType] || {color:"inherit"};
                             
@@ -3062,210 +3304,8 @@ Hooks.once("ready", () => {
                                 });
                             }
                         };
-
-                        // Step 1 clicks
-                        let selectedDie = "";
-                        let selectedQty = 1;
                         
-                        const qtySpan = popupNode.querySelector(".not-dice-gm-damage-qty");
-                        popupNode.querySelector(".not-dice-gm-damage-qty-minus").addEventListener("click", (e) => {
-                            e.preventDefault();
-                            if (selectedQty > 1) {
-                                selectedQty--;
-                                qtySpan.textContent = selectedQty;
-                            }
-                        });
-                        popupNode.querySelector(".not-dice-gm-damage-qty-plus").addEventListener("click", (e) => {
-                            e.preventDefault();
-                            selectedQty++;
-                            qtySpan.textContent = selectedQty;
-                        });
-
-                        // Skill buttons
-                        popupNode.querySelectorAll(".not-dice-gm-damage-skill-btn").forEach(btn => {
-                            btn.addEventListener("click", async (e) => {
-                                e.preventDefault();
-                                const formula = e.currentTarget.dataset.formula;
-                                let type = e.currentTarget.dataset.type;
-                                const availableTypesStr = e.currentTarget.dataset.availableTypes || "";
-                                const availableTypesArr = availableTypesStr ? availableTypesStr.split(",") : [];
-                                
-                                const weaponType = damageParts[0]?.type || "bludgeoning";
-                                const hasManyTypes = availableTypesArr.length > 5;
-                                
-                                if (!type || type === "undefined" || type === "null" || hasManyTypes) {
-                                    type = weaponType;
-                                }
-                                
-                                if (availableTypesArr.length > 0 && !availableTypesArr.includes(type)) {
-                                    type = availableTypesArr[0];
-                                }
-                                const name = e.currentTarget.dataset.name;
-                                const availableTypes = e.currentTarget.dataset.availableTypes || "";
-                                const uuid = e.currentTarget.dataset.itemUuid;
-                                
-                                const isSpell = e.currentTarget.dataset.isSpell === "true";
-                                const spellLevel = parseInt(e.currentTarget.dataset.spellLevel) || 1;
-                                const scalingMode = e.currentTarget.dataset.scalingMode;
-                                const scalingNumber = parseInt(e.currentTarget.dataset.scalingNumber) || 0;
-                                
-                                popupNode.remove();
-                                document.removeEventListener("click", closePopup);
-
-                                if (isSpell) {
-                                    const actorSpells = item?.actor?.system?.spells || {};
-                                    const availableSlots = [];
-                                    if (actorSpells.pact && actorSpells.pact.max > 0 && actorSpells.pact.level >= spellLevel) {
-                                        availableSlots.push({ id: "pact", level: actorSpells.pact.level, name: "Pact Magic", value: actorSpells.pact.value, max: actorSpells.pact.max });
-                                    }
-                                    for (let i = spellLevel; i <= 9; i++) {
-                                        const sp = actorSpells[`spell${i}`];
-                                        if (sp && sp.max > 0) {
-                                            availableSlots.push({ id: `spell${i}`, level: i, name: `Nivel ${i}`, value: sp.value, max: sp.max });
-                                        }
-                                    }
-                                    if (availableSlots.length === 0) {
-                                        availableSlots.push({ id: "innate", level: spellLevel, name: `Nivel ${spellLevel} (Innato / Sin ranuras)`, value: 0, max: 0 });
-                                    }
-
-                                    const recalculateFormula = (baseFormula, chosenLevel) => {
-                                        if (scalingMode !== "whole" || scalingNumber <= 0 || chosenLevel <= spellLevel) return baseFormula;
-                                        const delta = (chosenLevel - spellLevel) * scalingNumber;
-                                        return baseFormula.replace(/(\d+)d(\d+)/i, (match, n, d) => {
-                                            return `${parseInt(n) + delta}d${d}`;
-                                        });
-                                    };
-
-                                    let slotOptionsHtml = availableSlots.map(s => {
-                                        const disabled = s.value <= 0 && s.max > 0 ? " (Agotado)" : "";
-                                        return `<option value="${s.id}" data-level="${s.level}">${s.name} - ${s.value}/${s.max}${disabled}</option>`;
-                                    }).join("");
-
-                                    const content = `
-                                        <div style="font-family: inherit; padding: 4px;">
-                                            <div style="margin-bottom: 12px;">
-                                                <label style="font-weight: bold; font-size: 0.9em; opacity: 0.9; display: block; margin-bottom: 4px;">Nivel de Conjuro a Gastar</label>
-                                                <select id="not-dice-spell-level-select" style="width: 100%; height: 32px; border: 1px solid var(--color-border-light-2, #ccc); background: rgba(128, 128, 128, 0.1); border-radius: 4px; font-size: 0.95em; cursor: pointer;">
-                                                    ${slotOptionsHtml}
-                                                </select>
-                                            </div>
-                                            
-                                            <div style="margin-bottom: 12px; padding: 10px; border: 1px solid rgba(26,115,232,0.4); border-radius: 6px; background: rgba(26,115,232,0.05); text-align: center;">
-                                                <div style="font-size: 0.85em; opacity: 0.8; font-weight: bold; margin-bottom: 4px;">Daño Resultante</div>
-                                                <div style="font-size: 1.5em; font-family: monospace; font-weight: 800; color: #ff5252;" id="not-dice-spell-damage-preview">${recalculateFormula(formula, availableSlots[0].level)}</div>
-                                            </div>
-                                            
-                                            <div style="margin-top: 12px; padding-top: 8px; border-top: 1px dashed var(--color-border-light-2, #ddd);">
-                                                <label style="display: flex; align-items: center; gap: 8px; cursor: pointer; font-size: 0.9em; font-weight: bold;">
-                                                    <input type="checkbox" id="not-dice-spell-consume" checked style="width: 16px; height: 16px; cursor: pointer;" />
-                                                    <span style="opacity: 0.9;">Consumir ranura automáticamente</span>
-                                                </label>
-                                            </div>
-                                        </div>
-                                    `;
-
-                                    new Dialog({
-                                        title: `Configurar ${name}`,
-                                        content: content,
-                                        render: (html) => {
-                                            html.find("#not-dice-spell-level-select").on("change", (ev) => {
-                                                const selectedOpt = ev.currentTarget.options[ev.currentTarget.selectedIndex];
-                                                const selectedLevel = parseInt(selectedOpt.dataset.level);
-                                                html.find("#not-dice-spell-damage-preview").text(recalculateFormula(formula, selectedLevel));
-                                            });
-                                        },
-                                        buttons: {
-                                            cast: {
-                                                label: "Aplicar",
-                                                callback: async (html) => {
-                                                    const selectedOpt = html.find("#not-dice-spell-level-select")[0].options[html.find("#not-dice-spell-level-select")[0].selectedIndex];
-                                                    const selectedId = selectedOpt.value;
-                                                    const selectedLevel = parseInt(selectedOpt.dataset.level);
-                                                    const consume = html.find("#not-dice-spell-consume").is(":checked");
-                                                    const finalFormula = recalculateFormula(formula, selectedLevel);
-
-                                                    const consumeCallback = async () => {
-                                                        if (consume && selectedId !== "innate" && item?.actor) {
-                                                            const slotData = item.actor.system.spells[selectedId];
-                                                            if (slotData && slotData.value > 0) {
-                                                                await item.actor.update({ [`system.spells.${selectedId}.value`]: slotData.value - 1 });
-                                                            } else {
-                                                                ui.notifications.warn(`No quedan espacios de ${selectedOpt.text}, pero se aplicó el daño de todos modos.`);
-                                                            }
-                                                        }
-                                                    };
-
-                                                    await appendGmDamageRow(finalFormula, type, name, availableTypes, consumeCallback);
-
-                                                    if (uuid) {
-                                                        const sourceItem = await fromUuid(uuid);
-                                                        if (sourceItem) {
-                                                            const desc = sourceItem.system?.description?.value || "";
-                                                            if (desc) {
-                                                                ChatMessage.create({
-                                                                    speaker: ChatMessage.getSpeaker({actor: sourceItem.actor}),
-                                                                    content: `<div class="dnd5e chat-card item-card"><header class="card-header flexrow" style="align-items:center; gap:8px; padding-bottom:8px; border-bottom:1px solid var(--color-border-light-2); margin-bottom:8px;"><img src="${sourceItem.img}" title="${sourceItem.name}" width="36" height="36" style="flex:0 0 36px; object-fit:cover; border:none; border-radius:4px;"/><h3 class="item-name" style="margin:0; border:none;">${sourceItem.name}</h3></header><div class="card-content">${desc}</div></div>`,
-                                                                    flavor: `Aplicando Daño Extra (Slot Nivel ${selectedLevel})`
-                                                                });
-                                                            }
-                                                        }
-                                                    }
-                                                }
-                                            },
-                                            cancel: { label: "Cancelar" }
-                                        },
-                                        default: "cast"
-                                    }, {
-                                        classes: ["dnd5e2", "dialog"]
-                                    }).render(true);
-
-                                } else {
-                                    await appendGmDamageRow(formula, type, name, availableTypes);
-
-                                    if (uuid) {
-                                        const sourceItem = await fromUuid(uuid);
-                                        if (sourceItem) {
-                                            const desc = sourceItem.system?.description?.value || "";
-                                            if (desc) {
-                                                ChatMessage.create({
-                                                    speaker: ChatMessage.getSpeaker({actor: sourceItem.actor}),
-                                                    content: `<div class="dnd5e chat-card item-card"><header class="card-header flexrow" style="align-items:center; gap:8px; padding-bottom:8px; border-bottom:1px solid var(--color-border-light-2); margin-bottom:8px;"><img src="${sourceItem.img}" title="${sourceItem.name}" width="36" height="36" style="flex:0 0 36px; object-fit:cover; border:none; border-radius:4px;"/><h3 class="item-name" style="margin:0; border:none;">${sourceItem.name}</h3></header><div class="card-content">${desc}</div></div>`,
-                                                    flavor: `Aplicando Daño Extra`
-                                                });
-                                            }
-                                        }
-                                    }
-                                }
-                            });
-                        });
-
-                        popupNode.querySelectorAll(".not-dice-gm-damage-die-btn").forEach(btn => {
-                            btn.addEventListener("click", (e) => {
-                                e.preventDefault();
-                                selectedDie = e.currentTarget.dataset.die;
-                                popupNode.querySelector(".not-dice-gm-damage-step1").style.display = "none";
-                                const step2 = popupNode.querySelector(".not-dice-gm-damage-step2");
-                                step2.style.display = "block";
-                                
-                                const types = Object.entries(CONFIG.DND5E.damageTypes).map(([k,v]) => ({id:k, label:v.label||v})).sort((a,b) => a.label.localeCompare(b.label));
-                                const typesContainer = step2.querySelector("div:nth-child(2)");
-                                typesContainer.innerHTML = types.map(t => {
-                                    const st = damageStyle[t.id] || {color:"inherit"};
-                                    return `<button class="not-dice-gm-damage-type-btn" data-type="${t.id}" style="padding:4px; font-size:0.85em; font-weight:bold; border-radius:4px; border:1px solid var(--color-border-light-2, #555); background:transparent; cursor:pointer; color:${st.color}; text-align:left;">${t.label}</button>`;
-                                }).join("");
-
-                                typesContainer.querySelectorAll(".not-dice-gm-damage-type-btn").forEach(typeBtn => {
-                                    typeBtn.addEventListener("click", async (e2) => {
-                                        e2.preventDefault();
-                                        const selectedType = e2.currentTarget.dataset.type;
-                                        const selectedFormula = `${selectedQty}${selectedDie}`;
-                                        popupNode.remove();
-                                        document.removeEventListener("click", closePopup);
-                                        await appendGmDamageRow(selectedFormula, selectedType, "Extra GM");
-                                    });
-                                });
-                            });
-                        });
+                        globalThis.notDiceCreateExtraDamagePopup(addGmDamageBtn, item, item?.actor, appendGmDamageRowWrapper);
                     });
                 }
 
