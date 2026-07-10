@@ -3142,20 +3142,25 @@ Hooks.once("ready", () => {
                                     }).join("");
 
                                     const content = `
-                                        <div style="margin-bottom: 10px;">
-                                            <label style="font-weight: bold;">Nivel de Conjuro:</label>
-                                            <select id="not-dice-spell-level-select" style="width: 100%; height: 28px;">
-                                                ${slotOptionsHtml}
-                                            </select>
-                                        </div>
-                                        <div style="margin-bottom: 10px; text-align: center; font-size: 1.2em;">
-                                            Daño Total: <strong id="not-dice-spell-damage-preview">${recalculateFormula(formula, availableSlots[0].level)}</strong>
-                                        </div>
-                                        <div style="margin-bottom: 10px;">
-                                            <label style="display: flex; align-items: center; gap: 6px; cursor: pointer;">
-                                                <input type="checkbox" id="not-dice-spell-consume" checked />
-                                                Consumir espacio de conjuro
-                                            </label>
+                                        <div style="font-family: inherit; padding: 4px;">
+                                            <div style="margin-bottom: 12px;">
+                                                <label style="font-weight: bold; font-size: 0.9em; opacity: 0.9; display: block; margin-bottom: 4px;">Nivel de Conjuro a Gastar</label>
+                                                <select id="not-dice-spell-level-select" style="width: 100%; height: 32px; border: 1px solid var(--color-border-light-2, #ccc); background: rgba(128, 128, 128, 0.1); border-radius: 4px; font-size: 0.95em; cursor: pointer;">
+                                                    ${slotOptionsHtml}
+                                                </select>
+                                            </div>
+                                            
+                                            <div style="margin-bottom: 12px; padding: 10px; border: 1px solid rgba(26,115,232,0.4); border-radius: 6px; background: rgba(26,115,232,0.05); text-align: center;">
+                                                <div style="font-size: 0.85em; opacity: 0.8; font-weight: bold; margin-bottom: 4px;">Daño Resultante</div>
+                                                <div style="font-size: 1.5em; font-family: monospace; font-weight: 800; color: #ff5252;" id="not-dice-spell-damage-preview">${recalculateFormula(formula, availableSlots[0].level)}</div>
+                                            </div>
+                                            
+                                            <div style="margin-top: 12px; padding-top: 8px; border-top: 1px dashed var(--color-border-light-2, #ddd);">
+                                                <label style="display: flex; align-items: center; gap: 8px; cursor: pointer; font-size: 0.9em; font-weight: bold;">
+                                                    <input type="checkbox" id="not-dice-spell-consume" checked style="width: 16px; height: 16px; cursor: pointer;" />
+                                                    <span style="opacity: 0.9;">Consumir ranura automáticamente</span>
+                                                </label>
+                                            </div>
                                         </div>
                                     `;
 
