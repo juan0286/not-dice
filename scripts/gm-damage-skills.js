@@ -148,7 +148,7 @@ globalThis.notDiceGetGMDamageSkillsHtml = function(actor, currentItemId) {
             }
         }
 
-        return `<button class="not-dice-gm-damage-skill-btn" data-formula="${formula}" data-type="${type}" data-available-types="${f.availableTypes || ""}" data-name="${f.name}" style="padding:4px; font-weight:bold; font-size:0.85em; border-radius:4px; border:1px solid var(--color-border-light-2, #777); background:rgba(128,128,128,0.1); color:inherit; cursor:pointer; text-align:left; display:flex; justify-content:space-between; align-items:center;">
+        return `<button class="not-dice-gm-damage-skill-btn" data-item-uuid="${f.uuid}" data-formula="${formula}" data-type="${type}" data-available-types="${f.availableTypes || ""}" data-name="${f.name}" style="padding:4px; font-weight:bold; font-size:0.85em; border-radius:4px; border:1px solid var(--color-border-light-2, #777); background:rgba(128,128,128,0.1); color:inherit; cursor:pointer; text-align:left; display:flex; justify-content:space-between; align-items:center;">
             <span style="white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:110px;" title="${f.name}">${f.name}</span>
             <span style="opacity:0.75; font-family:monospace; font-size:0.9em; flex-shrink:0;">${formula}</span>
         </button>`;

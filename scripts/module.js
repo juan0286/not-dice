@@ -3104,9 +3104,25 @@ Hooks.once("ready", () => {
                                 }
                                 const name = e.currentTarget.dataset.name;
                                 const availableTypes = e.currentTarget.dataset.availableTypes || "";
+                                const uuid = e.currentTarget.dataset.itemUuid;
+                                
                                 popupNode.remove();
                                 document.removeEventListener("click", closePopup);
                                 await appendGmDamageRow(formula, type, name, availableTypes);
+
+                                if (uuid) {
+                                    const sourceItem = await fromUuid(uuid);
+                                    if (sourceItem) {
+                                        const desc = sourceItem.system?.description?.value || "";
+                                        if (desc) {
+                                            ChatMessage.create({
+                                                speaker: ChatMessage.getSpeaker({actor: sourceItem.actor}),
+                                                content: `<div class="dnd5e chat-card item-card"><header class="card-header flexrow"><img src="${sourceItem.img}" title="${sourceItem.name}" width="36" height="36" style="border:none;"/><h3 class="item-name">${sourceItem.name}</h3></header><div class="card-content">${desc}</div></div>`,
+                                                flavor: `Aplicando Daño Extra`
+                                            });
+                                        }
+                                    }
+                                }
                             });
                         });
 
