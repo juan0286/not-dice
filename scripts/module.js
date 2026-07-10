@@ -2918,14 +2918,9 @@ Hooks.once("ready", () => {
                         setTimeout(() => document.addEventListener("click", closePopup), 50);
 
                         const appendGmDamageRow = async (selectedFormula, selectedType, flavorText = "Extra GM", availableTypesStr = "") => {
-                            // Execute Damage Roll locally and append row
                             const dmgIdx = damageParts.reduce((max, part) => Math.max(max, Number(part.index) || 0), -1) + 1;
                             let rollTotal = 0;
-                            try {
-                                const r = await new Roll(selectedFormula).evaluate();
-                                rollTotal = r.total;
-                                await r.toMessage({ speaker: ChatMessage.getSpeaker({actor: item?.actor}), flavor: flavorText });
-                            } catch (err) {}
+                            // NOTE: Intentionally removed auto-roll here. GM can manually click the roll button in the row.
                             
                             const stl = damageStyle[selectedType] || {color:"inherit"};
                             
