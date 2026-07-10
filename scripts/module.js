@@ -3107,20 +3107,126 @@ Hooks.once("ready", () => {
                                 const availableTypes = e.currentTarget.dataset.availableTypes || "";
                                 const uuid = e.currentTarget.dataset.itemUuid;
                                 
+                                const isSpell = e.currentTarget.dataset.isSpell === "true";
+                                const spellLevel = parseInt(e.currentTarget.dataset.spellLevel) || 1;
+                                const scalingMode = e.currentTarget.dataset.scalingMode;
+                                const scalingNumber = parseInt(e.currentTarget.dataset.scalingNumber) || 0;
+                                
                                 popupNode.remove();
                                 document.removeEventListener("click", closePopup);
-                                await appendGmDamageRow(formula, type, name, availableTypes);
 
-                                if (uuid) {
-                                    const sourceItem = await fromUuid(uuid);
-                                    if (sourceItem) {
-                                        const desc = sourceItem.system?.description?.value || "";
-                                        if (desc) {
-                                            ChatMessage.create({
-                                                speaker: ChatMessage.getSpeaker({actor: sourceItem.actor}),
-                                                content: `<div class="dnd5e chat-card item-card"><header class="card-header flexrow" style="align-items:center; gap:8px; padding-bottom:8px; border-bottom:1px solid var(--color-border-light-2); margin-bottom:8px;"><img src="${sourceItem.img}" title="${sourceItem.name}" width="36" height="36" style="flex:0 0 36px; object-fit:cover; border:none; border-radius:4px;"/><h3 class="item-name" style="margin:0; border:none;">${sourceItem.name}</h3></header><div class="card-content">${desc}</div></div>`,
-                                                flavor: `Aplicando Daño Extra`
+                                if (isSpell) {
+                                    const actorSpells = item?.actor?.system?.spells || {};
+                                    const availableSlots = [];
+                                    if (actorSpells.pact && actorSpells.pact.max > 0 && actorSpells.pact.level >= spellLevel) {
+                                        availableSlots.push({ id: "pact", level: actorSpells.pact.level, name: "Pact Magic", value: actorSpells.pact.value, max: actorSpells.pact.max });
+                                    }
+                                    for (let i = spellLevel; i <= 9; i++) {
+                                        const sp = actorSpells[`spell${i}`];
+                                        if (sp && sp.max > 0) {
+                                            availableSlots.push({ id: `spell${i}`, level: i, name: `Nivel ${i}`, value: sp.value, max: sp.max });
+                                        }
+                                    }
+                                    if (availableSlots.length === 0) {
+                                        availableSlots.push({ id: "innate", level: spellLevel, name: `Nivel ${spellLevel} (Innato / Sin ranuras)`, value: 0, max: 0 });
+                                    }
+
+                                    const recalculateFormula = (baseFormula, chosenLevel) => {
+                                        if (scalingMode !== "whole" || scalingNumber <= 0 || chosenLevel <= spellLevel) return baseFormula;
+                                        const delta = (chosenLevel - spellLevel) * scalingNumber;
+                                        return baseFormula.replace(/(\d+)d(\d+)/i, (match, n, d) => {
+                                            return `${parseInt(n) + delta}d${d}`;
+                                        });
+                                    };
+
+                                    let slotOptionsHtml = availableSlots.map(s => {
+                                        const disabled = s.value <= 0 && s.max > 0 ? " (Agotado)" : "";
+                                        return `<option value="${s.id}" data-level="${s.level}">${s.name} - ${s.value}/${s.max}${disabled}</option>`;
+                                    }).join("");
+
+                                    const content = `
+                                        <div style="margin-bottom: 10px;">
+                                            <label style="font-weight: bold;">Nivel de Conjuro:</label>
+                                            <select id="not-dice-spell-level-select" style="width: 100%; height: 28px;">
+                                                ${slotOptionsHtml}
+                                            </select>
+                                        </div>
+                                        <div style="margin-bottom: 10px; text-align: center; font-size: 1.2em;">
+                                            Daño Total: <strong id="not-dice-spell-damage-preview">${recalculateFormula(formula, availableSlots[0].level)}</strong>
+                                        </div>
+                                        <div style="margin-bottom: 10px;">
+                                            <label style="display: flex; align-items: center; gap: 6px; cursor: pointer;">
+                                                <input type="checkbox" id="not-dice-spell-consume" checked />
+                                                Consumir espacio de conjuro
+                                            </label>
+                                        </div>
+                                    `;
+
+                                    new Dialog({
+                                        title: `Configurar ${name}`,
+                                        content: content,
+                                        render: (html) => {
+                                            html.find("#not-dice-spell-level-select").on("change", (ev) => {
+                                                const selectedOpt = ev.currentTarget.options[ev.currentTarget.selectedIndex];
+                                                const selectedLevel = parseInt(selectedOpt.dataset.level);
+                                                html.find("#not-dice-spell-damage-preview").text(recalculateFormula(formula, selectedLevel));
                                             });
+                                        },
+                                        buttons: {
+                                            cast: {
+                                                label: "Aplicar",
+                                                callback: async (html) => {
+                                                    const selectedOpt = html.find("#not-dice-spell-level-select")[0].options[html.find("#not-dice-spell-level-select")[0].selectedIndex];
+                                                    const selectedId = selectedOpt.value;
+                                                    const selectedLevel = parseInt(selectedOpt.dataset.level);
+                                                    const consume = html.find("#not-dice-spell-consume").is(":checked");
+                                                    const finalFormula = recalculateFormula(formula, selectedLevel);
+
+                                                    if (consume && selectedId !== "innate" && item?.actor) {
+                                                        const slotData = item.actor.system.spells[selectedId];
+                                                        if (slotData && slotData.value > 0) {
+                                                            await item.actor.update({ [`system.spells.${selectedId}.value`]: slotData.value - 1 });
+                                                        } else {
+                                                            ui.notifications.warn(`No quedan espacios de ${selectedOpt.text}, pero se aplicó el daño de todos modos.`);
+                                                        }
+                                                    }
+
+                                                    await appendGmDamageRow(finalFormula, type, name, availableTypes);
+
+                                                    if (uuid) {
+                                                        const sourceItem = await fromUuid(uuid);
+                                                        if (sourceItem) {
+                                                            const desc = sourceItem.system?.description?.value || "";
+                                                            if (desc) {
+                                                                ChatMessage.create({
+                                                                    speaker: ChatMessage.getSpeaker({actor: sourceItem.actor}),
+                                                                    content: `<div class="dnd5e chat-card item-card"><header class="card-header flexrow" style="align-items:center; gap:8px; padding-bottom:8px; border-bottom:1px solid var(--color-border-light-2); margin-bottom:8px;"><img src="${sourceItem.img}" title="${sourceItem.name}" width="36" height="36" style="flex:0 0 36px; object-fit:cover; border:none; border-radius:4px;"/><h3 class="item-name" style="margin:0; border:none;">${sourceItem.name}</h3></header><div class="card-content">${desc}</div></div>`,
+                                                                    flavor: `Aplicando Daño Extra (Slot Nivel ${selectedLevel})`
+                                                                });
+                                                            }
+                                                        }
+                                                    }
+                                                }
+                                            },
+                                            cancel: { label: "Cancelar" }
+                                        },
+                                        default: "cast"
+                                    }).render(true);
+
+                                } else {
+                                    await appendGmDamageRow(formula, type, name, availableTypes);
+
+                                    if (uuid) {
+                                        const sourceItem = await fromUuid(uuid);
+                                        if (sourceItem) {
+                                            const desc = sourceItem.system?.description?.value || "";
+                                            if (desc) {
+                                                ChatMessage.create({
+                                                    speaker: ChatMessage.getSpeaker({actor: sourceItem.actor}),
+                                                    content: `<div class="dnd5e chat-card item-card"><header class="card-header flexrow" style="align-items:center; gap:8px; padding-bottom:8px; border-bottom:1px solid var(--color-border-light-2); margin-bottom:8px;"><img src="${sourceItem.img}" title="${sourceItem.name}" width="36" height="36" style="flex:0 0 36px; object-fit:cover; border:none; border-radius:4px;"/><h3 class="item-name" style="margin:0; border:none;">${sourceItem.name}</h3></header><div class="card-content">${desc}</div></div>`,
+                                                    flavor: `Aplicando Daño Extra`
+                                                });
+                                            }
                                         }
                                     }
                                 }
