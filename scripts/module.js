@@ -2877,8 +2877,8 @@ Hooks.once("ready", () => {
                             <div class="not-dice-gm-damage-popup" style="position:absolute; top:30px; right:0; width: 200px; background:var(--color-bg-1, rgba(30,30,30,0.95)); color:var(--color-text-light-1, #f0f0f0); border:1px solid var(--color-border-light-1, #555); border-radius:6px; box-shadow:0 4px 12px rgba(0,0,0,0.5); z-index:100; padding:8px; backdrop-filter: blur(4px);">
                                 <div class="not-dice-gm-damage-step1">
                                     <div style="font-weight:bold; font-size:0.9em; margin-bottom:6px; text-align:center; color:inherit;">Seleccionar Dado</div>
-                                    <div style="display:grid; grid-template-columns:1fr 1fr 1fr; gap:4px;">
-                                        ${["d4","d6","d8","d10","d12","d20"].map(d => `<button class="not-dice-gm-damage-die-btn" data-die="${d}" style="padding:4px; font-weight:bold; font-size:0.9em; border-radius:4px; border:1px solid var(--color-border-light-2, #777); background:rgba(128,128,128,0.1); color:inherit; cursor:pointer;">${d}</button>`).join('')}
+                                    <div style="display:flex; justify-content:space-between; gap:2px;">
+                                        ${["d4","d6","d8","d10","d12","d20"].map(d => `<button class="not-dice-gm-damage-die-btn" data-die="${d}" style="flex:1; padding:2px 0; font-weight:bold; font-size:0.75em; border-radius:4px; border:1px solid var(--color-border-light-2, #777); background:rgba(128,128,128,0.1); color:inherit; cursor:pointer;">${d}</button>`).join('')}
                                     </div>
                                     ${skillsHtml}
                                 </div>
