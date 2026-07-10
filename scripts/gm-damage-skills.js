@@ -93,7 +93,27 @@ globalThis.notDiceGetGMDamageSkillsHtml = function(actor, currentItemId) {
                 activitiesArray = Object.values(f.system.activities);
             }
             
-            const act = activitiesArray.find(a => a.damage?.parts?.length > 0);
+            const act = activitiesArray.find(act => {
+                if (act.type === "attack") return false;
+                if (!act.damage?.parts?.length) return false;
+                
+                const actActivationType = act.activation?.type || "";
+                const actOverride = act.activation?.override || false;
+                const parentActivationType = f.system?.activation?.type || "";
+                
+                let isActionOrReaction = false;
+                if (actOverride && (actActivationType === "action" || actActivationType === "reaction")) {
+                    isActionOrReaction = true;
+                } else if (!actOverride) {
+                    if (parentActivationType === "action" || parentActivationType === "reaction") {
+                        isActionOrReaction = true;
+                    } else if (!parentActivationType && (actActivationType === "action" || actActivationType === "reaction")) {
+                        isActionOrReaction = true;
+                    }
+                }
+                return !isActionOrReaction;
+            });
+            
             if (act) {
                 const p = act.damage.parts[0];
                 if (p.custom?.enabled && p.custom?.formula) {
@@ -123,6 +143,12 @@ globalThis.notDiceGetGMDamageSkillsHtml = function(actor, currentItemId) {
 
         if (isWhitelisted && formula === "0") {
             formula = "1d6"; // Default for reckless if no damage configured
+        }
+        
+        // Hardcode fix for Favored Enemy wrong scale mapping
+        const nameLower = f.name.toLowerCase();
+        if ((nameLower === "favored enemy" || nameLower === "enemigo predilecto") && typeof formula === "string" && formula.includes("@scale.")) {
+            formula = "1d6";
         }
 
         if (formula && typeof formula === "string" && formula.includes("@")) {
@@ -154,9 +180,10 @@ globalThis.notDiceGetGMDamageSkillsHtml = function(actor, currentItemId) {
         </button>`;
     }).join("");
 
+    const actorName = actor.name ? (actor.name.length > 15 ? actor.name.substring(0, 15) + "..." : actor.name) : "Actor";
     return `
         <div style="margin-top: 8px; border-top: 1px dashed var(--color-border-light-2, #777); padding-top: 6px;">
-            <div style="font-weight:bold; font-size:0.85em; margin-bottom:4px; text-align:center; color:inherit; opacity:0.9;">Habilidades del Actor</div>
+            <div style="font-weight:bold; font-size:0.85em; margin-bottom:4px; text-align:center; color:inherit; opacity:0.9;" title="Habilidades de ${actor.name || "Actor"}">Habilidades de ${actorName}</div>
             <div style="display:flex; flex-direction:column; gap:4px; max-height:120px; overflow-y:auto; padding-right:4px;">
                 ${buttonsHtml}
             </div>
