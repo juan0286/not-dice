@@ -3123,7 +3123,7 @@ Hooks.once("ready", () => {
                                         if (desc) {
                                             ChatMessage.create({
                                                 speaker: ChatMessage.getSpeaker({actor: sourceItem.actor}),
-                                                content: `<div class="dnd5e chat-card item-card"><header class="card-header flexrow"><img src="${sourceItem.img}" title="${sourceItem.name}" width="36" height="36" style="border:none;"/><h3 class="item-name">${sourceItem.name}</h3></header><div class="card-content">${desc}</div></div>`,
+                                                content: `<div class="dnd5e chat-card item-card"><header class="card-header flexrow" style="align-items:center; gap:8px; padding-bottom:8px; border-bottom:1px solid var(--color-border-light-2); margin-bottom:8px;"><img src="${sourceItem.img}" title="${sourceItem.name}" width="36" height="36" style="flex:0 0 36px; object-fit:cover; border:none; border-radius:4px;"/><h3 class="item-name" style="margin:0; border:none;">${sourceItem.name}</h3></header><div class="card-content">${desc}</div></div>`,
                                                 flavor: `Aplicando Daño Extra`
                                             });
                                         }
