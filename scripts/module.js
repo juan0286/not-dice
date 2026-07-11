@@ -1109,7 +1109,8 @@ const notDiceHandleAttackSocket = async (data) => {
             const handler = messageHandler || itemHandler;
 
             if (!handler) {
-                ui.notifications?.warn("Not Dice | No se encontro una caja de ataque activa para aplicar ventaja/desventaja.");
+                const sender = data.senderName || "Un jugador";
+                ui.notifications?.warn(`Not Dice | ${sender} intentó aplicar ventaja/desventaja, pero la caja de ataque ya no está activa.`);
                 return;
             }
 
