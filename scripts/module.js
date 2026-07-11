@@ -236,6 +236,7 @@ const notDiceExtractDamageRows = (actualItem) => {
                     pushPart(formula, type, typeList);
                 }
             }
+        }
     } else if (actualItem?.system?.damage?.parts?.length > 0) {
         for (const part of actualItem.system.damage.parts) {
             if (Array.isArray(part)) {
