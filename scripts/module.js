@@ -231,7 +231,7 @@ const notDiceExtractDamageRows = (actualItem) => {
                     if (part?.types instanceof Set) typeList = Array.from(part.types);
                     else if (Array.isArray(part?.types)) typeList = part.types;
                     else if (typeof part?.types === "string") typeList = part.types.split(" ");
-                    
+
                     const type = typeList.length > 0 ? typeList[0] : "";
                     pushPart(formula, type, typeList);
                 }
@@ -268,7 +268,7 @@ globalThis.notDiceCreateExtraDamagePopup = async (btnElement, item, actor, appen
             <div class="not-dice-gm-damage-step1">
                 <div style="font-weight:bold; font-size:0.9em; margin-bottom:6px; text-align:center; color:inherit;">Seleccionar Dado</div>
                 <div style="display:flex; justify-content:space-between; gap:2px;">
-                    ${["d4","d6","d8","d10","d12","d20"].map(d => `<button class="not-dice-gm-damage-die-btn" data-die="${d}" style="flex:1; padding:2px 0; font-weight:bold; font-size:0.75em; border-radius:4px; border:1px solid var(--color-border-light-2, #777); background:rgba(128,128,128,0.1); color:inherit; cursor:pointer;">${d}</button>`).join('')}
+                    ${["d4", "d6", "d8", "d10", "d12", "d20"].map(d => `<button class="not-dice-gm-damage-die-btn" data-die="${d}" style="flex:1; padding:2px 0; font-weight:bold; font-size:0.75em; border-radius:4px; border:1px solid var(--color-border-light-2, #777); background:rgba(128,128,128,0.1); color:inherit; cursor:pointer;">${d}</button>`).join('')}
                 </div>
                 ${skillsHtml}
             </div>
@@ -290,7 +290,7 @@ globalThis.notDiceCreateExtraDamagePopup = async (btnElement, item, actor, appen
     const wrapper = document.createElement("div");
     wrapper.innerHTML = popupHtml;
     const popupNode = wrapper.firstElementChild;
-    
+
     document.body.appendChild(popupNode);
     const rect = btnElement.getBoundingClientRect();
     popupNode.style.top = (rect.bottom + 4) + "px";
@@ -308,7 +308,7 @@ globalThis.notDiceCreateExtraDamagePopup = async (btnElement, item, actor, appen
 
     let selectedDie = "";
     let selectedQty = 1;
-    
+
     const qtySpan = popupNode.querySelector(".not-dice-gm-damage-qty");
     popupNode.querySelector(".not-dice-gm-damage-qty-minus").addEventListener("click", (e) => {
         e.preventDefault();
@@ -330,10 +330,10 @@ globalThis.notDiceCreateExtraDamagePopup = async (btnElement, item, actor, appen
             let type = e.currentTarget.dataset.type;
             const availableTypesStr = e.currentTarget.dataset.availableTypes || "";
             const availableTypesArr = availableTypesStr ? availableTypesStr.split(",") : [];
-            
-            const weaponType = "bludgeoning"; 
+
+            const weaponType = "bludgeoning";
             const hasManyTypes = availableTypesArr.length > 5;
-            
+
             if (!type || type === "undefined" || type === "null" || hasManyTypes) {
                 type = weaponType;
             }
@@ -342,12 +342,12 @@ globalThis.notDiceCreateExtraDamagePopup = async (btnElement, item, actor, appen
             }
             const name = e.currentTarget.dataset.name;
             const uuid = e.currentTarget.dataset.itemUuid;
-            
+
             const isSpell = e.currentTarget.dataset.isSpell === "true";
             const spellLevel = parseInt(e.currentTarget.dataset.spellLevel) || 1;
             const scalingMode = e.currentTarget.dataset.scalingMode;
             const scalingNumber = parseInt(e.currentTarget.dataset.scalingNumber) || 0;
-            
+
             popupNode.remove();
             document.removeEventListener("click", closePopup);
 
@@ -440,7 +440,7 @@ globalThis.notDiceCreateExtraDamagePopup = async (btnElement, item, actor, appen
                                         const desc = sourceItem.system?.description?.value || "";
                                         if (desc) {
                                             ChatMessage.create({
-                                                speaker: ChatMessage.getSpeaker({actor: sourceItem.actor}),
+                                                speaker: ChatMessage.getSpeaker({ actor: sourceItem.actor }),
                                                 content: `<div class="dnd5e chat-card item-card"><header class="card-header flexrow" style="align-items:center; gap:8px; padding-bottom:8px; border-bottom:1px solid var(--color-border-light-2); margin-bottom:8px;"><img src="${sourceItem.img}" title="${sourceItem.name}" width="36" height="36" style="flex:0 0 36px; object-fit:cover; border:none; border-radius:4px;"/><h3 class="item-name" style="margin:0; border:none;">${sourceItem.name}</h3></header><div class="card-content">${desc}</div></div>`,
                                                 flavor: `Aplicando Daño Extra (Slot Nivel ${selectedLevel})`
                                             });
@@ -465,7 +465,7 @@ globalThis.notDiceCreateExtraDamagePopup = async (btnElement, item, actor, appen
                         const desc = sourceItem.system?.description?.value || "";
                         if (desc) {
                             ChatMessage.create({
-                                speaker: ChatMessage.getSpeaker({actor: sourceItem.actor}),
+                                speaker: ChatMessage.getSpeaker({ actor: sourceItem.actor }),
                                 content: `<div class="dnd5e chat-card item-card"><header class="card-header flexrow" style="align-items:center; gap:8px; padding-bottom:8px; border-bottom:1px solid var(--color-border-light-2); margin-bottom:8px;"><img src="${sourceItem.img}" title="${sourceItem.name}" width="36" height="36" style="flex:0 0 36px; object-fit:cover; border:none; border-radius:4px;"/><h3 class="item-name" style="margin:0; border:none;">${sourceItem.name}</h3></header><div class="card-content">${desc}</div></div>`,
                                 flavor: `Aplicando Daño Extra`
                             });
@@ -483,12 +483,12 @@ globalThis.notDiceCreateExtraDamagePopup = async (btnElement, item, actor, appen
             popupNode.querySelector(".not-dice-gm-damage-step1").style.display = "none";
             const step2 = popupNode.querySelector(".not-dice-gm-damage-step2");
             step2.style.display = "block";
-            
+
             const damageStyle = globalThis.notDiceConstants?.damageStyle || {};
-            const types = Object.entries(CONFIG.DND5E.damageTypes).map(([k,v]) => ({id:k, label:v.label||v})).sort((a,b) => a.label.localeCompare(b.label));
+            const types = Object.entries(CONFIG.DND5E.damageTypes).map(([k, v]) => ({ id: k, label: v.label || v })).sort((a, b) => a.label.localeCompare(b.label));
             const typesContainer = step2.querySelector("div:nth-child(2)");
             typesContainer.innerHTML = types.map(t => {
-                const st = damageStyle[t.id] || {color:"inherit"};
+                const st = damageStyle[t.id] || { color: "inherit" };
                 return `<button class="not-dice-gm-damage-type-btn" data-type="${t.id}" style="padding:4px; font-size:0.85em; font-weight:bold; border-radius:4px; border:1px solid var(--color-border-light-2, #555); background:transparent; cursor:pointer; color:${st.color}; text-align:left;">${t.label}</button>`;
             }).join("");
 
@@ -738,7 +738,7 @@ globalThis.notDiceOpenDamageDialog = async ({
             formula = globalThis.notDiceEspeciales.applyGreatWeaponFightingFormula(formula);
         }
 
-        const flavorBase = isCritical ? "Daño Crítico" : "Daño Normal";
+        const flavorBase = isCritical ? "Daño Crítico" : "Daño Base";
         const damageLabel = damageType ? (damageTypeLabels[damageType]?.label || damageType) : "Sin tipo";
 
         let extraMods = [];
@@ -840,7 +840,7 @@ globalThis.notDiceOpenDamageDialog = async ({
                 content: buildContent(),
                 position: { width: 520 },
                 buttons: [
-                    { action: "send", icon: "fa-solid fa-dice-d20", label: "Daño Normal", default: true },
+                    { action: "send", icon: "fa-solid fa-dice-d20", label: "Daño Base", default: true },
                     { action: "critical", icon: "fa-solid fa-skull", label: "Daño Crítico" }
                 ],
                 submit: async (result) => {
@@ -924,7 +924,7 @@ globalThis.notDiceOpenDamageDialog = async ({
             content: buildContent(),
             buttons: {
                 send: {
-                    label: "Daño Normal",
+                    label: "Daño Base",
                     callback: async html => {
                         isCritical = false;
                         resolve(await sendDamageToGM(html[0] || html));
@@ -2139,7 +2139,7 @@ Hooks.once("ready", () => {
                 }
 
                 if (specialModsHtml) specialModsHtml = `<div style="margin-bottom:6px; display:grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap:4px;">${specialModsHtml}</div>`;
-                let labelHtml = part.label;
+                let labelHtml = "";
                 let currentDamageType = part.type;
 
                 if (part.availableTypes && part.availableTypes.length > 1) {
@@ -2152,21 +2152,24 @@ Hooks.once("ready", () => {
                     }).join("");
 
                     const initialStyle = damageStyle[currentDamageType] || { color: "inherit" };
-                    labelHtml = `<select name="type-${part.index}" style="width: 100%; border: 1px solid transparent; font-weight: bold; background: transparent; color: ${initialStyle.color}; font-size:1.05em; cursor:pointer;">${optionsHtml}</select>`;
+                    labelHtml = `<select name="type-${part.index}" class="not-dice-gm-type-select" style="max-width: 140px; border: 1px solid var(--color-border-light-2, #ccc); font-weight: bold; background: transparent; color: ${initialStyle.color}; font-size:1.05em; cursor:pointer; border-radius:3px; padding:0 2px;">${optionsHtml}</select>`;
                 } else {
                     if (part.type) {
                         const style = damageStyle[part.type] || { color: "inherit", icon: "" };
                         const hiddenInput = `<input type="hidden" name="type-${part.index}" value="${part.type}">`;
-                        let content = part.label;
-                        if (!content.includes("<img") && style.icon) content = `${style.icon} ${content}`;
-                        labelHtml = `<span style="color: ${style.color}; font-weight: bold; font-size:1.05em;">${content}</span>${hiddenInput}`;
+                        const c = CONFIG.DND5E.damageTypes[part.type];
+                        const typeName = c ? (c.label || part.type) : part.type;
+                        let iconHtml = style.icon ? `${style.icon} ` : "";
+                        labelHtml = `<span style="color: ${style.color}; font-weight: bold; font-size:1.05em;">${iconHtml}${typeName}</span>${hiddenInput}`;
+                    } else {
+                        labelHtml = `<span style="font-weight: bold; font-size:1.05em;">-</span><input type="hidden" name="type-${part.index}" value="">`;
                     }
                 }
 
+                const cleanLabel = (part.label || "").replace(/<img[^>]*>/g, '').trim();
                 damageInputsHtml += `
                 <div class="damage-part-container" data-index="${part.index}" style="margin-bottom: 8px; padding: 6px 8px; border: 1px solid var(--color-border-light-2, #ddd); border-radius: 6px; background: rgba(127,127,127,0.05); box-shadow: 0 1px 2px rgba(0,0,0,0.1);">
-                    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom: 6px; border-bottom: 1px dashed var(--color-border-light-2, #ddd); padding-bottom: 4px;">
-                        <div>${labelHtml}</div>
+                    <div style="display:flex; align-items:center; gap:6px; margin-bottom: 6px; border-bottom: 1px dashed var(--color-border-light-2, #ddd); padding-bottom: 4px;">
                         <div style="font-size:1.25em; font-weight:800; opacity:0.95; font-family:monospace; background:rgba(128,128,128,0.12); padding:4px 12px; border-radius:4px; border:1px solid var(--color-border-light-1, #888); text-align:right; cursor:help;" title="${notDiceGetDamageFormulaBreakdown(part.formula, part.isOffhandWithoutStyle, item, actor)}">
                             ${part.formula} ${part.isOffhandWithoutStyle ? '<span style="color:#ff5252;" title="Sin mod. de característica">*</span>' : ''}
                         </div>
@@ -2176,7 +2179,7 @@ Hooks.once("ready", () => {
                     
                     <div style="display:flex; align-items:center; gap:6px; width:100%;">
                         <!-- 1. Input de daño -->
-                        <input type="number" name="total-${part.index}" value="${rollConfig.options?.notDicePreCalculatedTotals?.[part.index] !== undefined ? rollConfig.options.notDicePreCalculatedTotals[part.index] : '0'}" style="width:110px; flex-shrink:0; height:32px; font-size:1.3em; font-weight:bold; text-align:center; padding:2px; border:1px solid var(--color-border-light-2, #aaa); border-radius:4px; color:#ff5252; background:rgba(128,128,128,0.1); box-sizing:border-box; margin:0;" title="Total de daño base"/>
+                        <input type="number" name="total-${part.index}" value="${rollConfig.options?.notDicePreCalculatedTotals?.[part.index] !== undefined ? rollConfig.options.notDicePreCalculatedTotals[part.index] : '0'}" style="width:110px; flex-shrink:0; height:32px; font-size:1.3em; font-weight:bold; text-align:center; padding:2px; border:1px solid var(--color-border-light-2, #aaa); border-radius:4px; color:#ff5252; background:rgba(128,128,128,0.1); box-sizing:border-box; margin:0;" title="Total de daño base" data-index="${part.index}"/>
                         
                         <!-- 2. Multiplicador(es) -->
                         ${(() => {
@@ -2200,7 +2203,7 @@ Hooks.once("ready", () => {
                                         ${multiplierOptions.map(o => `<option value="${o.val}" ${o.val === detectedMultiplier ? "selected" : ""}>${o.label}</option>`).join("")}
                                     </select>`;
                             } else {
-                                partTargetMultipliersHtml += `<div style="display:flex; flex-direction:column; gap:2px; flex-shrink:0;">`;
+                                partTargetMultipliersHtml += `<div style="display:flex; flex-direction:column; gap:2px; flex-shrink:0; max-width: 140px;">`;
                                 for (const t of targets) {
                                     const traits = t.actor?.system?.traits;
                                     let detectedMultiplier = 1;
@@ -2214,7 +2217,7 @@ Hooks.once("ready", () => {
 
                                     const selectName = `target-multiplier-${t.id}-part-${part.index}`;
                                     partTargetMultipliersHtml += `
-                                        <div style="display:flex; justify-content:space-between; align-items:center; font-size:0.8em; background: rgba(128,128,128,0.08); padding: 1px 4px; border-radius: 4px; border:1px solid var(--color-border-light-2, #eee); min-height:30px; gap:4px; max-width:140px; box-sizing:border-box;">
+                                        <div style="display:flex; justify-content:space-between; align-items:center; font-size:0.8em; background: rgba(128,128,128,0.08); padding: 1px 4px; border-radius: 4px; border:1px solid var(--color-border-light-2, #eee); min-height:30px; gap:4px; box-sizing:border-box;">
                                             <span style="white-space:nowrap; overflow:hidden; text-overflow:ellipsis; flex:1;" title="${t.name}">${t.name}</span>
                                             <select name="${selectName}" style="width:55px; height:24px; padding:0; border:1px solid var(--color-border-light-2, #ccc); background:transparent; color:inherit; border-radius:3px; cursor:pointer; font-weight:bold; font-size:0.95em; flex-shrink:0; text-align:center; box-sizing:border-box; margin:0;">
                                                 ${multiplierOptions.map(o => `<option value="${o.val}" ${o.val === detectedMultiplier ? "selected" : ""}>${o.label}</option>`).join("")}
@@ -2227,10 +2230,9 @@ Hooks.once("ready", () => {
                         return partTargetMultipliersHtml;
                     })()}
 
-                        <!-- 3. Botones de tirar dados (Normal y Crítico, estirados, en columnas si hay múltiples objetivos) -->
-                        <div style="display:flex; ${targets.length > 1 ? 'flex-direction:column;' : ''} gap:4px; flex:1;">
-                            <button type="button" class="roll-damage-btn" data-index="${part.index}" style="flex:1; height:32px; padding:0 6px; border:1px solid var(--color-border-light-2, #bbb); border-radius:4px; background:var(--color-bg-option, rgba(127,127,127,0.1)); color:inherit; cursor:pointer; display:flex; align-items:center; justify-content:center; gap:4px; font-weight:bold; font-size:0.85em; box-sizing:border-box; margin:0;" title="Tirar Daño Normal"><i class="fas fa-dice" style="color:inherit; opacity:0.8; font-size:1.1em;"></i>Normal</button>
-                            <button type="button" class="roll-damage-crit-btn" data-index="${part.index}" style="flex:1; height:32px; padding:0 6px; border:1px solid #d32f2f; border-radius:4px; background:rgba(197,34,31,0.1); color:#ff5252; cursor:pointer; display:flex; align-items:center; justify-content:center; gap:4px; font-weight:bold; font-size:0.85em; box-sizing:border-box; margin:0;" title="Tirar Daño Crítico"><i class="fas fa-dice-d20" style="font-size:1.1em;"></i>Crítico</button>
+                        <!-- 3. Tipo de Daño -->
+                        <div style="flex:1; display:flex; justify-content:flex-end; align-items:center;">
+                            ${labelHtml}
                         </div>
                     </div>
                 </div>`;
@@ -2253,14 +2255,18 @@ Hooks.once("ready", () => {
                 <div style="font-family:inherit; padding:4px 2px;">
                     ${attackHtml}
                     ${targetHtml}
-                    <div style="display:flex; justify-content:space-between; align-items:center; border-bottom: 1px solid var(--color-border-light-2, #ccc); padding-bottom: 4px; margin-bottom: 10px;">
-                        <h3 style="margin:0; font-size:1.1em; color:inherit; opacity:0.9;">Desglose de Daño</h3>
+                    <div style="display:flex; justify-content:space-between; align-items:center; border-bottom: 1px solid var(--color-border-light-2, #ccc); padding-bottom: 6px; margin-bottom: 10px; margin-top: 16px;">
+                        <h3 style="margin:0; font-size:1.15em; color:inherit; opacity:0.9;">Desglose de Daño</h3>
                         <div style="position:relative;">
-                            <button type="button" class="not-dice-add-gm-damage-btn" style="width:24px; height:24px; padding:0; line-height:24px; border-radius:4px; border:1px solid var(--color-border-light-2, #aaa); background:rgba(0,0,0,0.05); cursor:pointer;" title="Agregar daño extra"><i class="fas fa-plus"></i></button>
+                            <button type="button" class="not-dice-add-gm-damage-btn" style="width:28px; height:28px; padding:0; line-height:28px; font-size:1.1em; border-radius:4px; border:1px solid var(--color-border-light-2, #aaa); background:rgba(0,0,0,0.05); cursor:pointer; display:flex; align-items:center; justify-content:center;" title="Agregar daño extra"><i class="fas fa-plus"></i></button>
                         </div>
                     </div>
                     <div id="not-dice-damage-list" style="max-height: ${damageParts.length > 2 ? '220px' : '380px'}; overflow-y: auto; padding-right: 6px;">
                         ${damageInputsHtml}
+                    </div>
+                    <div style="display:flex; gap:6px; margin-top:8px;">
+                        <button type="button" id="not-dice-btn-roll-all-normal" style="flex:1; height:36px; padding:0 8px; border:1px solid var(--color-border-light-2, #bbb); border-radius:4px; background:var(--color-bg-option, rgba(127,127,127,0.1)); color:inherit; cursor:pointer; display:flex; align-items:center; justify-content:center; gap:6px; font-weight:bold; font-size:0.9em; box-sizing:border-box;" title="Tirar Todo Base"><i class="fas fa-dice" style="color:inherit; opacity:0.8; font-size:1.2em;"></i>Tirar Todo Base</button>
+                        <button type="button" id="not-dice-btn-roll-all-crit" style="flex:1; height:36px; padding:0 8px; border:1px solid #d32f2f; border-radius:4px; background:rgba(197,34,31,0.1); color:#ff5252; cursor:pointer; display:flex; align-items:center; justify-content:center; gap:6px; font-weight:bold; font-size:0.9em; box-sizing:border-box;" title="Tirar Todo Crítico"><i class="fas fa-dice-d20" style="font-size:1.2em;"></i>Tirar Todo Crítico</button>
                     </div>
                     ${requestDamageBtnHtml}
                 </div>
@@ -3080,7 +3086,11 @@ Hooks.once("ready", () => {
                         formula = globalThis.notDiceEspeciales.applyGreatWeaponFightingFormula(formula);
                     }
 
-                    const flavorBase = isCrit ? "Daño Crítico" : "Daño Normal";
+                    const flavorBase = isCrit ? "Daño Crítico" : "Daño Base";
+                    const itemName = item?.name || "Ataque";
+                    const damageLabelConfig = CONFIG.DND5E.damageTypes[selectedType];
+                    const damageLabel = damageLabelConfig ? (damageLabelConfig.label || selectedType) : (selectedType || "Sin tipo");
+
                     const actorSpeaker = ChatMessage.getSpeaker({ actor: actor });
 
                     let extraMods = [];
@@ -3088,6 +3098,9 @@ Hooks.once("ready", () => {
                     if (hasPiercer && selectedType === "piercing") extraMods.push("Perforador");
 
                     const modsString = extraMods.length > 0 ? ` (${extraMods.join(" | ")})` : "";
+                    
+                    const itemFlavor = itemName ? ` - ${itemName}` : "";
+                    const finalFlavor = `<strong>${flavorBase}${itemFlavor}</strong><br><span style="font-size: 0.9em; opacity: 0.8;">Tipo: ${damageLabel}${modsString}</span>`;
 
                     const buildPiercerButtons = (r, dmgIdx) => {
                         if (!hasPiercer || selectedType !== "piercing") return "";
@@ -3107,50 +3120,50 @@ Hooks.once("ready", () => {
                         const isWeaponDmg = part ? part.weaponDamage !== false : true;
                         const firstWeaponPart = damageParts.find(p => p.weaponDamage !== false);
                         if (!hasSavageAttacker || isSavageUsed || !isWeaponDmg || (firstWeaponPart && firstWeaponPart.index != dmgIdx)) return "";
-                        return `<div style="margin-top:8px;"><button type="button" class="not-dice-savage-reroll" data-uuid="${item.uuid}" data-idx="${dmgIdx}" data-formula="${btoa(formula)}" data-flavor="${btoa(flavorBase)}" data-damagelabel="" data-mods="${btoa(modsString)}" data-original="${r.total}" data-damage-type="${selectedType}" style="width:100%; font-weight:bold; padding:4px; border:1px solid rgba(197,34,31,0.5); border-radius:4px; background:rgba(197,34,31,0.1); color:#ff5252; cursor:pointer;"><i class="fas fa-paw"></i> A (relanza el daño)</button></div>`;
+                        return `<div style="margin-top:8px;"><button type="button" class="not-dice-savage-reroll" data-uuid="${item.uuid}" data-idx="${dmgIdx}" data-formula="${btoa(formula)}" data-flavor="${btoa(flavorBase)}" data-damagelabel="${btoa(damageLabel)}" data-mods="${btoa(modsString)}" data-original="${r.total}" data-damage-type="${selectedType}" style="width:100%; font-weight:bold; padding:4px; border:1px solid rgba(197,34,31,0.5); border-radius:4px; background:rgba(197,34,31,0.1); color:#ff5252; cursor:pointer;"><i class="fas fa-paw"></i> A (relanza el daño)</button></div>`;
                     };
 
                     const rollObj = new Roll(formula);
                     if (globalThis.notDiceApplyColorset) globalThis.notDiceApplyColorset(rollObj, selectedType);
                     const r = await rollObj.evaluate();
-                    await r.toMessage({ flavor: `${flavorBase}${modsString}${buildPiercerButtons(r, idx)}${buildSavageButton(r, idx)}`, speaker: actorSpeaker });
+                    await r.toMessage({ flavor: `${finalFlavor}${buildPiercerButtons(r, idx)}${buildSavageButton(r, idx)}`, speaker: actorSpeaker });
 
                     return r.total;
                 };
 
-                root.querySelectorAll(".roll-damage-btn").forEach(btn => {
-                    btn.addEventListener("click", async (ev) => {
+                const btnRollAllNormal = root.querySelector("#not-dice-btn-roll-all-normal");
+                if (btnRollAllNormal) {
+                    btnRollAllNormal.addEventListener("click", async (ev) => {
                         ev.preventDefault();
-                        const idx = btn.dataset.index;
-                        const formula = damageParts.find(p => p.index == idx)?.formula;
-                        if (formula) {
-                            try {
-                                const total = await executeDamageRoll(formula, false, idx);
-                                const inputTotal = root.querySelector(`[name='total-${idx}']`);
-                                if (inputTotal) inputTotal.value = total;
-                                const part = damageParts.find(p => p.index == idx);
-                                if (part) part.isCritical = false;
-                            } catch (err) { console.error("Not Dice | Error rolling normal damage", err); }
+                        for (const part of damageParts) {
+                            if (part.formula) {
+                                try {
+                                    const total = await executeDamageRoll(part.formula, false, part.index);
+                                    const inputTotal = root.querySelector(`[name='total-${part.index}']`);
+                                    if (inputTotal) inputTotal.value = total;
+                                    part.isCritical = false;
+                                } catch (err) { console.error("Not Dice | Error rolling normal damage", err); }
+                            }
                         }
                     });
-                });
+                }
 
-                root.querySelectorAll(".roll-damage-crit-btn").forEach(btn => {
-                    btn.addEventListener("click", async (ev) => {
+                const btnRollAllCrit = root.querySelector("#not-dice-btn-roll-all-crit");
+                if (btnRollAllCrit) {
+                    btnRollAllCrit.addEventListener("click", async (ev) => {
                         ev.preventDefault();
-                        const idx = btn.dataset.index;
-                        const formula = damageParts.find(p => p.index == idx)?.formula;
-                        if (formula) {
-                            try {
-                                const total = await executeDamageRoll(formula, true, idx);
-                                const inputTotal = root.querySelector(`[name='total-${idx}']`);
-                                if (inputTotal) inputTotal.value = total;
-                                const part = damageParts.find(p => p.index == idx);
-                                if (part) part.isCritical = true;
-                            } catch (err) { console.error("Not Dice | Error rolling crit damage", err); }
+                        for (const part of damageParts) {
+                            if (part.formula) {
+                                try {
+                                    const total = await executeDamageRoll(part.formula, true, part.index);
+                                    const inputTotal = root.querySelector(`[name='total-${part.index}']`);
+                                    if (inputTotal) inputTotal.value = total;
+                                    part.isCritical = true;
+                                } catch (err) { console.error("Not Dice | Error rolling crit damage", err); }
+                            }
                         }
                     });
-                });
+                }
 
                 // Add GM Extra Damage Popup Logic
                 const addGmDamageBtn = root.querySelector(".not-dice-add-gm-damage-btn");
@@ -3161,9 +3174,9 @@ Hooks.once("ready", () => {
                             // Extract this wrapper inside to capture damageParts context
                             const dmgIdx = damageParts.reduce((max, part) => Math.max(max, Number(part.index) || 0), -1) + 1;
                             let rollTotal = 0;
-                            
-                            const stl = damageStyle[selectedType] || {color:"inherit"};
-                            
+
+                            const stl = damageStyle[selectedType] || { color: "inherit" };
+
                             const targetList = typeof resolveTargets === "function" ? resolveTargets() : [];
                             let partTargetMultipliersHtml = "";
                             if (targetList.length > 0) {
@@ -3211,7 +3224,7 @@ Hooks.once("ready", () => {
                             }
 
                             const availableTypesArr = availableTypesStr ? availableTypesStr.split(",") : null;
-                            const typesDropdownHtml = typeof notDiceGetDamageTypeOptionsHtml === "function" 
+                            const typesDropdownHtml = typeof notDiceGetDamageTypeOptionsHtml === "function"
                                 ? notDiceGetDamageTypeOptionsHtml(selectedType, availableTypesArr)
                                 : `<option value="${selectedType}" selected>${selectedType}</option>`;
 
@@ -3219,23 +3232,20 @@ Hooks.once("ready", () => {
                             nRow.className = "damage-part-container not-dice-added-gm-row";
                             nRow.dataset.index = dmgIdx;
                             nRow.style.cssText = "margin-bottom: 8px; padding: 6px 8px; border: 1px solid rgba(26,115,232,0.4); border-radius: 6px; background: rgba(26,115,232,0.05); box-shadow: 0 1px 2px rgba(0,0,0,0.1); position:relative;";
+                            const cleanFlavorText = (flavorText || "").replace(/<img[^>]*>/g, '').trim();
                             nRow.innerHTML = `
                                 <div style="position:absolute; top:-8px; right:-8px; background:#ff5252; color:#fff; border-radius:50%; width:20px; height:20px; text-align:center; line-height:20px; font-size:12px; font-weight:bold; cursor:pointer; z-index:10; border:1px solid #d32f2f; box-shadow:0 1px 2px rgba(0,0,0,0.3);" class="not-dice-remove-gm-row-btn" title="Eliminar"><i class="fas fa-times"></i></div>
-                                <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom: 6px; border-bottom: 1px dashed var(--color-border-light-2, #ddd); padding-bottom: 4px; color:${stl.color}; font-weight:bold;">
-                                    <div style="display:flex; align-items:center; gap:4px; max-width:60%;">
-                                        <select name="type-${dmgIdx}" class="not-dice-gm-type-select" style="max-width:120px; text-overflow:ellipsis; height:24px; font-size:0.85em; font-weight:bold; background:transparent; border:1px solid var(--color-border-light-2, #ccc); border-radius:3px; color:inherit; cursor:pointer; padding:0 2px;">
-                                            ${typesDropdownHtml}
-                                        </select>
-                                        <span style="font-size:0.8em; opacity:0.75; font-weight:normal; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;" title="${flavorText}">(${flavorText})</span>
-                                    </div>
+                                <div style="display:flex; align-items:center; gap:6px; margin-bottom: 6px; border-bottom: 1px dashed var(--color-border-light-2, #ddd); padding-bottom: 4px; color:${stl.color}; font-weight:bold;">
                                     <div style="font-size:1.25em; font-weight:800; opacity:0.95; font-family:monospace; background:rgba(128,128,128,0.12); padding:4px 12px; border-radius:4px; border:1px solid var(--color-border-light-1, #888); text-align:right; cursor:help;">${selectedFormula}</div>
+                                    <span style="font-size:0.85em; opacity:0.75; font-weight:normal; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;" title="${cleanFlavorText}">(${cleanFlavorText})</span>
                                 </div>
                                 <div style="display:flex; align-items:center; gap:6px; width:100%;">
                                     <input type="number" name="total-${dmgIdx}" value="${rollTotal}" class="not-dice-dmg-input" style="width:110px; flex-shrink:0; height:32px; font-size:1.3em; font-weight:bold; text-align:center; padding:2px; border:1px solid var(--color-border-light-2, #aaa); border-radius:4px; color:#ff5252; background:rgba(128,128,128,0.1); box-sizing:border-box; margin:0;" title="Total de daño base" data-index="${dmgIdx}">
                                     ${partTargetMultipliersHtml}
-                                    <div style="display:flex; ${targetList.length > 1 ? 'flex-direction:column;' : ''} gap:4px; flex:1;">
-                                        <button type="button" class="roll-damage-btn" data-index="${dmgIdx}" style="flex:1; height:32px; padding:0 6px; border:1px solid var(--color-border-light-2, #bbb); border-radius:4px; background:var(--color-bg-option, rgba(127,127,127,0.1)); color:inherit; cursor:pointer; display:flex; align-items:center; justify-content:center; gap:4px; font-weight:bold; font-size:0.85em; box-sizing:border-box; margin:0;" title="Tirar Daño Normal"><i class="fas fa-dice" style="color:inherit; opacity:0.8; font-size:1.1em;"></i>Normal</button>
-                                        <button type="button" class="roll-damage-crit-btn" data-index="${dmgIdx}" style="flex:1; height:32px; padding:0 6px; border:1px solid #d32f2f; border-radius:4px; background:rgba(197,34,31,0.1); color:#ff5252; cursor:pointer; display:flex; align-items:center; justify-content:center; gap:4px; font-weight:bold; font-size:0.85em; box-sizing:border-box; margin:0;" title="Tirar Daño Crítico"><i class="fas fa-dice-d20" style="font-size:1.1em;"></i>Crítico</button>
+                                    <div style="flex:1; display:flex; justify-content:flex-end; align-items:center;">
+                                        <select name="type-${dmgIdx}" class="not-dice-gm-type-select" style="max-width:140px; text-overflow:ellipsis; height:24px; font-size:1.05em; font-weight:bold; background:transparent; border:1px solid var(--color-border-light-2, #ccc); border-radius:3px; color:inherit; cursor:pointer; padding:0 2px;">
+                                            ${typesDropdownHtml}
+                                        </select>
                                     </div>
                                 </div>
                             `;
@@ -3245,9 +3255,9 @@ Hooks.once("ready", () => {
                                 nRow.querySelector(".not-dice-remove-gm-row-btn").addEventListener("click", () => {
                                     nRow.remove();
                                     const pIdx = damageParts.findIndex(p => p.index === dmgIdx);
-                                    if(pIdx !== -1) damageParts.splice(pIdx, 1);
+                                    if (pIdx !== -1) damageParts.splice(pIdx, 1);
                                 });
-                                
+
                                 const selectEl = nRow.querySelector("select.not-dice-gm-type-select");
                                 if (selectEl) {
                                     selectEl.addEventListener("change", (ev) => {
@@ -3261,7 +3271,7 @@ Hooks.once("ready", () => {
                                     // Trigger once to set initial color
                                     selectEl.dispatchEvent(new Event("change"));
                                 }
-                                
+
                                 const newRollObj = typeof DamageRoll !== 'undefined' ? new DamageRoll(selectedFormula) : new Roll(selectedFormula);
                                 newRollObj.options = newRollObj.options || {};
                                 newRollObj.options.type = selectedType;
@@ -3276,37 +3286,9 @@ Hooks.once("ready", () => {
                                     isCritical: typeof isAttackCrit !== "undefined" ? isAttackCrit : false,
                                     consumeSpellCallback: consumeSpellCallback
                                 });
-
-                                nRow.querySelector(".roll-damage-btn").addEventListener("click", async (evBtn) => {
-                                    evBtn.preventDefault();
-                                    const formula = damageParts.find(p => p.index == dmgIdx)?.formula;
-                                    if (formula) {
-                                        try {
-                                            const total = await executeDamageRoll(formula, false, dmgIdx);
-                                            const inputTotal = root.querySelector(`[name='total-${dmgIdx}']`);
-                                            if (inputTotal) inputTotal.value = total;
-                                            const part = damageParts.find(p => p.index == dmgIdx);
-                                            if (part) part.isCritical = false;
-                                        } catch (err) { console.error("Not Dice | Error rolling normal damage", err); }
-                                    }
-                                });
-                                
-                                nRow.querySelector(".roll-damage-crit-btn").addEventListener("click", async (evBtn) => {
-                                    evBtn.preventDefault();
-                                    const formula = damageParts.find(p => p.index == dmgIdx)?.formula;
-                                    if (formula) {
-                                        try {
-                                            const total = await executeDamageRoll(formula, true, dmgIdx);
-                                            const inputTotal = root.querySelector(`[name='total-${dmgIdx}']`);
-                                            if (inputTotal) inputTotal.value = total;
-                                            const part = damageParts.find(p => p.index == dmgIdx);
-                                            if (part) part.isCritical = true;
-                                        } catch (err) { console.error("Not Dice | Error rolling crit damage", err); }
-                                    }
-                                });
                             }
                         };
-                        
+
                         globalThis.notDiceCreateExtraDamagePopup(addGmDamageBtn, item, item?.actor, appendGmDamageRowWrapper);
                     });
                 }
