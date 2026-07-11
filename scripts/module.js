@@ -661,8 +661,8 @@ globalThis.notDiceOpenDamageDialog = async ({
 
             <div style="display:flex; align-items:center; gap:6px; flex-wrap:wrap; margin-top:8px; padding:8px 10px; border:1px solid var(--color-border-light-2, #ddd); border-radius:6px; background:rgba(128,128,128,0.08);">
                 <span style="font-size:0.8em; font-weight:bold; opacity:0.85; margin-right:4px;">Agregar daño:</span>
-                <button type="button" class="not-dice-player-add-gm-damage-btn" style="padding:4px 8px; border:1px solid var(--color-border-light-2, #bbb); border-radius:4px; background:rgba(127,127,127,0.1); color:inherit; cursor:pointer; font-size:0.8em;" title="Agregar Daño Extra"><i class="fas fa-plus"></i></button>
                 ${rowFaces.map(faces => `<button type="button" class="not-dice-damage-add-row" data-faces="${faces}" style="padding:4px 8px; border:1px solid var(--color-border-light-2, #bbb); border-radius:4px; background:rgba(127,127,127,0.1); color:inherit; cursor:pointer; font-size:0.8em;">d${faces}</button>`).join("")}
+                <button type="button" class="not-dice-player-add-gm-damage-btn" style="margin-left:auto; padding:4px 8px; border:1px solid var(--color-border-light-2, #bbb); border-radius:4px; background:rgba(127,127,127,0.1); color:inherit; cursor:pointer; font-size:0.8em;" title="Agregar Daño Extra"><i class="fas fa-plus"></i></button>
             </div>
 
             ${activeMastery ? `
