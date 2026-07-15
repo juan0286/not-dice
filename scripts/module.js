@@ -616,6 +616,29 @@ globalThis.notDiceOpenDamageDialog = async ({
         ? normalizedRequestedParts
         : notDiceExtractDamageRows(actualItem);
 
+    let isHealing = sourceRows.length > 0 && (sourceRows[0].type === "healing" || sourceRows[0].type === "temphp");
+    
+    if (!isHealing && actualItem?.system?.activities) {
+        for (const act of actualItem.system.activities.values()) {
+            if (act.type === "heal" || (act.healing && (act.healing.type === "healing" || act.healing.type === "temphp"))) {
+                isHealing = true;
+                break;
+            }
+        }
+    }
+    
+    if (!isHealing && actualItem?.system?.actionType === "heal") {
+        isHealing = true;
+    }
+
+    if (isHealing) {
+        if (typeof globalThis.notDiceOpenHealingDialog === "function") {
+            return globalThis.notDiceOpenHealingDialog({
+                uuid, itemName, targetIds, notDiceMultipliers, targetUserId, senderName, requestedDamageParts, isCleaveAttack, isNickAttack, masteryAlreadyUsed
+            });
+        }
+    }
+
     let rows = sourceRows.map((row, index) => ({
         id: `${dialogId}-${index}`,
         formula: row.formula,
@@ -1063,6 +1086,34 @@ const notDiceHandleAttackSocket = async (data) => {
 
     // Respeta destinatario específico si viene indicado
     if (data.targetUserId && data.targetUserId !== game.user.id) return;
+
+    if (data.type === "not-dice.apply-healing") {
+        try {
+            for (let target of data.targets) {
+                const actor = game.actors.get(target.actorId) || canvas.tokens.get(target.tokenId)?.actor;
+                if (!actor) continue;
+                if (data.isTempHp) {
+                    const currentTemp = actor.system?.attributes?.hp?.temp || 0;
+                    if (data.total > currentTemp) {
+                        await actor.update({ "system.attributes.hp.temp": data.total });
+                    }
+                } else {
+                    if (typeof actor.applyDamage === "function") {
+                        await actor.applyDamage([{ value: data.total, type: "healing" }]);
+                    } else {
+                        const hp = actor.system?.attributes?.hp;
+                        if (hp) {
+                            const newHp = Math.min(hp.max, (hp.value || 0) + data.total);
+                            await actor.update({ "system.attributes.hp.value": newHp });
+                        }
+                    }
+                }
+            }
+        } catch (e) {
+            console.error("Not Dice | Error en apply-healing socket", e);
+        }
+        return;
+    }
 
     if (data.type === "not-dice.apply-graze") {
         try {
@@ -3706,8 +3757,28 @@ Hooks.once("ready", () => {
             const healingTypes = new Set(["healing", "temphp"]);
             const isHealingOnly = rolls.length > 0 && rolls.every(r => r.options?.type && healingTypes.has(r.options.type));
 
-            if (isHealingOnly && !game.user.isGM) {
-                return notDiceHandlePlayerAttack(rolls, rollConfig);
+            if (isHealingOnly) {
+                if (typeof globalThis.notDiceOpenHealingDialog === "function") {
+                    const subject = rollConfig?.subject;
+                    const item = subject?.item || (subject?.documentName === "Item" ? subject : null);
+                    
+                    const requestedDamageParts = rolls.map(r => ({
+                        formula: r.formula,
+                        type: r.options?.type || ""
+                    }));
+
+                    // Abrir nuestra nueva caja asincronamente
+                    globalThis.notDiceOpenHealingDialog({
+                        uuid: item?.uuid,
+                        itemName: item?.name,
+                        targetIds: Array.from(game.user.targets).map(t => t.id),
+                        senderName: game.user.name,
+                        requestedDamageParts: requestedDamageParts
+                    });
+                    
+                    // Retornamos un array vacio para que el sistema dnd5e no imprima mas mensajes ni siga el flujo
+                    return [];
+                }
             }
 
             const isAutoTriggered = rollConfig?.notDiceAutoTriggered ||

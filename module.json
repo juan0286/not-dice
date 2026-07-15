@@ -23,7 +23,8 @@
     "scripts/saving-throw.js",
     "scripts/damage-effects.js",
     "scripts/gm-damage-skills.js",
-    "scripts/description-parser.js"
+    "scripts/description-parser.js",
+    "scripts/healing-dialog.js"
   ],
   "styles": [
     "styles/not-dice.css"
