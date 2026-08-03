@@ -1778,7 +1778,7 @@ Hooks.once("ready", () => {
 
                     const hasHAM = t.actor.items?.some(i => {
                         const n = (i.name || "").toLowerCase();
-                        return i.type === "feat" && (n.includes("heavy armor master") || n.includes("maestro en armadura pesada"));
+                        return i.type === "feat" && (n.includes("heavy armor master") || n.includes("maestro en armadura pesada") || n.includes("maestro de armadura pesada"));
                     });
                     if (hasHAM) badges.push(`<span style="display:inline-block; font-size:0.75em; background:rgba(106,27,154,0.15); color:#ba68c8; padding:2px 6px; border-radius:8px; border:1px solid rgba(106,27,154,0.3); font-weight:bold;"><i class="fas fa-chess-rook"></i> Armadura Pesada (-Prof)</span>`);
 
@@ -2590,7 +2590,7 @@ Hooks.once("ready", () => {
                             const hpBefore = Number(t.actor.system?.attributes?.hp?.value ?? 0);
                             const hasHeavyArmorMaster = t.actor.items?.some(i => {
                                 const n = (i.name || "").toLowerCase();
-                                return i.type === "feat" && (n.includes("heavy armor master") || n.includes("maestro en armadura pesada"));
+                                return i.type === "feat" && (n.includes("heavy armor master") || n.includes("maestro en armadura pesada") || n.includes("maestro de armadura pesada"));
                             });
 
                             let finalValues = [];
@@ -2606,12 +2606,12 @@ Hooks.once("ready", () => {
                             }
 
                             if (hasHeavyArmorMaster) {
-                                const attackerProf = actor?.system?.attributes?.prof ?? 3;
+                                const targetProf = Number(t.actor.system?.attributes?.prof) || 2;
                                 const physicalTypes = new Set(["bludgeoning", "piercing", "slashing"]);
-                                finalValues = totalValues.map(tv => {
+                                finalValues = finalValues.map(tv => {
                                     if (physicalTypes.has(tv.type) && tv.value > 0) {
-                                        const reduced = Math.max(0, tv.value - attackerProf);
-                                        ui.notifications.info(`Not Dice | Armadura Pesada: -${attackerProf} daño (${tv.type}) en ${t.name}`);
+                                        const reduced = Math.max(0, tv.value - targetProf);
+                                        ui.notifications.info(`Not Dice | Armadura Pesada: -${targetProf} daño (${tv.type}) en ${t.name}`);
                                         return { ...tv, value: reduced };
                                     }
                                     return tv;
