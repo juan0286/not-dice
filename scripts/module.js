@@ -1503,10 +1503,12 @@ Hooks.once("ready", () => {
                                     options: {
                                         notDiceAutoTriggered: true,
                                         isCleaveAttack: isCleave,
-                                        notDiceVersatile: versatileChoice
+                                        notDiceVersatile: versatileChoice,
+                                        consume: false
                                     },
                                     isNickAttack: rollConfig.isNickAttack || rollConfig.options?.isNickAttack || rollConfig.event?.isNickAttack || false,
-                                    isCleaveAttack: isCleave
+                                    isCleaveAttack: isCleave,
+                                    consume: false
                                 });
                             }
                         }, 250);
@@ -1535,6 +1537,10 @@ Hooks.once("ready", () => {
          */
         const notDiceEvaluateDamageRoll = async (rolls, rollConfig, messageConfig) => {
             console.log("Not Dice | Damage buildEvaluate intercepted", rolls);
+            if (rollConfig) {
+                rollConfig.consume = false;
+                if (rollConfig.options) rollConfig.options.consume = false;
+            }
 
             const doubleDice = (formula) => {
                 return formula.replace(/(\d+)d(\d+)/g, (match, num, sides) => {
@@ -4580,6 +4586,43 @@ Hooks.on("deleteActiveEffect", async (effect, options, userId) => {
         console.log(`Not Dice | Transferred Slow changes to remaining effect: ${slowToUpdate.name} on ${actor.name}`);
     } catch (err) {
         console.error("Not Dice | Error transferring Slow changes", err);
+    }
+});
+
+Hooks.on("dnd5e.preRollDamage", (activity, rollConfig) => {
+    if (rollConfig) {
+        rollConfig.consume = false;
+        if (rollConfig.options) rollConfig.options.consume = false;
+    }
+});
+
+Hooks.on("dnd5e.preRollHealing", (activity, rollConfig) => {
+    if (rollConfig) {
+        rollConfig.consume = false;
+        if (rollConfig.options) rollConfig.options.consume = false;
+    }
+});
+
+// Prevenir la eliminación automática de consumibles u objetos de la mochila al llegar a cantidad 0
+Hooks.on("dnd5e.preUseActivity", (activity, usageConfig, dialogConfig, messageConfig) => {
+    if (usageConfig?.consume) {
+        usageConfig.consume.destroy = false;
+    }
+});
+
+Hooks.on("dnd5e.preUseItem", (item, config, options) => {
+    if (config) {
+        config.destroy = false;
+    }
+});
+
+Hooks.on("preDeleteItem", (item, options, userId) => {
+    const isConsumption = !!(options?.isConsumption || options?.dnd5e?.cause === "consumption" || options?.cause === "consumption");
+    const quantityIsZero = item?.system?.quantity === 0;
+
+    if (isConsumption || (quantityIsZero && (item?.type === "consumable" || item?.type === "loot"))) {
+        console.log(`Not Dice | Prevenido borrado automático del objeto '${item.name}' al llegar a cantidad 0.`);
+        return false;
     }
 });
 

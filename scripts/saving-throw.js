@@ -652,9 +652,9 @@ ${epicBtnHtml}
                     e.targetIds = targetIds;
 
                     if (dmgAct && typeof dmgAct.rollDamage === "function") {
-                        await dmgAct.rollDamage({ event: e, notDiceMultipliers: targetMultipliers, notDiceAutoTriggered: true });
+                        await dmgAct.rollDamage({ event: e, notDiceMultipliers: targetMultipliers, notDiceAutoTriggered: true, options: { consume: false }, consume: false });
                     } else if (typeof actualItem.rollDamage === "function") {
-                        await actualItem.rollDamage({ event: e, notDiceMultipliers: targetMultipliers, notDiceAutoTriggered: true });
+                        await actualItem.rollDamage({ event: e, notDiceMultipliers: targetMultipliers, notDiceAutoTriggered: true, options: { consume: false }, consume: false });
                     } else {
                         ui.notifications.warn("Not Dice | Este hechizo no tiene un bloque de daño configurado.");
                     }
@@ -1132,9 +1132,9 @@ Hooks.on("renderChatMessage", (message, html) => {
 
             let rolls;
             if (dmgAct && typeof dmgAct.rollDamage === "function") {
-                rolls = await dmgAct.rollDamage({ event: ev, options: { notDiceBypass: true } });
+                rolls = await dmgAct.rollDamage({ event: ev, options: { notDiceBypass: true, consume: false }, consume: false });
             } else if (typeof actualItem.rollDamage === "function") {
-                rolls = await actualItem.rollDamage({ event: ev, options: { notDiceBypass: true } });
+                rolls = await actualItem.rollDamage({ event: ev, options: { notDiceBypass: true, consume: false }, consume: false });
             } else {
                 ui.notifications.warn("Not Dice | Este hechizo no tiene un bloque de daño configurado.");
                 btn.disabled = false;

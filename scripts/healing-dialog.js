@@ -6,11 +6,34 @@ export const initHealingDialog = () => {
         senderName = game.user.name,
         requestedDamageParts = null
     } = {}) => {
-        const item = uuid ? await fromUuid(uuid) : null;
-        const actualItem = item?.item || item;
-        const actor = actualItem?.actor;
+        let item = uuid ? await fromUuid(uuid) : null;
+        let actualItem = item?.item || item;
+        let actor = actualItem?.actor;
 
-        if (!actualItem) {
+        if (!actualItem && uuid) {
+            try {
+                const parts = uuid.split(".");
+                if (parts.length >= 4 && parts[0] === "Actor") {
+                    const actorId = parts[1];
+                    const itemId = parts[3];
+                    const targetActor = game.actors.get(actorId) || canvas.tokens.placeables.find(t => t.actor?.id === actorId)?.actor;
+                    if (targetActor) {
+                        actualItem = targetActor.items.get(itemId);
+                        actor = targetActor;
+                    }
+                }
+            } catch (e) {}
+        }
+
+        // Obtener la fórmula solicitada si se pasó
+        const normalizedRequestedParts = Array.isArray(requestedDamageParts)
+            ? requestedDamageParts.map(part => ({
+                formula: String(part?.formula || "").trim(),
+                type: String(part?.type || "").trim().toLowerCase()
+            })).filter(part => part.formula.length > 0)
+            : [];
+
+        if (!actualItem && normalizedRequestedParts.length === 0) {
             ui.notifications?.warn("Not Dice | No se pudo encontrar el objeto origen para la curación.");
             return false;
         }
@@ -26,13 +49,6 @@ export const initHealingDialog = () => {
         }
 
         // Obtener la fórmula
-        const normalizedRequestedParts = Array.isArray(requestedDamageParts)
-            ? requestedDamageParts.map(part => ({
-                formula: String(part?.formula || "").trim(),
-                type: String(part?.type || "").trim().toLowerCase()
-            })).filter(part => part.formula.length > 0)
-            : [];
-
         let sourceRows = normalizedRequestedParts.length > 0
             ? normalizedRequestedParts
             : (typeof globalThis.notDiceExtractDamageRows === "function" 
