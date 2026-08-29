@@ -64,6 +64,45 @@ globalThis.notDiceMasteries = {
     },
 
     /**
+     * Publica una tarjeta informativa en el chat notificando la aplicación de una maestría de arma.
+     */
+    async postMasteryChat({ attacker, target, masteryName, description, icon = "fa-hand-fist", weaponName = null, whisper = null }) {
+        try {
+            const attackerName = attacker?.name || "Atacante";
+            const targetName = target?.name || target?.actor?.name || "Objetivo";
+            const weaponText = weaponName ? ` con <strong>${weaponName}</strong>` : "";
+            
+            const messageData = {
+                speaker: ChatMessage.getSpeaker({ actor: attacker }),
+                flags: { "not-dice": { isMasteryMessage: true } },
+                content: `
+                    <div class="not-dice-mastery-chat-card" style="border: 1px solid rgba(186, 104, 200, 0.4); background: rgba(106, 27, 154, 0.08); border-radius: 8px; padding: 10px; font-family: inherit; margin-top: 4px; box-shadow: 0 2px 6px rgba(0,0,0,0.15);">
+                        <div style="display: flex; align-items: center; justify-content: space-between; border-bottom: 1px solid rgba(186, 104, 200, 0.25); padding-bottom: 5px; margin-bottom: 6px;">
+                            <span style="font-weight: 800; color: #ba68c8; font-size: 0.95em; display: flex; align-items: center; gap: 6px;">
+                                <i class="fas ${icon}"></i> Maestría de Arma: ${masteryName}
+                            </span>
+                        </div>
+                        <div style="font-size: 0.9em; line-height: 1.35;">
+                            <strong>${attackerName}</strong> usó <strong>${masteryName}</strong>${weaponText} sobre <strong>${targetName}</strong>.
+                        </div>
+                        <div style="font-size: 0.84em; opacity: 0.85; margin-top: 6px; background: rgba(0,0,0,0.12); padding: 5px 8px; border-radius: 4px; border-left: 3px solid #ba68c8; line-height: 1.3;">
+                            ${description}
+                        </div>
+                    </div>
+                `
+            };
+
+            if (whisper && Array.isArray(whisper) && whisper.length > 0) {
+                messageData.whisper = whisper;
+            }
+
+            return await ChatMessage.create(messageData);
+        } catch (err) {
+            (globalThis.notDiceLogger || console).error("Error enviando mensaje de maestría al chat:", err);
+        }
+    },
+
+    /**
      * Aplica el efecto de Debilitar (Sap) a un actor.
      */
     async applySapEffect(targetActor, attackerActor, weaponItem) {
@@ -102,6 +141,14 @@ globalThis.notDiceMasteries = {
 
         const created = await targetActor.createEmbeddedDocuments("ActiveEffect", [effectData]);
         if (created.length > 0) {
+            await this.postMasteryChat({
+                attacker: attackerActor,
+                target: targetActor,
+                masteryName: "Debilitar (Sap)",
+                description: "El objetivo tiene desventaja en su próxima tirada de ataque antes del inicio del siguiente turno del atacante.",
+                icon: "fa-shield-halved",
+                weaponName: weaponItem?.name
+            });
             return true;
         }
         return false;
@@ -178,6 +225,14 @@ globalThis.notDiceMasteries = {
                         if (result === "prone") {
                             await targetActor.toggleStatusEffect("prone", { active: true });
                             ui.notifications.info(`Not Dice | Derribar: ${targetActor.name} está Derribado.`);
+                            await globalThis.notDiceMasteries?.postMasteryChat?.({
+                                attacker: attackerActor,
+                                target: targetActor,
+                                masteryName: "Derribar (Topple)",
+                                description: `El objetivo no superó la salvación de Constitución (CD ${toppleDC}) y cae <strong>Derribado (Prone)</strong>.`,
+                                icon: "fa-person-falling",
+                                weaponName: weaponItem?.name
+                            });
                         }
                         resolveTopple();
                     }
@@ -199,6 +254,14 @@ globalThis.notDiceMasteries = {
                             callback: async () => {
                                 await targetActor.toggleStatusEffect("prone", { active: true });
                                 ui.notifications.info(`Not Dice | Derribar: ${targetActor.name} está Derribado.`);
+                                await globalThis.notDiceMasteries?.postMasteryChat?.({
+                                    attacker: attackerActor,
+                                    target: targetActor,
+                                    masteryName: "Derribar (Topple)",
+                                    description: `El objetivo no superó la salvación de Constitución (CD ${toppleDC}) y cae <strong>Derribado (Prone)</strong>.`,
+                                    icon: "fa-person-falling",
+                                    weaponName: weaponItem?.name
+                                });
                                 resolveTopple();
                             }
                         },
@@ -227,6 +290,15 @@ globalThis.notDiceMasteries = {
      */
     async runPushEffect(targetActor, attackerActor, weaponItem) {
         if (!targetActor || !attackerActor) return;
+
+        await this.postMasteryChat({
+            attacker: attackerActor,
+            target: targetActor,
+            masteryName: "Empujar (Push)",
+            description: "Si el objetivo es de tamaño Grande o menor, es empujado 10 pies en línea recta respecto al atacante.",
+            icon: "fa-arrow-right",
+            weaponName: weaponItem?.name
+        });
 
         const DialogV2 = foundry?.applications?.api?.DialogV2;
         const pushContent = `

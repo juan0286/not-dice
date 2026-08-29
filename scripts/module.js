@@ -2608,6 +2608,25 @@ Hooks.once("ready", () => {
 
                                     await t.actor.createEmbeddedDocuments("ActiveEffect", [effectData]);
                                     ui.notifications.info(`Not Dice | Maestría Aplicada: ${activeMastery.label} -> ${t.name}`);
+
+                                    let masteryDesc = `Efecto de maestría aplicado sobre <strong>${t.name}</strong>.`;
+                                    let iconClass = "fa-hand-fist";
+                                    if (isVex) {
+                                        masteryDesc = `El atacante obtiene ventaja en su próxima tirada de ataque contra este objetivo antes del final de su próximo turno.`;
+                                        iconClass = "fa-crosshairs";
+                                    } else if (isSlow) {
+                                        masteryDesc = `La velocidad de movimiento del objetivo se reduce en 10 pies hasta el inicio del próximo turno del atacante.`;
+                                        iconClass = "fa-person-running";
+                                    }
+
+                                    await globalThis.notDiceMasteries?.postMasteryChat?.({
+                                        attacker: item.actor,
+                                        target: t,
+                                        masteryName: activeMastery.label,
+                                        description: masteryDesc,
+                                        icon: iconClass,
+                                        weaponName: item.name
+                                    });
                                 }
                             }
                         }
