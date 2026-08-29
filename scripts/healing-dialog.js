@@ -295,26 +295,37 @@ export const initHealingDialog = () => {
             <div style="padding:10px; text-align:center; display:flex; flex-direction:column; gap:12px;">
                 ${targetHtml}
                 
-                <div>
-                    <div style="font-size:0.9em; opacity:0.8; margin-bottom:4px;">Fórmula de ${titleText}</div>
-                    <div style="display:flex; justify-content:center; align-items:center; gap:8px;">
-                        <div style="font-size:1.2em; font-family:monospace; font-weight:bold; padding:4px 12px; background:rgba(0,0,0,0.1); border:1px solid var(--color-border-light-2, #ccc); border-radius:4px;">
-                            ${firstRow.formula}
-                        </div>
-                        <button type="button" id="not-dice-heal-roll-btn" style="flex:0 0 auto; width:auto; padding:4px 8px; cursor:pointer;" title="Lanzar Dados">
-                            <i class="fas fa-dice-d20"></i> Lanzar
-                        </button>
+                <div style="display:flex; flex-direction:column; align-items:center; gap:8px; margin: 4px 0 6px 0;">
+                    <div style="font-size:0.85em; opacity:0.85; font-weight:600; text-transform:uppercase; letter-spacing:0.5px;">
+                        Fórmula: <span style="font-family:monospace; font-weight:800; color:#22c55e; background:rgba(34,197,94,0.12); padding:2px 8px; border-radius:4px; border:1px solid rgba(34,197,94,0.3); font-size:1.1em;">${firstRow.formula}</span>
                     </div>
+
+                    <!-- Botón Grande, Centrado y Verde para Lanzar Dados -->
+                    <button type="button" id="not-dice-heal-roll-btn" class="not-dice-heal-roll-btn" style="width:100%; max-width:280px; padding:12px 16px; background:linear-gradient(135deg, #22c55e 0%, #15803d 100%); color:#ffffff; font-weight:800; font-size:1.15em; border:2px solid #4ade80; border-radius:8px; cursor:pointer; display:flex; align-items:center; justify-content:center; gap:10px; box-shadow:0 4px 14px rgba(34, 197, 94, 0.45); transition:all 0.2s ease; text-shadow:0 1px 2px rgba(0,0,0,0.5);">
+                        <i class="fas fa-dice-d20" style="font-size:1.3em;"></i>
+                        <span>Lanzar Dados</span>
+                    </button>
                 </div>
 
-                <div>
-                    <label style="font-size:0.9em; font-weight:bold; display:block; margin-bottom:4px;">Resultado a Aplicar:</label>
-                    <input type="number" id="not-dice-heal-result" value="0" style="width:100px; text-align:center; font-size:1.4em; font-weight:bold; background:rgba(0,0,0,0.1); border:1px solid var(--color-border-light-2, #ccc); border-radius:4px; padding:6px; margin:0 auto; display:block;">
+                <div style="margin-top:2px;">
+                    <label style="font-size:0.88em; font-weight:bold; display:block; margin-bottom:4px; opacity:0.9;">Resultado a Aplicar:</label>
+                    <input type="number" id="not-dice-heal-result" value="0" style="width:120px; text-align:center; font-size:1.5em; font-weight:900; color:#22c55e; background:rgba(0,0,0,0.12); border:2px solid rgba(34,197,94,0.4); border-radius:6px; padding:6px; margin:0 auto; display:block; box-shadow:inset 0 0 8px rgba(34,197,94,0.15); transition: all 0.3s ease;">
                 </div>
 
-                <div style="font-size:0.85em; opacity:0.7;">
+                <div style="font-size:0.82em; opacity:0.75; margin-top:2px;">
                     <i>${itemName || actualItem.name}</i> (por ${senderName})
                 </div>
+
+                <style>
+                    .not-dice-heal-roll-btn:hover {
+                        transform: translateY(-2px) scale(1.02);
+                        box-shadow: 0 6px 18px rgba(34, 197, 94, 0.65) !important;
+                        border-color: #86efac !important;
+                    }
+                    .not-dice-heal-roll-btn:active {
+                        transform: translateY(1px) scale(0.99);
+                    }
+                </style>
             </div>
         `;
 
@@ -424,20 +435,35 @@ export const initHealingDialog = () => {
         const setupRollEvent = (element) => {
             const btn = element.querySelector("#not-dice-heal-roll-btn");
             const input = element.querySelector("#not-dice-heal-result");
+            const icon = btn?.querySelector("i");
             
             if (btn) {
                 btn.addEventListener("click", async (e) => {
                     e.preventDefault();
+                    if (btn.disabled) return;
+                    btn.disabled = true;
+                    if (icon) icon.className = "fas fa-spinner fa-spin";
+
                     try {
                         const roll = await new Roll(firstRow.formula, actor?.getRollData()).evaluate({ async: true });
                         await roll.toMessage({
                             speaker: ChatMessage.getSpeaker({ actor: actor }),
                             flavor: `<b>${titleText}</b> - ${itemName || actualItem.name}`,
                         });
-                        if (input) input.value = roll.total;
+                        if (input) {
+                            input.value = roll.total;
+                            input.style.boxShadow = "0 0 16px rgba(34, 197, 94, 0.8)";
+                            input.style.borderColor = "#22c55e";
+                            setTimeout(() => {
+                                input.style.boxShadow = "inset 0 0 8px rgba(34,197,94,0.15)";
+                            }, 1200);
+                        }
                     } catch (err) {
                         (globalThis.notDiceLogger || console).error("Error tirando dados de curación:", err);
                         ui.notifications?.error("Error al tirar los dados.");
+                    } finally {
+                        btn.disabled = false;
+                        if (icon) icon.className = "fas fa-dice-d20";
                     }
                 });
             }
