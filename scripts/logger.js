@@ -283,7 +283,7 @@ class NotDiceLogger {
     notifyError(userMessage, error = null, options = {}) {
         this.error(userMessage, error);
         if (typeof ui !== "undefined" && ui.notifications?.error) {
-            ui.notifications.error(`${this.moduleName} | ${userMessage}`, options);
+            ui.notifications.error(`${this.moduleName} | ${userMessage}`, { ...options, _fromNotDiceLogger: true });
         }
     }
 
@@ -296,7 +296,7 @@ class NotDiceLogger {
     notifyWarn(userMessage, details = null, options = {}) {
         this.warn(userMessage, details);
         if (typeof ui !== "undefined" && ui.notifications?.warn) {
-            ui.notifications.warn(`${this.moduleName} | ${userMessage}`, options);
+            ui.notifications.warn(`${this.moduleName} | ${userMessage}`, { ...options, _fromNotDiceLogger: true });
         }
     }
 
@@ -308,7 +308,7 @@ class NotDiceLogger {
     notifyInfo(userMessage, options = {}) {
         this.info(userMessage);
         if (typeof ui !== "undefined" && ui.notifications?.info) {
-            ui.notifications.info(`${this.moduleName} | ${userMessage}`, options);
+            ui.notifications.info(`${this.moduleName} | ${userMessage}`, { ...options, _fromNotDiceLogger: true });
         }
     }
 
@@ -384,8 +384,36 @@ const logger = new NotDiceLogger();
 // Asignación global para compatibilidad con todos los scripts y hooks
 globalThis.notDiceLogger = logger;
 
-// Registro del socket listener para recibir logs remotos en el cliente de 'Juan'
+// Interceptación de notificaciones en pantalla (ui.notifications) para duplicar en consola como info
+const installNotificationLogger = () => {
+    if (typeof ui === "undefined" || !ui.notifications) return;
+    if (ui.notifications._notDiceLoggingHooked) return;
+    ui.notifications._notDiceLoggingHooked = true;
+
+    const originalNotify = ui.notifications.notify;
+    if (typeof originalNotify === "function") {
+        ui.notifications.notify = function (message, type = "info", options = {}) {
+            try {
+                if (!options?._fromNotDiceLogger) {
+                    const msgStr = typeof message === "string" ? message : String(message);
+                    if (msgStr.includes("Not Dice") || msgStr.includes("not-dice") || options?.fromNotDice) {
+                        const cleanMsg = msgStr.replace(/^Not Dice\s*\|\s*/i, "").trim();
+                        logger.info(`[Notificación en Pantalla (${String(type).toUpperCase()})] ${cleanMsg}`);
+                    }
+                }
+            } catch (_) {}
+            return originalNotify.apply(this, arguments);
+        };
+    }
+};
+
+Hooks.once("init", () => {
+    installNotificationLogger();
+});
+
+// Registro del socket listener para recibir logs remotos en el cliente de 'Juan' e interceptor tardío
 Hooks.once("ready", () => {
+    installNotificationLogger();
     if (typeof game !== "undefined" && game.socket) {
         game.socket.on("module.not-dice", (data) => {
             if (data?.type === "not-dice.remote-log") {

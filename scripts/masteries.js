@@ -68,6 +68,11 @@ globalThis.notDiceMasteries = {
      */
     async postMasteryChat({ attacker, target, masteryName, description, icon = "fa-hand-fist", weaponName = null, whisper = null }) {
         try {
+            if (typeof game !== "undefined" && game.settings?.settings?.has?.("not-dice.enableMasteryChatMessages")) {
+                const isEnabled = game.settings.get("not-dice", "enableMasteryChatMessages");
+                if (isEnabled === false) return null;
+            }
+
             const attackerName = attacker?.name || "Atacante";
             const targetName = target?.name || target?.actor?.name || "Objetivo";
             const weaponText = weaponName ? ` con <strong>${weaponName}</strong>` : "";

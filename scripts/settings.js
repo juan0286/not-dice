@@ -72,6 +72,15 @@ Hooks.once("init", () => {
         default: true
     });
 
+    game.settings.register("not-dice", "enableMasteryChatMessages", {
+        name: "Mostrar Mensajes de Maestría en el Chat",
+        hint: "Publica una tarjeta informativa en el chat cuando se activa y aplica una maestría de arma sobre un objetivo.",
+        scope: "client",
+        config: true,
+        type: Boolean,
+        default: true
+    });
+
     // --- Configuraciones de Áreas y Traducción (saving-throw.js) ---
     game.settings.register("not-dice", "enableTemplateIntercept", {
         name: "Detectar Área de Efecto",
