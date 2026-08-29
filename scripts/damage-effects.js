@@ -107,7 +107,7 @@ export function getDamageIncreasingEffects(actor) {
                     }
                 }
             } catch(e) {
-                console.warn("Not Dice | Error inspeccionando origen de efecto", e);
+                (globalThis.notDiceLogger || console).warn("Error inspeccionando origen de efecto", e);
             }
         }
         

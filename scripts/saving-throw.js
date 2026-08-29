@@ -113,7 +113,7 @@ async function translateAndUpdate(htmlDesc, targetId) {
                 finalTranslation += `<p>${chunks[i]}</p>`; // Fallback al texto original si falla
             }
         } catch (error) {
-            console.error("Not Dice | Error en la API de MyMemory:", error);
+            (globalThis.notDiceLogger || console).error("Error en la API de MyMemory:", error);
             if (i === 0) finalTranslation = "<p><em>Error de red al intentar traducir.</em></p>";
             break;
         }
@@ -269,7 +269,7 @@ async function handleAreaCreation(document, userId, tipoLog) {
             }
         }
     } catch (error) {
-        console.error("Not Dice | Fallo al procesar el ítem:", error);
+        (globalThis.notDiceLogger || console).error("Fallo al procesar el ítem:", error);
     }
 
     const areaObj = await waitForAreaObject(document);
@@ -586,7 +586,7 @@ ${epicBtnHtml}
                         }
                     }
                 } catch (err) {
-                    console.error("Not Dice | Error al ejecutar tirada de salvación", err);
+                    (globalThis.notDiceLogger || console).error("Error al ejecutar tirada de salvación", err);
                 }
             });
         });
@@ -659,7 +659,7 @@ ${epicBtnHtml}
                         ui.notifications.warn("Not Dice | Este hechizo no tiene un bloque de daño configurado.");
                     }
                 } catch (err) {
-                    console.error("Not Dice | Error tirando daño:", err);
+                    (globalThis.notDiceLogger || console).error("Error tirando daño:", err);
                 }
             });
         }
@@ -693,7 +693,7 @@ ${epicBtnHtml}
                     epicMacro.execute();
                     macroFound = true;
                 } else if (ui.EpicRolls5e && typeof ui.EpicRolls5e.requestRoll === "function") {
-                    console.log("Not Dice | API Epic Rolls encontrada, enviando estructura estricta...");
+                    (globalThis.notDiceLogger || console).debug("API Epic Rolls encontrada, enviando estructura estricta...");
                     // Opción 2: Fallback a llamar a la API directamente con la estructura estricta
                     const epicData = {
                         actors: checkedTokens.map(t => t.actor?.uuid).filter(Boolean),
@@ -720,7 +720,7 @@ ${epicBtnHtml}
 
                     // Función para actualizar radios basada en resultados
                     const updateTokensFromResult = (results) => {
-                        console.log("Not Dice | Procesando resultados de Epic:", results);
+                        (globalThis.notDiceLogger || console).debug("Procesando resultados de Epic:", results);
 
                         // Extraemos el objeto de resultados reales si viene anidado (común en TheRipper93)
                         let actualResults = results;
@@ -736,7 +736,7 @@ ${epicBtnHtml}
 
                         for (const res of resultsArray) {
                             if (!res) continue;
-                            console.log(`Not Dice | Inspeccionando res crudo de Epic:`, JSON.stringify({
+                            (globalThis.notDiceLogger || console).debug("Inspeccionando res crudo de Epic:", JSON.stringify({
                                 total: res.total, success: res.success, isSuccess: res.isSuccess, pass: res.pass
                             }));
 
@@ -757,14 +757,14 @@ ${epicBtnHtml}
                                 const numericRoll = parseInt(rollValue);
                                 if (!isNaN(dc) && !isNaN(numericRoll)) {
                                     isSuccess = numericRoll >= dc;
-                                    console.log(`Not Dice | Evaluación manual: Tirada (${numericRoll}) vs CD (${dc}) -> ${isSuccess ? 'PASA' : 'FALLA'}`);
+                                    (globalThis.notDiceLogger || console).debug(`Evaluación manual: Tirada (${numericRoll}) vs CD (${dc}) -> ${isSuccess ? 'PASA' : 'FALLA'}`);
                                 }
                             }
 
                             // Intentamos encontrar el ID del actor o token
                             const actorId = res.actorId || res.actor?._id || res.actor?.id || res.tokenId || res.token?._id || res.token?.id || res.id || res._keyId || (typeof res.actor === 'string' ? res.actor : null);
 
-                            console.log(`Not Dice | Analizando actor/token ID: ${actorId} - Éxito: ${isSuccess}`);
+                            (globalThis.notDiceLogger || console).debug(`Analizando actor/token ID: ${actorId} - Éxito: ${isSuccess}`);
 
                             if (isSuccess !== undefined && actorId) {
                                 // Buscar el token afectado comparando id, uuid del actor y uuid del token
@@ -776,7 +776,7 @@ ${epicBtnHtml}
                                 );
 
                                 if (targetToken) {
-                                    console.log(`Not Dice | ¡Match! Token encontrado: ${targetToken.name}`);
+                                    (globalThis.notDiceLogger || console).debug(`¡Match! Token encontrado: ${targetToken.name}`);
                                     const currentState = tokenStates[targetToken.id];
                                     const newState = isSuccess ? 'pass' : 'fail';
                                     if (currentState !== newState) {
@@ -784,7 +784,7 @@ ${epicBtnHtml}
                                         updated++;
                                     }
                                 } else {
-                                    console.warn(`Not Dice | No se encontró el token para ID: ${actorId}`);
+                                    (globalThis.notDiceLogger || console).warn(`No se encontró el token para ID: ${actorId}`);
                                 }
                             }
                         }
@@ -797,7 +797,7 @@ ${epicBtnHtml}
                             if (res && (Array.isArray(res) || Object.keys(res).length > 0)) {
                                 updateTokensFromResult(res);
                             }
-                        }).catch(e => console.error("Not Dice | Promesa Epic rechazada:", e));
+                        }).catch(e => (globalThis.notDiceLogger || console).error("Promesa Epic rechazada:", e));
                     }
 
                     // Intento 2: Atrapar resultados directamente del chat por si la promesa no los devuelve
@@ -991,7 +991,7 @@ ${epicBtnHtml}
             }, { width: 500 }).render(true);
         }
     } catch (error) {
-        console.error("Not Dice | Error crítico al intentar mostrar la ventana de diálogo:", error);
+        (globalThis.notDiceLogger || console).error("Error crítico al intentar mostrar la ventana de diálogo:", error);
     }
 };
 
@@ -1055,7 +1055,7 @@ Hooks.on("renderChatMessage", (message, html) => {
 
             btn.innerHTML = `<i class='fas fa-check'></i> Salvaciones Enviadas`;
         } catch (e) {
-            console.error("Not Dice | Error tirando salvación", e);
+            (globalThis.notDiceLogger || console).error("Error tirando salvación", e);
             btn.disabled = false;
             btn.innerHTML = "Error. Reintentar";
         }
@@ -1094,7 +1094,7 @@ Hooks.on("renderChatMessage", (message, html) => {
                         requestedDamageParts = parsed;
                     }
                 } catch (err) {
-                    console.warn("Not Dice | No se pudo parsear data-damage-parts", err);
+                    (globalThis.notDiceLogger || console).warn("No se pudo parsear data-damage-parts", err);
                 }
             }
 
@@ -1192,7 +1192,7 @@ Hooks.on("renderChatMessage", (message, html) => {
 
             btn.innerHTML = `<i class='fas fa-check'></i> Daño Enviado (${grandTotal})`;
         } catch (e) {
-            console.error("Not Dice | Error tirando daño del hechizo", e);
+            (globalThis.notDiceLogger || console).error("Error tirando daño del hechizo", e);
             btn.disabled = false;
             btn.innerHTML = "Error. Reintentar";
         }

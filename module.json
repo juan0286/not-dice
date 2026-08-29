@@ -1,7 +1,7 @@
 {
   "id": "not-dice",
   "title": "Not Dice",
-  "version": "2.13.16",
+  "version": "2.13.17",
   "compatibility": {
     "minimum": "13",
     "verified": "14"
@@ -14,6 +14,7 @@
     }
   ],
   "esmodules": [
+    "scripts/logger.js",
     "scripts/settings.js",
     "scripts/constants.js",
     "scripts/dice-colors.js",

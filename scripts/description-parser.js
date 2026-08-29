@@ -31,7 +31,7 @@ export async function enrichItemDescription(item) {
         
         return enriched;
     } catch (error) {
-        console.error("Not Dice | Error interpretando etiquetas dinámicas de la descripción:", error);
+        (globalThis.notDiceLogger || console).error("Error interpretando etiquetas dinámicas de la descripción:", error);
         return rawDescription; // Fallback a la versión sin procesar si hay error
     }
 }

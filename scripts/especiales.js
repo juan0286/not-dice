@@ -12,11 +12,11 @@ globalThis.notDiceEspeciales = {
      * @returns {boolean}
      */
     hasSavageAttacker(actor, item) {
-        console.log("Not Dice Debug | hasSavageAttacker check", { actor: actor?.name, item: item?.name, itemType: item?.type });
+        (globalThis.notDiceLogger || console).debug("hasSavageAttacker check", { actor: actor?.name, item: item?.name, itemType: item?.type });
         if (!actor || !item) return false;
         
         if (item.type !== "weapon") {
-            console.log("Not Dice Debug | hasSavageAttacker false: item is not weapon");
+            (globalThis.notDiceLogger || console).debug("hasSavageAttacker false: item is not weapon");
             return false;
         }
 
@@ -29,7 +29,7 @@ globalThis.notDiceEspeciales = {
                 sysId === "savage-attacker"
             );
         });
-        console.log("Not Dice Debug | hasSavageAttacker hasFeat", hasFeat);
+        (globalThis.notDiceLogger || console).debug("hasSavageAttacker hasFeat", hasFeat);
         return !!hasFeat;
     },
 
@@ -49,7 +49,7 @@ globalThis.notDiceEspeciales = {
             ? lastTurn === currentTurn
             : (typeof lastTurn === "number" && (Date.now() - lastTurn) < 6000);
 
-        console.log("Not Dice Debug | isSavageAttackerUsed check", alreadyUsed, { lastTurn, currentTurn });
+        (globalThis.notDiceLogger || console).debug("isSavageAttackerUsed check", alreadyUsed, { lastTurn, currentTurn });
         return alreadyUsed;
     },
 
@@ -130,7 +130,7 @@ globalThis.notDiceEspeciales = {
                 const newFormula = `${originalRoll.formula} + ${profBonus}[GWM]`;
                 const DamageRoll = CONFIG.Dice.DamageRoll;
                 rolls[0] = new DamageRoll(newFormula, originalRoll.data, originalRoll.options);
-                console.log(`Not Dice | Great Weapon Master detectado: Fórmula base modificada a ${newFormula}`);
+                (globalThis.notDiceLogger || console).info(`Great Weapon Master detectado: Fórmula base modificada a ${newFormula}`);
             }
         }
     },

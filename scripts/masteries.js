@@ -160,7 +160,7 @@ globalThis.notDiceMasteries = {
                     if (typeof targetActor.rollAbilitySave === "function") {
                         await targetActor.rollAbilitySave("con", { event: ev });
                     } else {
-                        console.error("Not Dice | No se pudo lanzar la salvación", e);
+                        (globalThis.notDiceLogger || console).error("No se pudo lanzar la salvación", e);
                     }
                 }
             };

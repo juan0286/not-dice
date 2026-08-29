@@ -4,7 +4,16 @@
 // ============================================================
 
 Hooks.once("init", () => {
-    console.log("Not Dice | Registrando configuraciones...");
+    (globalThis.notDiceLogger || console).info("Registrando configuraciones...");
+
+    game.settings.register("not-dice", "enableDebugLogs", {
+        name: "Habilitar Logs de Depuración",
+        hint: "Muestra logs detallados y trazas de depuración del módulo en la consola.",
+        scope: "client",
+        config: true,
+        type: Boolean,
+        default: false
+    });
 
     // --- Configuraciones Generales (module.js) ---
     game.settings.register("not-dice", "enableSimultaneousRoll", {

@@ -121,7 +121,7 @@ const notDiceExtractDiceOnly = (item, formula, negativeMod = 0) => {
                 }
             }
         } catch (e) {
-            console.warn("Not Dice | notDiceExtractDiceOnly: error reading item parts", e);
+            (globalThis.notDiceLogger || console).warn("notDiceExtractDiceOnly: error reading item parts", e);
         }
     }
     // Intento 2: extraer todos los NdX de la fórmula resuelta y concatenarlos
@@ -161,7 +161,7 @@ const notDiceBuildAttackPayload = (rollConfig, isDamage = false) => {
             notDiceAutoTriggered: !isDamage
         };
     } catch (err) {
-        console.error("Not Dice | Error building payload", err);
+        (globalThis.notDiceLogger || console).error("Error building payload", err);
         return null;
     }
 };
@@ -200,7 +200,7 @@ const notDiceExtractDamageRows = (actualItem) => {
                 resolved = Roll.replaceFormulaData(resolved, rollData, { missing: 0, warn: false });
             }
         } catch (err) {
-            console.warn("Not Dice | No se pudo resolver la fórmula de daño", err);
+            (globalThis.notDiceLogger || console).warn("No se pudo resolver la fórmula de daño", err);
         }
 
         // Normaliza casos como "d8 + 4" a "1d8 + 4" para que se vea claro y sea evaluable.
@@ -536,7 +536,7 @@ const notDiceGetDamageFormulaBreakdown = (formula, isOffhandWithoutStyle, item, 
             }
         }
     } catch (e) {
-        console.warn("Not Dice | Error parseando parte constante de la formula de daño", e);
+        (globalThis.notDiceLogger || console).warn("Error parseando parte constante de la formula de daño", e);
     }
 
     if (abilityModVal !== 0) {
@@ -1110,7 +1110,7 @@ const notDiceHandleAttackSocket = async (data) => {
                 }
             }
         } catch (e) {
-            console.error("Not Dice | Error en apply-healing socket", e);
+            (globalThis.notDiceLogger || console).error("Error en apply-healing socket", e);
         }
         return;
     }
@@ -1136,7 +1136,7 @@ const notDiceHandleAttackSocket = async (data) => {
             });
             ui.notifications?.info(`Not Dice | Abriendo caja de resolución de Rozar para el GM.`);
         } catch (e) {
-            console.error("Not Dice | Error en apply-graze socket handler", e);
+            (globalThis.notDiceLogger || console).error("Error en apply-graze socket handler", e);
         }
         return;
     }
@@ -1148,7 +1148,7 @@ const notDiceHandleAttackSocket = async (data) => {
 
     // Solo log sencillo cuando un jugador inicia ataque
     if (data.type === "not-dice.attack-log") {
-        console.log(`Not Dice | Ataque de ${data.userName || "Jugador"}: ${data.attacker} con ${data.itemName} -> Objetivos: ${data.targets}`);
+        (globalThis.notDiceLogger || console).info(`Ataque de ${data.userName || "Jugador"}: ${data.attacker} con ${data.itemName} -> Objetivos: ${data.targets}`);
         return;
     }
 
@@ -1167,7 +1167,7 @@ const notDiceHandleAttackSocket = async (data) => {
 
             await handler(data.mode === "disadvantage" ? "disadvantage" : "advantage");
         } catch (err) {
-            console.error("Not Dice | Error aplicando modo de ataque desde chat", err);
+            (globalThis.notDiceLogger || console).error("Error aplicando modo de ataque desde chat", err);
         }
         return;
     }
@@ -1228,7 +1228,7 @@ const notDiceHandleAttackSocket = async (data) => {
             });
             ui.notifications?.info(`Not Dice | Daño de hechizo enviado por ${data.senderName || "jugador"}.`);
         } catch (e) {
-            console.error("Not Dice | Error en show-spell-damage", e);
+            (globalThis.notDiceLogger || console).error("Error en show-spell-damage", e);
         }
         return;
     }
@@ -1256,7 +1256,7 @@ const notDiceHandleAttackSocket = async (data) => {
         });
         ui.notifications?.info(`Not Dice | Resolviendo daño enviado por ${data.senderName || "jugador"}.`);
     } catch (err) {
-        console.error("Not Dice | Error inyectando popup directo", err);
+        (globalThis.notDiceLogger || console).error("Error inyectando popup directo", err);
     }
 };
 
@@ -1267,7 +1267,7 @@ Hooks.once("ready", () => {
         globalThis._notDiceSocketReady = true;
         game.socket.on("module.not-dice", notDiceHandleAttackSocket);
     }
-    console.log("Not Dice | Module Ready");
+    (globalThis.notDiceLogger || console).info("Module Ready");
 
     // --- D20Roll (Attack) Patching ---
     const D20Roll = CONFIG.Dice.D20Roll;
@@ -1276,10 +1276,10 @@ Hooks.once("ready", () => {
         const originalBuildEvaluate = D20Roll.buildEvaluate;
 
         D20Roll.buildConfigure = async function (config, dialog, message) {
-            console.log("Not Dice | D20 buildConfigure intercepted", config);
+            (globalThis.notDiceLogger || console).debug("D20 buildConfigure intercepted", config);
 
             if (config.isNickAttack) {
-                console.log("Not Dice | >>> ATAQUE MELLAR DETECTADO <<<");
+                (globalThis.notDiceLogger || console).debug(">>> ATAQUE MELLAR DETECTADO <<<");
                 const actor = config.subject?.actor;
                 const hasTwoWeaponStyle = actor?.items?.some(i =>
                     i.system?.identifier === "two-weapon-fighting" ||
@@ -1288,9 +1288,9 @@ Hooks.once("ready", () => {
                 );
 
                 if (hasTwoWeaponStyle) {
-                    console.log("Not Dice | Estilo de Combate Two-Weapon Fighting: DETECTADO");
+                    (globalThis.notDiceLogger || console).debug("Estilo de Combate Two-Weapon Fighting: DETECTADO");
                 } else {
-                    console.log("Not Dice | Estilo de Combate Two-Weapon Fighting: NO DETECTADO");
+                    (globalThis.notDiceLogger || console).debug("Estilo de Combate Two-Weapon Fighting: NO DETECTADO");
                 }
             }
 
@@ -1299,7 +1299,7 @@ Hooks.once("ready", () => {
                     config.subject.constructor.name === "AttackActivity");
 
             if (isAttack) {
-                console.log("Not Dice | Skipping system dialog and chat message for Attack.");
+                (globalThis.notDiceLogger || console).debug("Skipping system dialog and chat message for Attack.");
                 dialog = foundry.utils.mergeObject(dialog ?? {}, { configure: false });
                 if (message) message.create = false;
             }
@@ -1416,7 +1416,7 @@ Hooks.once("ready", () => {
         };
 
         D20Roll.buildEvaluate = async function (rolls, rollConfig, messageConfig) {
-            console.log("Not Dice | D20 buildEvaluate intercepted", rolls);
+            (globalThis.notDiceLogger || console).debug("D20 buildEvaluate intercepted", rolls);
             const isAttack = notDiceIsAttack(rollConfig.subject);
 
             if (isAttack) {
@@ -1461,7 +1461,7 @@ Hooks.once("ready", () => {
                 if (item?.system?.properties?.has?.("ver")) {
                     const choice = await notDicePromptVersatile(item, rollConfig.subject);
                     if (!choice) {
-                        console.log("Not Dice | Versatile weapon dialog cancelled. Aborting player attack.");
+                        (globalThis.notDiceLogger || console).info("Versatile weapon dialog cancelled. Aborting player attack.");
                         return [];
                     }
                     rollConfig.options = rollConfig.options || {};
@@ -1471,13 +1471,13 @@ Hooks.once("ready", () => {
             }
 
             if (isAttack) {
-                console.log("Not Dice | Auto-resolving Attack Roll (Silent).");
+                (globalThis.notDiceLogger || console).debug("Auto-resolving Attack Roll (Silent).");
                 const item = rollConfig.subject?.item || rollConfig.subject;
                 let versatileChoice = null;
                 if (item?.system?.properties?.has?.("ver")) {
                     versatileChoice = await notDicePromptVersatile(item, rollConfig.subject);
                     if (!versatileChoice) {
-                        console.log("Not Dice | Versatile weapon dialog cancelled. Aborting GM attack.");
+                        (globalThis.notDiceLogger || console).info("Versatile weapon dialog cancelled. Aborting GM attack.");
                         return [];
                     }
                     rollConfig.options = rollConfig.options || {};
@@ -1496,7 +1496,7 @@ Hooks.once("ready", () => {
                     if (game.user.isGM) {
                         setTimeout(() => {
                             if (rollConfig.subject && rollConfig.subject.rollDamage) {
-                                console.log("Not Dice | Triggering Auto-Damage Roll (GM)");
+                                (globalThis.notDiceLogger || console).debug("Triggering Auto-Damage Roll (GM)");
                                 const isCleave = rollConfig.isCleaveAttack || rollConfig.options?.isCleaveAttack || rollConfig.event?.isCleaveAttack || false;
                                 rollConfig.subject.rollDamage({
                                     event: rollConfig.event,
@@ -1536,7 +1536,7 @@ Hooks.once("ready", () => {
          * @returns {Promise<DamageRoll[]>} Las tiradas modificadas y evaluadas de forma final.
          */
         const notDiceEvaluateDamageRoll = async (rolls, rollConfig, messageConfig) => {
-            console.log("Not Dice | Damage buildEvaluate intercepted", rolls);
+            (globalThis.notDiceLogger || console).debug("Damage buildEvaluate intercepted", rolls);
             if (rollConfig) {
                 rollConfig.consume = false;
                 if (rollConfig.options) rollConfig.options.consume = false;
@@ -1577,10 +1577,10 @@ Hooks.once("ready", () => {
                 (i.name.toLowerCase().includes("combate con dos armas") && i.type === "feat")
             );
             const isOffhandWithoutStyle = isNickAttack && !hasTwoWeaponStyle;
-            if (isOffhandWithoutStyle) console.log("Not Dice | Offhand Attack without Style - Removing Ability Mod from formula.");
+            if (isOffhandWithoutStyle) (globalThis.notDiceLogger || console).debug("Offhand Attack without Style - Removing Ability Mod from formula.");
 
             const isCleaveAttack = rollConfig.isCleaveAttack || rollConfig.options?.isCleaveAttack || rollConfig.event?.isCleaveAttack || false;
-            if (isCleaveAttack) console.log("Not Dice | Cleave Attack - Removing positive Ability Mod from formula.");
+            if (isCleaveAttack) (globalThis.notDiceLogger || console).debug("Cleave Attack - Removing positive Ability Mod from formula.");
 
             const hasDivineFavor = !hasForcedParts && actor?.effects?.some(e => {
                 const name = (e.name || "").toLowerCase();
@@ -1610,7 +1610,7 @@ Hooks.once("ready", () => {
             );
 
             if (hasHuntersMark) {
-                console.log("Not Dice | Hunter's Mark detectada en objetivo — añadiendo 1d6 force");
+                (globalThis.notDiceLogger || console).debug("Hunter's Mark detectada en objetivo — añadiendo 1d6 force");
                 const huntersMarkRoll = new DamageRoll("1d6", {}, { type: "force" });
                 huntersMarkRoll.options = huntersMarkRoll.options || {};
                 huntersMarkRoll.options.type = "force";
@@ -1671,7 +1671,7 @@ Hooks.once("ready", () => {
                     const mod = actor?.system?.abilities?.[abilityId]?.mod ?? 0;
                     const negativeMod = mod < 0 ? mod : 0;
                     originalFormula = notDiceExtractDiceOnly(item, originalFormula, negativeMod);
-                    console.log("Not Dice | Formula limpiada para Nick/Cleave:", originalFormula);
+                    (globalThis.notDiceLogger || console).debug("Formula limpiada para Nick/Cleave:", originalFormula);
                 }
 
                 let versatileFormula = null;
@@ -1849,7 +1849,7 @@ Hooks.once("ready", () => {
                 });
             });
 
-            console.log("Not Dice | Debug Vex/Sap:", {
+            (globalThis.notDiceLogger || console).debug("Debug Vex/Sap:", {
                 attackerName,
                 targets: targets.map(t => t.name),
                 attackerEffects: attackerEffects.map(e => e.name || e.label),
@@ -2077,7 +2077,7 @@ Hooks.once("ready", () => {
                         attackRollHtml = display.contentHtml;
                         attackRollBoxStyle = display.boxStyle;
                     } catch (err) {
-                        console.error("Not Dice | Failed simultaneous roll", err);
+                        (globalThis.notDiceLogger || console).error("Failed simultaneous roll", err);
                     }
                 }
 
@@ -2501,7 +2501,7 @@ Hooks.once("ready", () => {
                                     const existingEffects = globalThis.notDiceGetActorEffects(t.actor);
                                     const hasExisting = existingEffects.some(e => e.name === effectName || e.name === `Maestría: Vex (${item.actor.name})`);
                                     if (hasExisting) {
-                                        console.log(`Not Dice | ${t.name} ya tiene el efecto ${effectName}.`);
+                                        (globalThis.notDiceLogger || console).debug(`${t.name} ya tiene el efecto ${effectName}.`);
                                         continue;
                                     }
 
@@ -2761,7 +2761,7 @@ Hooks.once("ready", () => {
                             });
                         }
                     } catch (barErr) {
-                        console.error("Not Dice | Error creating total damage bar", barErr);
+                        (globalThis.notDiceLogger || console).error("Error creating total damage bar", barErr);
                     }
 
                     // Topple Dialog moved to runToppleSave in masteries.js
@@ -2945,7 +2945,7 @@ Hooks.once("ready", () => {
                                         inputTotal.value = total;
                                     }
                                 } catch (err) {
-                                    console.error("Not Dice | Error evaluando valor fijo de curación:", err);
+                                    (globalThis.notDiceLogger || console).error("Error evaluando valor fijo de curación:", err);
                                     const parsed = parseInt(part.formula);
                                     if (!isNaN(parsed)) {
                                         const inputTotal = root.querySelector(`[name='total-${part.index}']`);
@@ -3025,7 +3025,7 @@ Hooks.once("ready", () => {
                             }
                         }
                     } catch (err) {
-                        console.error("Not Dice | Error applying manual advantage/disadvantage", err);
+                        (globalThis.notDiceLogger || console).error("Error applying manual advantage/disadvantage", err);
                     } finally {
                         setAttackButtonsDisabled(false);
                     }
@@ -3199,7 +3199,7 @@ Hooks.once("ready", () => {
                                     const inputTotal = root.querySelector(`[name='total-${part.index}']`);
                                     if (inputTotal) inputTotal.value = total;
                                     part.isCritical = false;
-                                } catch (err) { console.error("Not Dice | Error rolling normal damage", err); }
+                                } catch (err) { (globalThis.notDiceLogger || console).error("Error rolling normal damage", err); }
                             }
                         }
                     });
@@ -3216,7 +3216,7 @@ Hooks.once("ready", () => {
                                     const inputTotal = root.querySelector(`[name='total-${part.index}']`);
                                     if (inputTotal) inputTotal.value = total;
                                     part.isCritical = true;
-                                } catch (err) { console.error("Not Dice | Error rolling crit damage", err); }
+                                } catch (err) { (globalThis.notDiceLogger || console).error("Error rolling crit damage", err); }
                             }
                         }
                     });
@@ -3655,7 +3655,7 @@ Hooks.once("ready", () => {
                                 ui.notifications.info("Not Dice | Solicitud de daño enviada automáticamente al jugador (ataque acertado).");
                             }
                         }).catch(err => {
-                            console.error("Not Dice | Error en solicitud automática de daño", err);
+                            (globalThis.notDiceLogger || console).error("Error en solicitud automática de daño", err);
                         });
                     }
                 }
@@ -3745,7 +3745,7 @@ Hooks.once("ready", () => {
         };
 
         DamageRoll.buildConfigure = async function (config, dialog, message) {
-            console.log("Not Dice | Damage buildConfigure intercepted", config);
+            (globalThis.notDiceLogger || console).debug("Damage buildConfigure intercepted", config);
             if (!config?.options?.notDiceBypass) {
                 dialog = foundry.utils.mergeObject(dialog ?? {}, { configure: false });
                 if (message) message.create = false;
@@ -4065,7 +4065,7 @@ Hooks.on("renderChatMessage", (message, html, data) => {
             if (typeof actor.rollAbilitySave === "function") {
                 await actor.rollAbilitySave("con", { event: ev });
             } else {
-                console.error("Not Dice | No se pudo lanzar la salvación", e);
+                (globalThis.notDiceLogger || console).error("No se pudo lanzar la salvación", e);
             }
         }
 
@@ -4154,7 +4154,7 @@ Hooks.on("renderChatMessage", (message, html, data) => {
             try {
                 await globalThis.notDiceEspeciales.useSavageAttacker(item.actor);
             } catch (err) {
-                console.warn("Not Dice | Error setting Savage Attacker flag (User may lack permission):", err);
+                (globalThis.notDiceLogger || console).warn("Error setting Savage Attacker flag (User may lack permission):", err);
             }
         }
 
@@ -4274,7 +4274,7 @@ Hooks.on("renderChatMessage", (message, html, data) => {
                 isCleaveAttack: true
             });
         } catch (e) {
-            console.error("Not Dice | Error launching Cleave attack", e);
+            (globalThis.notDiceLogger || console).error("Error launching Cleave attack", e);
         }
     });
 
@@ -4309,7 +4309,7 @@ Hooks.on("renderChatMessage", (message, html, data) => {
                 isNickAttack: true
             });
         } catch (e) {
-            console.error("Not Dice | Error launching Nick attack", e);
+            (globalThis.notDiceLogger || console).error("Error launching Nick attack", e);
         }
     });
 
@@ -4530,10 +4530,10 @@ Hooks.on("updateActiveEffect", (effect, changed, options, userId) => {
                         const existingEffect = actor.effects.get(effect.id);
                         if (existingEffect) {
                             await actor.deleteEmbeddedDocuments("ActiveEffect", [effect.id]);
-                            console.log(`Not Dice | Deleted disabled/expired mastery effect: ${effect.name}`);
+                            (globalThis.notDiceLogger || console).debug(`Deleted disabled/expired mastery effect: ${effect.name}`);
                         }
                     } catch (e) {
-                        console.error("Not Dice | Error deleting disabled mastery effect", e);
+                        (globalThis.notDiceLogger || console).error("Error deleting disabled mastery effect", e);
                     }
                 }, 100);
             }
@@ -4583,9 +4583,9 @@ Hooks.on("deleteActiveEffect", async (effect, options, userId) => {
 
     try {
         await slowToUpdate.update({ changes });
-        console.log(`Not Dice | Transferred Slow changes to remaining effect: ${slowToUpdate.name} on ${actor.name}`);
+        (globalThis.notDiceLogger || console).debug(`Transferred Slow changes to remaining effect: ${slowToUpdate.name} on ${actor.name}`);
     } catch (err) {
-        console.error("Not Dice | Error transferring Slow changes", err);
+        (globalThis.notDiceLogger || console).error("Error transferring Slow changes", err);
     }
 });
 
@@ -4621,7 +4621,7 @@ Hooks.on("preDeleteItem", (item, options, userId) => {
     const quantityIsZero = item?.system?.quantity === 0;
 
     if (isConsumption || (quantityIsZero && (item?.type === "consumable" || item?.type === "loot"))) {
-        console.log(`Not Dice | Prevenido borrado automático del objeto '${item.name}' al llegar a cantidad 0.`);
+        (globalThis.notDiceLogger || console).info(`Prevenido borrado automático del objeto '${item.name}' al llegar a cantidad 0.`);
         return false;
     }
 });

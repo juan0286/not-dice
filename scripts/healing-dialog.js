@@ -224,7 +224,7 @@ export const initHealingDialog = () => {
                 }
                 return true;
             } catch (err) {
-                console.error("Not Dice | Error aplicando curación:", err);
+                (globalThis.notDiceLogger || console).error("Error aplicando curación:", err);
                 return false;
             }
         };
@@ -244,7 +244,7 @@ export const initHealingDialog = () => {
                         });
                         if (input) input.value = roll.total;
                     } catch (err) {
-                        console.error("Not Dice | Error tirando dados de curación:", err);
+                        (globalThis.notDiceLogger || console).error("Error tirando dados de curación:", err);
                         ui.notifications?.error("Error al tirar los dados.");
                     }
                 });
