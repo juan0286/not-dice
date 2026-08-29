@@ -63,6 +63,15 @@ Hooks.once("init", () => {
         default: true
     });
 
+    game.settings.register("not-dice", "enableHealingTargetWarning", {
+        name: "Advertencia de Objetivo No Amistoso en Curaciones",
+        hint: "Si intentas curar a un objetivo hostil o neutral, muestra un diálogo previo para elegir si curar a ese objetivo o curarte a ti mismo.",
+        scope: "client",
+        config: true,
+        type: Boolean,
+        default: true
+    });
+
     // --- Configuraciones de Áreas y Traducción (saving-throw.js) ---
     game.settings.register("not-dice", "enableTemplateIntercept", {
         name: "Detectar Área de Efecto",
