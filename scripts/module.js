@@ -1586,32 +1586,47 @@ Hooks.once("ready", () => {
 
             if (isAttack) {
                 // Cooldown logic
-                const now = Date.now();
-                globalThis._notDiceAttackCooldown = globalThis._notDiceAttackCooldown || { lastAttackTime: 0, attackCount: 0, timeoutId: null };
-                const cd = globalThis._notDiceAttackCooldown;
-
-                if (now - cd.lastAttackTime > 10000) {
-                    cd.attackCount = 0;
+                let skipCooldown = false;
+                if (game.user.isGM) {
+                    try {
+                        if (game.settings?.settings?.has?.("not-dice.ignoreAttackDelayForGM")) {
+                            skipCooldown = !!game.settings.get("not-dice", "ignoreAttackDelayForGM");
+                        } else {
+                            skipCooldown = true;
+                        }
+                    } catch (_) {
+                        skipCooldown = true;
+                    }
                 }
 
-                let requiredWait = 0;
-                if (cd.attackCount === 1) requiredWait = 3000;
-                else if (cd.attackCount === 2) requiredWait = 5000;
-                else if (cd.attackCount >= 3) requiredWait = 10000;
+                if (!skipCooldown) {
+                    const now = Date.now();
+                    globalThis._notDiceAttackCooldown = globalThis._notDiceAttackCooldown || { lastAttackTime: 0, attackCount: 0, timeoutId: null };
+                    const cd = globalThis._notDiceAttackCooldown;
 
-                if (cd.attackCount > 0 && now - cd.lastAttackTime < requiredWait) {
-                    const remaining = Math.ceil((requiredWait - (now - cd.lastAttackTime)) / 1000);
-                    ui.notifications.warn(`Not Dice | ¡Demasiado rápido! Debes esperar ${remaining} segundo(s) antes de volver a atacar.`);
-                    return [];
+                    if (now - cd.lastAttackTime > 10000) {
+                        cd.attackCount = 0;
+                    }
+
+                    let requiredWait = 0;
+                    if (cd.attackCount === 1) requiredWait = 3000;
+                    else if (cd.attackCount === 2) requiredWait = 5000;
+                    else if (cd.attackCount >= 3) requiredWait = 10000;
+
+                    if (cd.attackCount > 0 && now - cd.lastAttackTime < requiredWait) {
+                        const remaining = Math.ceil((requiredWait - (now - cd.lastAttackTime)) / 1000);
+                        ui.notifications.warn(`Not Dice | ¡Demasiado rápido! Debes esperar ${remaining} segundo(s) antes de volver a atacar.`);
+                        return [];
+                    }
+
+                    cd.lastAttackTime = now;
+                    cd.attackCount++;
+
+                    if (cd.timeoutId) clearTimeout(cd.timeoutId);
+                    cd.timeoutId = setTimeout(() => {
+                        cd.attackCount = 0;
+                    }, 10000);
                 }
-
-                cd.lastAttackTime = now;
-                cd.attackCount++;
-
-                if (cd.timeoutId) clearTimeout(cd.timeoutId);
-                cd.timeoutId = setTimeout(() => {
-                    cd.attackCount = 0;
-                }, 10000);
 
                 const targets = game.user.targets;
                 if (!targets || targets.size === 0) {

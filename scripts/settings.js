@@ -90,6 +90,15 @@ Hooks.once("init", () => {
         default: true
     });
 
+    game.settings.register("not-dice", "ignoreAttackDelayForGM", {
+        name: "Ignorar delay para GM",
+        hint: "Si está activo, el GM no tendrá tiempo de espera ni límite de cadencia para lanzar ataques consecutivos.",
+        scope: "world",
+        config: true,
+        type: Boolean,
+        default: true
+    });
+
     // --- Configuraciones de Áreas y Traducción (saving-throw.js) ---
     game.settings.register("not-dice", "enableTemplateIntercept", {
         name: "Detectar Área de Efecto",
