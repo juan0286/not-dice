@@ -1485,11 +1485,27 @@ Hooks.once("ready", () => {
                 }
 
                 for (const roll of rolls) {
-                    const total = 20;
-                    const numericTerm = new foundry.dice.terms.NumericTerm({ number: total });
-                    numericTerm._evaluated = true;
-                    roll.terms = [numericTerm];
-                    roll._total = total;
+                    let d20 = roll.terms?.find(t => (t instanceof foundry.dice.terms.Die) && (t.faces === 20));
+                    if (!d20) {
+                        d20 = new foundry.dice.terms.Die({ faces: 20, number: 1 });
+                        d20.results = [{ result: 20, active: true, isCriticalSuccess: false, isFumble: false }];
+                        d20._evaluated = true;
+                        roll.terms = [d20];
+                    } else {
+                        d20._evaluated = true;
+                        if (!Array.isArray(d20.results) || d20.results.length === 0) {
+                            d20.results = [{ result: 20, active: true, isCriticalSuccess: false, isFumble: false }];
+                        } else {
+                            d20.results.forEach(r => {
+                                if (r) {
+                                    r.active = true;
+                                    if (r.isCriticalSuccess === undefined) r.isCriticalSuccess = false;
+                                    if (r.isFumble === undefined) r.isFumble = false;
+                                }
+                            });
+                        }
+                    }
+                    roll._total = roll._total || 20;
                     roll._evaluated = true;
 
                     // Solo el GM debe disparar el daño automático y mostrar popup.
