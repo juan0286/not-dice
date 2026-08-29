@@ -81,6 +81,15 @@ Hooks.once("init", () => {
         default: true
     });
 
+    game.settings.register("not-dice", "enableSharedCellTargetPrompt", {
+        name: "Confirmar Objetivo en Celda Compartida",
+        hint: "Si atacas a un objetivo que comparte celda o se superpone con otro actor, muestra un diálogo para elegir a cuál atacar.",
+        scope: "client",
+        config: true,
+        type: Boolean,
+        default: true
+    });
+
     // --- Configuraciones de Áreas y Traducción (saving-throw.js) ---
     game.settings.register("not-dice", "enableTemplateIntercept", {
         name: "Detectar Área de Efecto",

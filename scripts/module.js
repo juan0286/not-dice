@@ -1415,6 +1415,171 @@ Hooks.once("ready", () => {
             });
         };
 
+        /**
+         * Detecta todos los tokens activos que comparten celda o se solapan con un token dado.
+         */
+        const notDiceGetOverlappingTokens = (targetToken) => {
+            if (!targetToken || !canvas?.tokens?.placeables) return [];
+
+            const tDoc = targetToken.document;
+            const tX = tDoc.x;
+            const tY = tDoc.y;
+            const gridSize = canvas.grid?.size || 100;
+            const tW = targetToken.w || (tDoc.width * gridSize);
+            const tH = targetToken.h || (tDoc.height * gridSize);
+            const tCenter = targetToken.center || { x: tX + tW / 2, y: tY + tH / 2 };
+
+            const overlapping = canvas.tokens.placeables.filter(other => {
+                if (!other?.actor || other.id === targetToken.id) return false;
+                if (other.document?.hidden) return false;
+
+                const oDoc = other.document;
+                const oX = oDoc.x;
+                const oY = oDoc.y;
+                const oW = other.w || (oDoc.width * gridSize);
+                const oH = other.h || (oDoc.height * gridSize);
+                const oCenter = other.center || { x: oX + oW / 2, y: oY + oH / 2 };
+
+                // 1. Mismas coordenadas directas
+                if (oX === tX && oY === tY) return true;
+
+                // 2. Misma celda de rejilla
+                if (canvas.grid) {
+                    try {
+                        const [tRow, tCol] = canvas.grid.grid?.getGridPositionFromPixels ? canvas.grid.grid.getGridPositionFromPixels(tCenter.x, tCenter.y) : [null, null];
+                        const [oRow, oCol] = canvas.grid.grid?.getGridPositionFromPixels ? canvas.grid.grid.getGridPositionFromPixels(oCenter.x, oCenter.y) : [null, null];
+                        if (tRow !== null && tRow === oRow && tCol === oCol) return true;
+                    } catch (_) {}
+                }
+
+                // 3. Superposición de cajas delimitadoras
+                const intersects = (tX < oX + oW) && (tX + tW > oX) && (tY < oY + oH) && (tY + tH > oY);
+                return intersects;
+            });
+
+            if (overlapping.length > 0) {
+                return [targetToken, ...overlapping];
+            }
+            return [];
+        };
+
+        /**
+         * Muestra un diálogo interactivo para elegir a cuál de los tokens superpuestos en la misma celda se desea atacar.
+         */
+        const notDicePromptSelectSharedCellTarget = (targetTokens, itemName = "Ataque") => {
+            return new Promise((resolve) => {
+                const DialogV2 = foundry?.applications?.api?.DialogV2;
+                
+                const tokenCardsHtml = targetTokens.map((tok) => {
+                    const disp = tok.document?.disposition;
+                    let dispLabel = "Amistoso (Aliado)";
+                    let dispColor = "#22c55e";
+                    let dispBg = "rgba(34, 197, 94, 0.12)";
+                    let dispBorder = "rgba(34, 197, 94, 0.4)";
+
+                    if (disp === (CONST.TOKEN_DISPOSITIONS?.NEUTRAL ?? 0)) {
+                        dispLabel = "Neutral";
+                        dispColor = "#f59e0b";
+                        dispBg = "rgba(245, 158, 11, 0.12)";
+                        dispBorder = "rgba(245, 158, 11, 0.4)";
+                    } else if (disp === (CONST.TOKEN_DISPOSITIONS?.HOSTILE ?? -1)) {
+                        dispLabel = "Hostil (Enemigo)";
+                        dispColor = "#ef4444";
+                        dispBg = "rgba(239, 68, 68, 0.12)";
+                        dispBorder = "rgba(239, 68, 68, 0.4)";
+                    }
+
+                    const img = tok.document?.texture?.src || tok.actor?.img || "icons/svg/mystery-man.svg";
+                    const name = tok.name || tok.actor?.name || "Objetivo";
+
+                    return `
+                        <div class="not-dice-shared-cell-card" data-token-id="${tok.id}" style="cursor:pointer; border:2px solid ${dispBorder}; background:${dispBg}; border-radius:10px; padding:10px 8px; display:flex; flex-direction:column; align-items:center; gap:6px; transition: all 0.2s ease; box-shadow: 0 3px 8px rgba(0,0,0,0.15);">
+                            <img src="${img}" style="width:58px; height:58px; border-radius:50%; border:2px solid ${dispColor}; object-fit:cover; box-shadow: 0 0 8px ${dispBorder};">
+                            <span style="font-weight:800; font-size:0.95em; color:${dispColor}; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:100%;" title="${name}">${name}</span>
+                            <span style="font-size:0.75em; background:${dispBg}; color:${dispColor}; font-weight:bold; padding:2px 8px; border-radius:10px; border:1px solid ${dispBorder};">${dispLabel}</span>
+                            <button type="button" class="not-dice-btn-select-target" data-token-id="${tok.id}" style="margin-top:4px; background:${dispColor}; color:#fff; border:none; border-radius:6px; padding:6px 8px; font-weight:bold; font-size:0.82em; width:100%; cursor:pointer;">
+                                <i class="fas fa-crosshairs"></i> Atacar a ${name}
+                            </button>
+                        </div>
+                    `;
+                }).join("");
+
+                const dialogContent = `
+                    <div style="font-family:inherit; padding:4px; display:flex; flex-direction:column; gap:12px; text-align:center;">
+                        <div style="background: rgba(245, 158, 11, 0.15); border: 1px solid rgba(245, 158, 11, 0.45); color: #f59e0b; padding: 8px 12px; border-radius: 8px; font-weight: bold; font-size: 0.92em; display: flex; align-items: center; justify-content: center; gap: 8px;">
+                            <i class="fas fa-layer-group" style="font-size:1.2em;"></i>
+                            <span>¡Varios personajes comparten la misma posición!</span>
+                        </div>
+                        <p style="margin:0; font-size:0.9em; opacity:0.9; line-height:1.35;">
+                            Elige a cuál de ellos deseas atacar con <strong>${itemName}</strong>:
+                        </p>
+                        <div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap:10px; margin-top:2px;">
+                            ${tokenCardsHtml}
+                        </div>
+                    </div>
+                `;
+
+                let choiceMade = false;
+                let app = null;
+
+                const bindEvents = (element) => {
+                    const cards = element.querySelectorAll(".not-dice-shared-cell-card");
+                    const buttons = element.querySelectorAll(".not-dice-btn-select-target");
+
+                    const pickToken = (tokenId) => {
+                        if (choiceMade) return;
+                        choiceMade = true;
+                        const selectedToken = targetTokens.find(t => t.id === tokenId) || null;
+                        resolve(selectedToken);
+                        if (app && typeof app.close === "function") app.close();
+                    };
+
+                    cards.forEach(c => {
+                        c.addEventListener("click", () => pickToken(c.dataset.tokenId));
+                    });
+                    buttons.forEach(b => {
+                        b.addEventListener("click", (e) => {
+                            e.stopPropagation();
+                            pickToken(b.dataset.tokenId);
+                        });
+                    });
+                };
+
+                if (DialogV2) {
+                    app = new DialogV2({
+                        window: { title: "Seleccionar Objetivo de Ataque" },
+                        content: dialogContent,
+                        position: { width: Math.min(520, Math.max(340, targetTokens.length * 150)) },
+                        buttons: [
+                            { action: "cancel", icon: "fa-solid fa-xmark", label: "Cancelar Ataque" }
+                        ],
+                        submit: (result) => {
+                            if (!choiceMade) resolve(null);
+                        }
+                    });
+                    app.addEventListener("close", () => {
+                        if (!choiceMade) resolve(null);
+                    }, { once: true });
+                    app.render(true).then(() => bindEvents(app.element));
+                } else {
+                    app = new Dialog({
+                        title: "Seleccionar Objetivo de Ataque",
+                        content: dialogContent,
+                        render: (html) => bindEvents(html[0] || html),
+                        buttons: {
+                            cancel: {
+                                icon: '<i class="fas fa-times"></i>',
+                                label: "Cancelar Ataque",
+                                callback: () => { if (!choiceMade) resolve(null); }
+                            }
+                        },
+                        close: () => { if (!choiceMade) resolve(null); }
+                    }, { width: Math.min(520, Math.max(340, targetTokens.length * 150)) });
+                    app.render(true);
+                }
+            });
+        };
+
         D20Roll.buildEvaluate = async function (rolls, rollConfig, messageConfig) {
             (globalThis.notDiceLogger || console).debug("D20 buildEvaluate intercepted", rolls);
             const isAttack = notDiceIsAttack(rollConfig.subject);
@@ -1452,6 +1617,36 @@ Hooks.once("ready", () => {
                 if (!targets || targets.size === 0) {
                     ui.notifications?.warn("Not Dice | Debes seleccionar al menos un objetivo para atacar.");
                     return [];
+                }
+
+                // Si ataca a un solo objetivo, verificar si comparte celda con otros actores
+                let enableSharedPrompt = true;
+                try {
+                    if (typeof game !== "undefined" && game.settings?.settings?.has?.("not-dice.enableSharedCellTargetPrompt")) {
+                        enableSharedPrompt = !!game.settings.get("not-dice", "enableSharedCellTargetPrompt");
+                    }
+                } catch (_) {}
+
+                if (enableSharedPrompt && targets.size === 1) {
+                    const primaryTarget = Array.from(targets)[0];
+                    const overlapping = notDiceGetOverlappingTokens(primaryTarget);
+                    if (overlapping.length > 1) {
+                        const item = rollConfig.subject?.item || rollConfig.subject;
+                        const chosenToken = await notDicePromptSelectSharedCellTarget(overlapping, item?.name || "Ataque");
+                        if (!chosenToken) {
+                            (globalThis.notDiceLogger || console).info("Ataque cancelado durante la selección de objetivo en celda compartida.");
+                            return [];
+                        }
+                        if (chosenToken.id !== primaryTarget.id) {
+                            if (game.user.targets && typeof game.user.targets.clear === "function") {
+                                game.user.targets.clear();
+                                if (typeof chosenToken.setTarget === "function") {
+                                    chosenToken.setTarget(true, { releaseOthers: true });
+                                }
+                            }
+                            (globalThis.notDiceLogger || console).info(`Objetivo de ataque cambiado a: ${chosenToken.name}`);
+                        }
+                    }
                 }
             }
 
