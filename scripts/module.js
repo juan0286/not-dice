@@ -1601,8 +1601,17 @@ Hooks.once("ready", () => {
             const huntersMarkTargets = Array.isArray(injectedTargetIds) && injectedTargetIds.length > 0
                 ? injectedTargetIds.map(id => canvas.tokens.get(id)).filter(Boolean)
                 : Array.from(game.user.targets ?? []);
+            
+            const getTargetEffects = (tok) => {
+                const act = tok?.actor || tok;
+                if (!act) return [];
+                return typeof globalThis.notDiceGetActorEffects === "function"
+                    ? globalThis.notDiceGetActorEffects(act)
+                    : Array.from(act.effects || []);
+            };
+
             const hasHuntersMark = !hasForcedParts && attackerUuid && huntersMarkTargets.some(t =>
-                t.actor?.effects?.some(e => {
+                getTargetEffects(t).some(e => {
                     const eName = (e.name || "").toLowerCase();
                     return (eName.includes("hunter's mark") || eName.includes("marca del cazador"))
                         && (e.origin || "").includes(attackerUuid);
@@ -1616,6 +1625,24 @@ Hooks.once("ready", () => {
                 huntersMarkRoll.options.type = "force";
                 huntersMarkRoll.options.notDiceLabel = "Marca del Cazador";
                 rolls.push(huntersMarkRoll);
+            }
+
+            // --- Detect Hex / Maleficio on targets ---
+            const hasHex = !hasForcedParts && attackerUuid && huntersMarkTargets.some(t =>
+                getTargetEffects(t).some(e => {
+                    const eName = (e.name || "").toLowerCase();
+                    return (eName.includes("hex") || eName.includes("maleficio") || eName.includes("maldición") || eName.includes("maldicion"))
+                        && (e.origin || "").includes(attackerUuid);
+                })
+            );
+
+            if (hasHex) {
+                (globalThis.notDiceLogger || console).debug("Hex detectado en objetivo — añadiendo 1d6 necrotic");
+                const hexRoll = new DamageRoll("1d6", {}, { type: "necrotic" });
+                hexRoll.options = hexRoll.options || {};
+                hexRoll.options.type = "necrotic";
+                hexRoll.options.notDiceLabel = "Hex";
+                rolls.push(hexRoll);
             }
 
             const item = rollConfig.subject?.item || rollConfig.subject;
