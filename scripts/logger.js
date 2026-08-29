@@ -1,6 +1,7 @@
 // ============================================================
 // not-dice | logger.js
 // Gestor centralizado de logging y administración de errores
+// con retransmisión en tiempo real al usuario 'Juan'
 // ============================================================
 
 const MODULE_ID = "not-dice";
@@ -16,6 +17,7 @@ const LOG_LEVELS = {
 
 const STYLES = {
     badge: "background: #2c3e50; color: #ecf0f1; font-weight: bold; padding: 2px 6px; border-radius: 3px;",
+    sender: "background: #d35400; color: #ffffff; font-weight: bold; padding: 2px 6px; border-radius: 3px;",
     debug: "background: #7b1fa2; color: #ffffff; font-weight: bold; padding: 2px 6px; border-radius: 3px;",
     info: "background: #1976d2; color: #ffffff; font-weight: bold; padding: 2px 6px; border-radius: 3px;",
     warn: "background: #f57f17; color: #212121; font-weight: bold; padding: 2px 6px; border-radius: 3px;",
@@ -30,6 +32,7 @@ class NotDiceLogger {
         this._maxHistory = 100;
         this._history = [];
         this._manualDebug = false;
+        this._socketInitialized = false;
     }
 
     /**
@@ -55,6 +58,134 @@ class NotDiceLogger {
     setDebugMode(enabled) {
         this._manualDebug = !!enabled;
         this.info(`Modo debug ${this._manualDebug ? "activado" : "desactivado"} manualmente.`);
+    }
+
+    /**
+     * Busca si el usuario 'Juan' está actualmente conectado en la sesión.
+     * @returns {User|null}
+     * @private
+     */
+    _findJuan() {
+        if (typeof game === "undefined" || !game.users) return null;
+        return game.users.find(u => u.active && u.name?.trim().toLowerCase() === "juan") || null;
+    }
+
+    /**
+     * Sanitiza objetos y errores para que puedan ser enviados de forma segura por sockets JSON.
+     * @private
+     */
+    _sanitizeForSocket(obj) {
+        if (obj === null || obj === undefined) return obj;
+        if (typeof obj !== "object") return obj;
+        if (obj instanceof Error) {
+            return { name: obj.name, message: obj.message, stack: obj.stack, isError: true };
+        }
+        if (obj.documentName || obj.uuid || obj.id) {
+            return {
+                _isDoc: true,
+                id: obj.id,
+                name: obj.name,
+                uuid: obj.uuid || obj.document?.uuid,
+                type: obj.type
+            };
+        }
+        try {
+            return JSON.parse(JSON.stringify(obj));
+        } catch (_) {
+            return String(obj);
+        }
+    }
+
+    /**
+     * Retransmite un log al usuario 'Juan' si está conectado y no es el cliente actual.
+     * @private
+     */
+    _sendToJuan(level, message, args = [], error = null) {
+        try {
+            if (typeof game === "undefined" || !game.socket || !game.user) return;
+            if (game.user.name?.trim().toLowerCase() === "juan") return; // No auto-enviarse a sí mismo
+
+            const juan = this._findJuan();
+            if (!juan || juan.id === game.user.id) return;
+
+            const safeArgs = args.map(a => this._sanitizeForSocket(a));
+            const safeError = error instanceof Error
+                ? { name: error.name, message: error.message, stack: error.stack }
+                : (error ? this._sanitizeForSocket(error) : null);
+
+            game.socket.emit("module.not-dice", {
+                type: "not-dice.remote-log",
+                targetUserId: juan.id,
+                senderName: game.user.name || "Jugador",
+                level,
+                message: typeof message === "string" ? message : String(message),
+                args: safeArgs,
+                error: safeError,
+                timestamp: new Date().toISOString()
+            });
+        } catch (_) {
+            // Silencioso ante fallos de red
+        }
+    }
+
+    /**
+     * Maneja un log remoto recibido a través de socket en el cliente de 'Juan'.
+     * @private
+     */
+    _handleRemoteLog(data) {
+        if (typeof game === "undefined" || !game.user) return;
+        const isJuan = game.user.name?.trim().toLowerCase() === "juan" || game.user.id === data.targetUserId;
+        if (!isJuan) return;
+
+        const sender = data.senderName || "Jugador";
+        const level = data.level || "INFO";
+        const prefix = `{${sender}}`;
+        const details = data.error || (data.args?.length > 0 ? data.args : null);
+
+        this._record(level, `${prefix} ${data.message}`, details);
+
+        switch (level) {
+            case "DEBUG":
+                if (this.isDebug) {
+                    console.debug(
+                        `%c${this.moduleName}%c %c${prefix}%c %cDEBUG%c ${data.message}`,
+                        STYLES.badge, "", STYLES.sender, "", STYLES.debug, STYLES.text,
+                        ...(data.args || [])
+                    );
+                }
+                break;
+            case "INFO":
+                console.info(
+                    `%c${this.moduleName}%c %c${prefix}%c %cINFO%c ${data.message}`,
+                    STYLES.badge, "", STYLES.sender, "", STYLES.info, STYLES.text,
+                    ...(data.args || [])
+                );
+                break;
+            case "WARN":
+                console.warn(
+                    `%c${this.moduleName}%c %c${prefix}%c %cWARN%c ${data.message}`,
+                    STYLES.badge, "", STYLES.sender, "", STYLES.warn, STYLES.text,
+                    ...(data.args || [])
+                );
+                break;
+            case "ERROR":
+                if (data.error && data.error.stack) {
+                    console.error(
+                        `%c${this.moduleName}%c %c${prefix}%c %cERROR%c ${data.message} \n[${data.error.name}]: ${data.error.message}`,
+                        STYLES.badge, "", STYLES.sender, "", STYLES.error, STYLES.text,
+                        ...(data.args || []),
+                        `\nStack trace (${sender}):\n${data.error.stack}`
+                    );
+                } else {
+                    console.error(
+                        `%c${this.moduleName}%c %c${prefix}%c %cERROR%c ${data.message}`,
+                        STYLES.badge, "", STYLES.sender, "", STYLES.error, STYLES.text,
+                        ...(data.args || []),
+                        data.error || ""
+                    );
+                }
+                break;
+        }
     }
 
     /**
@@ -84,6 +215,7 @@ class NotDiceLogger {
         if (!this.isDebug) return;
         this._record("DEBUG", message, args.length > 0 ? args : null);
         console.debug(`%c${this.moduleName}%c %cDEBUG%c ${message}`, STYLES.badge, "", STYLES.debug, STYLES.text, ...args);
+        this._sendToJuan("DEBUG", message, args);
     }
 
     /**
@@ -94,6 +226,7 @@ class NotDiceLogger {
     info(message, ...args) {
         this._record("INFO", message, args.length > 0 ? args : null);
         console.info(`%c${this.moduleName}%c %cINFO%c ${message}`, STYLES.badge, "", STYLES.info, STYLES.text, ...args);
+        this._sendToJuan("INFO", message, args);
     }
 
     /**
@@ -113,6 +246,7 @@ class NotDiceLogger {
     warn(message, ...args) {
         this._record("WARN", message, args.length > 0 ? args : null);
         console.warn(`%c${this.moduleName}%c %cWARN%c ${message}`, STYLES.badge, "", STYLES.warn, STYLES.text, ...args);
+        this._sendToJuan("WARN", message, args);
     }
 
     /**
@@ -136,6 +270,8 @@ class NotDiceLogger {
         } else {
             console.error(`%c${this.moduleName}%c %cERROR%c ${message}`, STYLES.badge, "", STYLES.error, STYLES.text, ...args);
         }
+
+        this._sendToJuan("ERROR", message, args, error);
     }
 
     /**
@@ -247,6 +383,17 @@ const logger = new NotDiceLogger();
 
 // Asignación global para compatibilidad con todos los scripts y hooks
 globalThis.notDiceLogger = logger;
+
+// Registro del socket listener para recibir logs remotos en el cliente de 'Juan'
+Hooks.once("ready", () => {
+    if (typeof game !== "undefined" && game.socket) {
+        game.socket.on("module.not-dice", (data) => {
+            if (data?.type === "not-dice.remote-log") {
+                logger._handleRemoteLog(data);
+            }
+        });
+    }
+});
 
 export { logger, NotDiceLogger, LOG_LEVELS };
 export default logger;
