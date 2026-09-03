@@ -225,6 +225,39 @@ export const initHealingDialog = () => {
         const titleText = isTempHp ? "Puntos de Vida Temporales" : "Curación";
         const buttonText = isTempHp ? "Aplicar PV Temporales" : "Aplicar Curación";
 
+        // Determinar si la fórmula incluye tirada de dados o es un valor fijo/determinista
+        let initialValue = 0;
+        let hasDice = false;
+        const rollData = typeof actualItem?.getRollData === "function" 
+            ? actualItem.getRollData() 
+            : (actor?.getRollData ? actor.getRollData() : {});
+
+        try {
+            const roll = new Roll(firstRow.formula, rollData);
+            const hasDiceTerms = (roll.terms && roll.terms.some(t => t.isDice || (foundry.dice?.terms?.DiceTerm && t instanceof foundry.dice.terms.DiceTerm))) || (Array.isArray(roll.dice) && roll.dice.length > 0);
+            const regexDice = /\b\d*d\d+/i.test(firstRow.formula);
+            
+            hasDice = !roll.isDeterministic || hasDiceTerms || regexDice;
+
+            if (!hasDice) {
+                const evaluated = await roll.evaluate({ async: true });
+                initialValue = Math.max(0, evaluated.total ?? 0);
+            }
+        } catch (e) {
+            (globalThis.notDiceLogger || console).warn("Not Dice | No se pudo pre-evaluar la fórmula estática de curación:", e);
+            if (!/\b\d*d\d+/i.test(firstRow.formula)) {
+                const parsed = parseInt(firstRow.formula, 10);
+                if (!isNaN(parsed)) {
+                    initialValue = Math.max(0, parsed);
+                    hasDice = false;
+                } else {
+                    hasDice = true;
+                }
+            } else {
+                hasDice = true;
+            }
+        }
+
         // --- Verificación de Objetivo No Amistoso (Hostil / Neutral) ---
         let enableWarning = true;
         try {
@@ -300,16 +333,23 @@ export const initHealingDialog = () => {
                         Fórmula: <span style="font-family:monospace; font-weight:800; color:#22c55e; background:rgba(34,197,94,0.12); padding:2px 8px; border-radius:4px; border:1px solid rgba(34,197,94,0.3); font-size:1.1em;">${firstRow.formula}</span>
                     </div>
 
+                    ${hasDice ? `
                     <!-- Botón Grande, Centrado y Verde para Lanzar Dados -->
                     <button type="button" id="not-dice-heal-roll-btn" class="not-dice-heal-roll-btn" style="width:100%; max-width:280px; padding:12px 16px; background:linear-gradient(135deg, #22c55e 0%, #15803d 100%); color:#ffffff; font-weight:800; font-size:1.15em; border:2px solid #4ade80; border-radius:8px; cursor:pointer; display:flex; align-items:center; justify-content:center; gap:10px; box-shadow:0 4px 14px rgba(34, 197, 94, 0.45); transition:all 0.2s ease; text-shadow:0 1px 2px rgba(0,0,0,0.5);">
                         <i class="fas fa-dice-d20" style="font-size:1.3em;"></i>
                         <span>Lanzar Dados</span>
                     </button>
+                    ` : `
+                    <div style="font-size:0.84em; color:#16a34a; background:rgba(34,197,94,0.1); border:1px solid rgba(34,197,94,0.3); border-radius:6px; padding:5px 12px; font-weight:700; display:inline-flex; align-items:center; gap:6px;">
+                        <i class="fas fa-check-circle"></i>
+                        <span>Valor fijo calculado automáticamente</span>
+                    </div>
+                    `}
                 </div>
 
                 <div style="margin-top:2px;">
                     <label style="font-size:0.88em; font-weight:bold; display:block; margin-bottom:4px; opacity:0.9;">Resultado a Aplicar:</label>
-                    <input type="number" id="not-dice-heal-result" value="0" style="width:120px; text-align:center; font-size:1.5em; font-weight:900; color:#22c55e; background:rgba(0,0,0,0.12); border:2px solid rgba(34,197,94,0.4); border-radius:6px; padding:6px; margin:0 auto; display:block; box-shadow:inset 0 0 8px rgba(34,197,94,0.15); transition: all 0.3s ease;">
+                    <input type="number" id="not-dice-heal-result" value="${initialValue}" style="width:120px; text-align:center; font-size:1.5em; font-weight:900; color:#22c55e; background:rgba(0,0,0,0.12); border:2px solid rgba(34,197,94,0.4); border-radius:6px; padding:6px; margin:0 auto; display:block; box-shadow:inset 0 0 8px rgba(34,197,94,0.15); transition: all 0.3s ease;">
                 </div>
 
                 <div style="font-size:0.82em; opacity:0.75; margin-top:2px;">
@@ -445,7 +485,7 @@ export const initHealingDialog = () => {
                     if (icon) icon.className = "fas fa-spinner fa-spin";
 
                     try {
-                        const roll = await new Roll(firstRow.formula, actor?.getRollData()).evaluate({ async: true });
+                        const roll = await new Roll(firstRow.formula, rollData).evaluate({ async: true });
                         await roll.toMessage({
                             speaker: ChatMessage.getSpeaker({ actor: actor }),
                             flavor: `<b>${titleText}</b> - ${itemName || actualItem.name}`,
