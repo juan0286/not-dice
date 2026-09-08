@@ -616,19 +616,27 @@ globalThis.notDiceOpenDamageDialog = async ({
         ? normalizedRequestedParts
         : notDiceExtractDamageRows(actualItem);
 
-    let isHealing = sourceRows.length > 0 && (sourceRows[0].type === "healing" || sourceRows[0].type === "temphp");
+    let isHealing = sourceRows.length > 0 && sourceRows.every(r => r.type === "healing" || r.type === "temphp");
     
-    if (!isHealing && actualItem?.system?.activities) {
-        for (const act of actualItem.system.activities.values()) {
-            if (act.type === "heal" || (act.healing && (act.healing.type === "healing" || act.healing.type === "temphp"))) {
+    // Si no se pasaron partes explícitas y no se extrajeron filas de daño, verificar si el item es estrictamente de curación
+    if (!isHealing && normalizedRequestedParts.length === 0 && sourceRows.length === 0) {
+        if (actualItem?.system?.activities) {
+            let hasDamageActivity = false;
+            let hasHealActivity = false;
+            for (const act of actualItem.system.activities.values()) {
+                if (act.type === "damage" || act.damage?.parts?.length > 0) hasDamageActivity = true;
+                if (act.type === "heal" || (act.healing && (act.healing.type === "healing" || act.healing.type === "temphp"))) {
+                    hasHealActivity = true;
+                }
+            }
+            if (hasHealActivity && !hasDamageActivity) {
                 isHealing = true;
-                break;
             }
         }
-    }
-    
-    if (!isHealing && actualItem?.system?.actionType === "heal") {
-        isHealing = true;
+        
+        if (!isHealing && actualItem?.system?.actionType === "heal") {
+            isHealing = true;
+        }
     }
 
     if (isHealing) {

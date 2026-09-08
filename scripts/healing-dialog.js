@@ -189,29 +189,31 @@ export const initHealingDialog = () => {
         // Obtener la fórmula
         let sourceRows = normalizedRequestedParts.length > 0
             ? normalizedRequestedParts
-            : (typeof globalThis.notDiceExtractDamageRows === "function" 
-                ? globalThis.notDiceExtractDamageRows(actualItem) 
-                : []);
+            : [];
 
-        // If fallback or empty, try to get activity.healing (dnd5e 3.x / 4.x / 5.x)
-        if (sourceRows.length === 0 || sourceRows[0]?.type === "") {
-            let foundHealing = false;
-            if (actualItem?.system?.activities) {
-                for (const act of actualItem.system.activities.values()) {
-                    if (act.type === "heal" || act.healing) {
-                        const form = act.healing?.formula || act.healing?.custom?.formula || act.damage?.parts?.[0]?.[0] || "";
-                        const type = act.healing?.type || "healing";
-                        if (form) {
-                            sourceRows = [{ formula: form, type: type }];
-                            foundHealing = true;
-                            break;
-                        }
+        // Si no vino especificado, buscar primero en las actividades de curación
+        if (sourceRows.length === 0 && actualItem?.system?.activities) {
+            for (const act of actualItem.system.activities.values()) {
+                if (act.type === "heal" || act.healing) {
+                    const form = act.healing?.formula || act.healing?.custom?.formula || act.damage?.parts?.[0]?.[0] || "";
+                    const type = act.healing?.type || (act.healing?.types?.[0]) || (act.type === "heal" ? "healing" : "");
+                    if (form) {
+                        sourceRows = [{ formula: form, type: type || "healing" }];
+                        break;
                     }
                 }
             }
-            if (!foundHealing) {
-                const legacyForm = actualItem?.system?.damage?.parts?.[0]?.[0] || "";
-                if (legacyForm) sourceRows = [{ formula: legacyForm, type: "healing" }];
+        }
+
+        // Fallback a daño si el tipo es curación o formato legado
+        if (sourceRows.length === 0) {
+            const extracted = typeof globalThis.notDiceExtractDamageRows === "function" 
+                ? globalThis.notDiceExtractDamageRows(actualItem) 
+                : [];
+            if (extracted.length > 0 && (extracted[0].type === "healing" || extracted[0].type === "temphp")) {
+                sourceRows = extracted;
+            } else if (actualItem?.system?.damage?.parts?.[0]?.[0]) {
+                sourceRows = [{ formula: actualItem.system.damage.parts[0][0], type: "healing" }];
             }
         }
 
