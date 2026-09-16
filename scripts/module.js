@@ -2026,7 +2026,8 @@ Hooks.once("ready", () => {
                     const dr = getLabels(traits.dr?.value);
                     const di = getLabels(traits.di?.value);
                     const dv = getLabels(traits.dv?.value);
-                    const ac = t.actor?.system?.attributes?.ac?.value;
+                    const rawAc = t.actor?.system?.attributes?.ac?.value;
+                    const ac = typeof rawAc === "number" ? rawAc : (Number(rawAc) || undefined);
                     const tokenImg = t.document?.texture?.src || t.actor?.img || "";
 
                     let borderStyle = "border: 1px solid var(--color-border-light-2, #ddd);";
@@ -2120,7 +2121,8 @@ Hooks.once("ready", () => {
             });
 
             const getAttackRollVisualState = (selectedD20, total) => {
-                const targetAC = targets.length > 0 ? (targets[0].actor?.system?.attributes?.ac?.value ?? null) : null;
+                const rawTargetAC = targets.length > 0 ? (targets[0].actor?.system?.attributes?.ac?.value ?? null) : null;
+                const targetAC = typeof rawTargetAC === "number" ? rawTargetAC : (Number(rawTargetAC) || null);
                 if (selectedD20 === 1) return { bg: "rgba(197,34,31,0.1)", border: "rgba(197,34,31,0.4)", text: "#ff5252" };
                 if (selectedD20 === 20) return { bg: "rgba(19,115,51,0.1)", border: "rgba(19,115,51,0.4)", text: "#4caf50" };
                 if (targetAC !== null && total >= targetAC) return { bg: "rgba(19,115,51,0.1)", border: "rgba(19,115,51,0.4)", text: "#4caf50" };
@@ -3139,7 +3141,8 @@ Hooks.once("ready", () => {
 
                 const hitIds = [];
                 for (const target of targets) {
-                    const targetAC = target.actor?.system?.attributes?.ac?.value;
+                    const rawTargetAC = target.actor?.system?.attributes?.ac?.value;
+                    const targetAC = typeof rawTargetAC === "number" ? rawTargetAC : (Number(rawTargetAC) || null);
 
                     if (selectedD20 === 1) continue;
                     if (selectedD20 === 20) {
@@ -4026,7 +4029,12 @@ Hooks.once("ready", () => {
 
         DamageRoll.buildConfigure = async function (config, dialog, message) {
             (globalThis.notDiceLogger || console).debug("Damage buildConfigure intercepted", config);
-            if (!config?.options?.notDiceBypass) {
+            const isFallDamage = !!(
+                config?.context?.fall ||
+                config?.options?.context?.fall ||
+                config?.data?.flags?.dnd5e?.context?.fall
+            );
+            if (!config?.options?.notDiceBypass && !isFallDamage) {
                 dialog = foundry.utils.mergeObject(dialog ?? {}, { configure: false });
                 if (message) message.create = false;
             }
@@ -4034,7 +4042,13 @@ Hooks.once("ready", () => {
         };
 
         DamageRoll.buildEvaluate = async function (rolls, rollConfig, messageConfig) {
-            if (rollConfig?.options?.notDiceBypass) {
+            const isFallDamage = !!(
+                rollConfig?.context?.fall ||
+                rollConfig?.options?.context?.fall ||
+                rollConfig?.data?.flags?.dnd5e?.context?.fall
+            );
+
+            if (rollConfig?.options?.notDiceBypass || isFallDamage) {
                 return originalDamageBuildEvaluate.call(this, rolls, rollConfig, messageConfig);
             }
 
@@ -4145,10 +4159,14 @@ Hooks.once("ready", () => {
                         isNickAttack: isNickAttack,
                         masteryAlreadyUsed: masteryAlreadyUsed
                     });
+                    return [];
+                } else if (!item) {
+                    // Tirada sin ítem/sujeto (ambiental, caída, macro, etc.) -> permitir evaluación nativa
+                    return originalDamageBuildEvaluate.call(this, rolls, rollConfig, messageConfig);
                 } else {
                     ui.notifications?.warn("Not Dice | No se pudo abrir el diálogo de daño personalizado.");
+                    return [];
                 }
-                return [];
             }
 
             // Si es auto-disparada o precalculada, la resolución final recae en el GM
@@ -4245,6 +4263,20 @@ Hooks.on("renderChatMessageHTML", (message, html) => {
                 <i class="fas fa-arrow-up"></i> Ventaja
             </button>
         `;
+        const disadvBtn = btnDiv.querySelector(".not-dice-chat-disadvantage");
+        const advBtn = btnDiv.querySelector(".not-dice-chat-advantage");
+        if (disadvBtn) {
+            disadvBtn.addEventListener("click", async (ev) => {
+                ev.preventDefault();
+                await notDiceApplyChatAttackMode(message, "disadvantage");
+            });
+        }
+        if (advBtn) {
+            advBtn.addEventListener("click", async (ev) => {
+                ev.preventDefault();
+                await notDiceApplyChatAttackMode(message, "advantage");
+            });
+        }
         host.appendChild(btnDiv);
     }
 });
@@ -4286,8 +4318,12 @@ const notDiceApplyChatAttackMode = async (message, mode) => {
 };
 
 Hooks.on("renderChatMessage", (message, html, data) => {
+    // Normalizar a elemento DOM nativo y envoltorio jQuery para compatibilidad v13/v14
+    const rootEl = html instanceof HTMLElement ? html : html?.[0];
+    const $html = (typeof html?.find === "function") ? html : (rootEl ? $(rootEl) : null);
+
     // --- Player Color Background ---
-    if (game.settings.get("not-dice", "enablePlayerColorChat")) {
+    if (game.settings.get("not-dice", "enablePlayerColorChat") && rootEl) {
         const author = message.author || message.user;
         if (author && author.color) {
             const colorVal = author.color.css || (typeof author.color === "string" ? author.color : author.color.toString());
@@ -4295,13 +4331,15 @@ Hooks.on("renderChatMessage", (message, html, data) => {
                 const r = parseInt(colorVal.slice(1, 3), 16) || 0;
                 const g = parseInt(colorVal.slice(3, 5), 16) || 0;
                 const b = parseInt(colorVal.slice(5, 7), 16) || 0;
-                html[0].style.boxShadow = `inset 0 0 15px rgba(${r}, ${g}, ${b}, 0.5), inset 0 0 40px rgba(${r}, ${g}, ${b}, 0.1)`;
-                html[0].style.borderColor = colorVal;
+                rootEl.style.boxShadow = `inset 0 0 15px rgba(${r}, ${g}, ${b}, 0.5), inset 0 0 40px rgba(${r}, ${g}, ${b}, 0.1)`;
+                rootEl.style.borderColor = colorVal;
             }
         }
     }
 
-    if (message.getFlag("not-dice", "attackRoll") && html.find(".not-dice-chat-attack-mode").length === 0) {
+    if (!rootEl || !$html) return;
+
+    if (message.getFlag("not-dice", "attackRoll") && $html.find(".not-dice-chat-attack-mode").length === 0) {
         const btnHtml = `
             <div class="not-dice-chat-attack-mode" style="display:flex; gap:6px; margin-top:6px; padding:6px 4px 2px; border-top:1px solid rgba(128,128,128,0.25);">
                 <button type="button" class="not-dice-chat-disadvantage" style="flex:1; padding:5px 8px; border:1px solid rgba(197,34,31,0.4); border-radius:6px; background:rgba(197,34,31,0.1); color:#ff5252; cursor:pointer; font-size:0.85em; font-weight:bold;">
@@ -4312,26 +4350,26 @@ Hooks.on("renderChatMessage", (message, html, data) => {
                 </button>
             </div>
         `;
-        const contentNode = html.find(".message-content");
+        const contentNode = $html.find(".message-content");
         if (contentNode.length) contentNode.append(btnHtml);
-        else html.append(btnHtml);
+        else $html.append(btnHtml);
     }
 
-    html.off("click.notDiceChatAttackMode", ".not-dice-chat-disadvantage");
-    html.off("click.notDiceChatAttackMode", ".not-dice-chat-advantage");
+    $html.off("click.notDiceChatAttackMode", ".not-dice-chat-disadvantage");
+    $html.off("click.notDiceChatAttackMode", ".not-dice-chat-advantage");
 
-    html.on("click.notDiceChatAttackMode", ".not-dice-chat-disadvantage", async (ev) => {
+    $html.on("click.notDiceChatAttackMode", ".not-dice-chat-disadvantage", async (ev) => {
         ev.preventDefault();
         await notDiceApplyChatAttackMode(message, "disadvantage");
     });
 
-    html.on("click.notDiceChatAttackMode", ".not-dice-chat-advantage", async (ev) => {
+    $html.on("click.notDiceChatAttackMode", ".not-dice-chat-advantage", async (ev) => {
         ev.preventDefault();
         await notDiceApplyChatAttackMode(message, "advantage");
     });
 
 
-    html.find(".not-dice-topple-save").click(async (ev) => {
+    $html.find(".not-dice-topple-save").click(async (ev) => {
         ev.preventDefault();
         const btn = ev.currentTarget;
         const actorId = btn.dataset.actorId;
@@ -4354,7 +4392,7 @@ Hooks.on("renderChatMessage", (message, html, data) => {
         btn.innerHTML = "<i class='fas fa-check'></i> Salvación Realizada";
     });
 
-    html.find(".not-dice-piercer-reroll").click(async (ev) => {
+    $html.find(".not-dice-piercer-reroll").click(async (ev) => {
         ev.preventDefault();
         const btn = ev.currentTarget;
         const faces = btn.dataset.faces;
@@ -4415,7 +4453,7 @@ Hooks.on("renderChatMessage", (message, html, data) => {
         btn.style.color = "#ff5252";
     });
 
-    html.find(".not-dice-savage-reroll").click(async (ev) => {
+    $html.find(".not-dice-savage-reroll").click(async (ev) => {
         ev.preventDefault();
         const btn = ev.currentTarget;
         const uuid = btn.dataset.uuid;
@@ -4484,7 +4522,7 @@ Hooks.on("renderChatMessage", (message, html, data) => {
         btn.innerHTML = `<i class="fas fa-paw"></i> Atacante Salvaje (Usado)`;
     });
 
-    html.find(".not-dice-savage-choice").click(async (ev) => {
+    $html.find(".not-dice-savage-choice").click(async (ev) => {
         ev.preventDefault();
         const btn = ev.currentTarget;
 
@@ -4523,7 +4561,7 @@ Hooks.on("renderChatMessage", (message, html, data) => {
         }
     });
 
-    html.find(".not-dice-cleave-attack-btn").click(async (ev) => {
+    $html.find(".not-dice-cleave-attack-btn").click(async (ev) => {
         ev.preventDefault();
         const btn = ev.currentTarget;
         const attackerId = btn.dataset.attackerId;
@@ -4558,7 +4596,7 @@ Hooks.on("renderChatMessage", (message, html, data) => {
         }
     });
 
-    html.find(".not-dice-nick-attack-btn").click(async (ev) => {
+    $html.find(".not-dice-nick-attack-btn").click(async (ev) => {
         ev.preventDefault();
         const btn = ev.currentTarget;
         const attackerId = btn.dataset.attackerId;
@@ -4593,7 +4631,7 @@ Hooks.on("renderChatMessage", (message, html, data) => {
         }
     });
 
-    html.find(".not-dice-graze-apply-btn").click(async (ev) => {
+    $html.find(".not-dice-graze-apply-btn").click(async (ev) => {
         ev.preventDefault();
         const btn = ev.currentTarget;
         if (btn.disabled) return;
@@ -4905,5 +4943,23 @@ Hooks.on("preDeleteItem", (item, options, userId) => {
         return false;
     }
 });
+
+// Compatibilidad dnd5e 6.0+: 'postFallDamage' y tiradas de daño ambiental llaman a 'dnd5e.rollDamageV2'
+// pasando únicamente 'rolls' sin el segundo parámetro 'data' ({ subject: Activity }).
+// Módulos como Autoanimations (7.1+) asumen que 'data.subject' siempre existe, lanzando TypeError al caer tokens.
+(() => {
+    const originalCallAll = Hooks.callAll;
+    Hooks.callAll = function (hook, ...args) {
+        if (hook === "dnd5e.rollDamageV2" || hook === "dnd5e.rollDamage") {
+            if (args.length < 2 || !args[1] || typeof args[1] !== "object") {
+                args[1] = { subject: null };
+            } else if (!("subject" in args[1])) {
+                args[1].subject = null;
+            }
+        }
+        return originalCallAll.apply(this, [hook, ...args]);
+    };
+})();
+
 
 
