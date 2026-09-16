@@ -866,10 +866,11 @@ globalThis.notDiceOpenDamageDialog = async ({
     };
 
     const openDialog = () => new Promise(resolve => {
+        const dialogTitle = `Tirada de Daño - ${itemName || actualItem?.name || "Daño"}`;
         const DialogV2 = foundry?.applications?.api?.DialogV2;
         if (DialogV2) {
             const app = new DialogV2({
-                window: { title: `Tirada de Daño - ${actualItem.name || itemName || "Daño"}` },
+                window: { title: dialogTitle },
                 content: buildContent(),
                 position: { width: 520 },
                 buttons: [
@@ -953,7 +954,7 @@ globalThis.notDiceOpenDamageDialog = async ({
         }
 
         const legacyDialog = new Dialog({
-            title: `Tirada de Daño - ${actualItem.name || itemName || "Daño"}`,
+            title: dialogTitle,
             content: buildContent(),
             buttons: {
                 send: {
