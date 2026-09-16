@@ -572,35 +572,36 @@ globalThis.notDiceOpenDamageDialog = async ({
     masteryAlreadyUsed = false
 } = {}) => {
     const item = uuid ? await fromUuid(uuid) : null;
-    const actualItem = item?.item || item;
+    const actualItem = item?.item || item || null;
 
-    if (!actualItem) {
-        ui.notifications?.warn("Not Dice | No se pudo encontrar el objeto origen para el daño.");
+    if (!actualItem && (!Array.isArray(requestedDamageParts) || requestedDamageParts.length === 0)) {
+        ui.notifications?.warn("Not Dice | No se pudo encontrar el objeto ni fórmula para el daño.");
         return false;
     }
 
-    const speaker = ChatMessage.getSpeaker({ actor: actualItem.actor });
-    const activeMastery = globalThis.notDiceMasteries?.getActiveMastery(actualItem) || null;
+    const speaker = actualItem?.actor ? ChatMessage.getSpeaker({ actor: actualItem.actor }) : ChatMessage.implementation.getSpeaker();
+    const activeMastery = actualItem ? (globalThis.notDiceMasteries?.getActiveMastery(actualItem) || null) : null;
     const isMasteryDisabled = !!(isCleaveAttack || isNickAttack || masteryAlreadyUsed);
     const damageTypeLabels = CONFIG.DND5E?.damageTypes ?? {};
     const rowFaces = [4, 6, 8, 10, 12, 20];
     const dialogId = `not-dice-damage-${Math.random().toString(36).slice(2, 10)}`;
     let isCritical = false;
 
-    const actor = actualItem?.actor;
-    const hasSavageAttacker = actor && globalThis.notDiceEspeciales
+    const actor = actualItem?.actor || null;
+    const hasSavageAttacker = actor && actualItem && globalThis.notDiceEspeciales
         ? globalThis.notDiceEspeciales.hasSavageAttacker(actor, actualItem)
         : false;
     const isSavageUsed = hasSavageAttacker
         ? (globalThis.notDiceEspeciales?.isSavageAttackerUsed(actor) || false)
         : false;
-    const hasGreatWeaponFighting = actor && globalThis.notDiceEspeciales
+    const hasGreatWeaponFighting = actor && actualItem && globalThis.notDiceEspeciales
         ? globalThis.notDiceEspeciales.hasGreatWeaponFighting(actor, actualItem)
         : false;
     const hasPiercer = actor?.items?.some(i => {
         const n = (i.name || "").toLowerCase();
         return i.type === "feat" && (n.includes("piercer") || n.includes("perforador"));
     }) || false;
+
     const normalizedRequestedParts = Array.isArray(requestedDamageParts)
         ? requestedDamageParts.map((part, index) => ({
             formula: String(part?.formula || "").trim(),
@@ -679,10 +680,10 @@ globalThis.notDiceOpenDamageDialog = async ({
     const buildContent = () => `
         <div style="font-family:inherit; padding:4px 2px;">
             <div style="display:flex; align-items:center; gap:12px; margin-bottom:12px; padding:10px; border:1px solid var(--color-border-light-2, #ddd); border-radius:6px; background:rgba(127,127,127,0.1); box-shadow: 0 1px 3px rgba(0,0,0,0.1);">
-                <img src="${actualItem.img || "icons/svg/sword.svg"}" style="width:44px; height:44px; border:1px solid var(--color-border-light-2, #aaa); border-radius:6px; object-fit:cover; flex-shrink:0;">
+                <img src="${actualItem?.img || "icons/svg/falling.svg" || "icons/svg/sword.svg"}" style="width:44px; height:44px; border:1px solid var(--color-border-light-2, #aaa); border-radius:6px; object-fit:cover; flex-shrink:0;">
                 <div style="flex:1; min-width:0;">
                     <div style="font-size:1.03em; font-weight:bold; color:inherit; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">Tirada de Daño</div>
-                    <div style="font-size:0.82em; color:inherit; opacity:0.8; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">${itemName || actualItem.name || "Daño"} • ${senderName || game.user.name}</div>
+                    <div style="font-size:0.82em; color:inherit; opacity:0.8; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">${itemName || actualItem?.name || "Daño"} • ${senderName || game.user.name}</div>
                 </div>
             </div>
 
@@ -779,7 +780,7 @@ globalThis.notDiceOpenDamageDialog = async ({
         const modsString = extraMods.length > 0 ? ` (${extraMods.join(" | ")})` : "";
 
         const buildPiercerButtons = (r, dmgIdx) => {
-            if (!hasPiercer || damageType !== "piercing") return "";
+            if (!hasPiercer || damageType !== "piercing" || !actualItem) return "";
             let buttonsHtml = '<div style="display: flex; gap: 4px; flex-wrap: wrap; margin-top: 8px;">';
             buttonsHtml += '<div style="width: 100%; font-size: 0.9em; font-weight: bold; margin-bottom: 4px; color: inherit;">Perforador:</div>';
             r.dice.forEach(die => {
@@ -793,16 +794,17 @@ globalThis.notDiceOpenDamageDialog = async ({
 
         const buildSavageButton = (r, dmgIdx) => {
             const firstWeaponPartIdx = rows.findIndex(row => row.weaponDamage !== false);
-            if (!hasSavageAttacker || isSavageUsed || rows[dmgIdx]?.weaponDamage === false || (firstWeaponPartIdx !== -1 && firstWeaponPartIdx != dmgIdx)) return "";
+            if (!hasSavageAttacker || isSavageUsed || rows[dmgIdx]?.weaponDamage === false || (firstWeaponPartIdx !== -1 && firstWeaponPartIdx != dmgIdx) || !actualItem) return "";
             return `<div style="margin-top:8px;"><button type="button" class="not-dice-savage-reroll" data-uuid="${actualItem.uuid}" data-idx="${dmgIdx}" data-formula="${btoa(formula)}" data-flavor="${btoa(flavorBase)}" data-damagelabel="${btoa(damageLabel)}" data-mods="${btoa(modsString)}" data-original="${r.total}" data-damage-type="${damageType}" style="width:100%; font-weight:bold; padding:4px; border:1px solid rgba(197,34,31,0.5); border-radius:4px; background:rgba(197,34,31,0.1); color:#ff5252; cursor:pointer;"><i class="fas fa-paw"></i> Atacante Salvaje (relanza el daño)</button></div>`;
         };
 
-        const rollObj = new Roll(formula, actualItem.getRollData());
+        const rollData = typeof actualItem?.getRollData === "function" ? actualItem.getRollData() : {};
+        const rollObj = new Roll(formula, rollData);
         if (globalThis.notDiceApplyColorset) globalThis.notDiceApplyColorset(rollObj, damageType);
         const roll = await rollObj.evaluate();
         await roll.toMessage({
             speaker,
-            flavor: `<strong>${flavorBase}</strong> • ${actualItem.name || itemName || "Daño"} <span style="opacity:0.75;">(${damageLabel})</span>${modsString}${buildPiercerButtons(roll, dmgIdx)}${buildSavageButton(roll, dmgIdx)}`
+            flavor: `<strong>${flavorBase}</strong> • ${actualItem?.name || itemName || "Daño"} <span style="opacity:0.75;">(${damageLabel})</span>${modsString}${buildPiercerButtons(roll, dmgIdx)}${buildSavageButton(roll, dmgIdx)}`
         });
 
         return roll.total;
@@ -1200,7 +1202,7 @@ const notDiceHandleAttackSocket = async (data) => {
 
     if (data.type === "not-dice.show-spell-damage") {
         try {
-            if (globalThis._notDiceActiveAttackDialogs && globalThis._notDiceActiveAttackDialogs[data.itemUuid]) {
+            if (data.itemUuid && globalThis._notDiceActiveAttackDialogs && globalThis._notDiceActiveAttackDialogs[data.itemUuid]) {
                 const wasUpdated = globalThis._notDiceActiveAttackDialogs[data.itemUuid](
                     data.preCalculatedTotals,
                     data.preCalculatedParts,
@@ -1216,9 +1218,34 @@ const notDiceHandleAttackSocket = async (data) => {
             }
 
             const item = data.itemUuid ? await fromUuid(data.itemUuid) : null;
+            if (!item) {
+                // Daño sin ítem (ej. caída, daño ambiental)
+                if (data.targetIds?.length && data.preCalculatedTotals?.length) {
+                    const damageValues = (data.preCalculatedParts || []).map((part, idx) => ({
+                        value: data.preCalculatedTotals[idx] ?? data.preCalculatedTotals[0] ?? 0,
+                        type: part.type || "bludgeoning"
+                    }));
+                    if (damageValues.length === 0 && data.preCalculatedTotals.length > 0) {
+                        damageValues.push({
+                            value: data.preCalculatedTotals[0] || 0,
+                            type: "bludgeoning"
+                        });
+                    }
+                    for (const tid of data.targetIds) {
+                        const tok = canvas.tokens?.get(tid) || game.scenes?.current?.tokens?.get(tid) || (canvas.tokens?.placeables ? canvas.tokens.placeables.find(t => t.id === tid || t.actor?.id === tid) : null);
+                        const actor = tok?.actor || (game.actors ? game.actors.get(tid) : null);
+                        if (actor && typeof actor.applyDamage === "function") {
+                            await actor.applyDamage(damageValues);
+                        }
+                    }
+                    ui.notifications?.info(`Not Dice | Daño aplicado a los objetivos.`);
+                }
+                return;
+            }
+
             const activity = item?.system?.activities?.find(a => a.type === "save" || a.type === "damage" || a.type === "attack") || (item?.type === "save" || item?.type === "spell" ? item : null);
 
-            if (!item || !activity) return ui.notifications?.warn("Not Dice | No se pudo recuperar la actividad para el daño del hechizo.");
+            if (!activity) return ui.notifications?.warn("Not Dice | No se pudo recuperar la actividad para el daño del hechizo.");
 
             await activity.rollDamage({
                 event: notDiceMockEvent({ targetIds: data.targetIds }),
@@ -4029,12 +4056,7 @@ Hooks.once("ready", () => {
 
         DamageRoll.buildConfigure = async function (config, dialog, message) {
             (globalThis.notDiceLogger || console).debug("Damage buildConfigure intercepted", config);
-            const isFallDamage = !!(
-                config?.context?.fall ||
-                config?.options?.context?.fall ||
-                config?.data?.flags?.dnd5e?.context?.fall
-            );
-            if (!config?.options?.notDiceBypass && !isFallDamage) {
+            if (!config?.options?.notDiceBypass) {
                 dialog = foundry.utils.mergeObject(dialog ?? {}, { configure: false });
                 if (message) message.create = false;
             }
@@ -4042,13 +4064,7 @@ Hooks.once("ready", () => {
         };
 
         DamageRoll.buildEvaluate = async function (rolls, rollConfig, messageConfig) {
-            const isFallDamage = !!(
-                rollConfig?.context?.fall ||
-                rollConfig?.options?.context?.fall ||
-                rollConfig?.data?.flags?.dnd5e?.context?.fall
-            );
-
-            if (rollConfig?.options?.notDiceBypass || isFallDamage) {
+            if (rollConfig?.options?.notDiceBypass) {
                 return originalDamageBuildEvaluate.call(this, rolls, rollConfig, messageConfig);
             }
 
@@ -4160,9 +4176,43 @@ Hooks.once("ready", () => {
                         masteryAlreadyUsed: masteryAlreadyUsed
                     });
                     return [];
-                } else if (!item) {
-                    // Tirada sin ítem/sujeto (ambiental, caída, macro, etc.) -> permitir evaluación nativa
-                    return originalDamageBuildEvaluate.call(this, rolls, rollConfig, messageConfig);
+                } else if (!item && typeof globalThis.notDiceOpenDamageDialog === "function") {
+                    // Daño sin ítem (ej. caída, daño ambiental, trampa, etc.)
+                    let targetIds = Array.from(game.user.targets ?? []).map(t => t.id);
+                    if (targetIds.length === 0 && rollConfig?.target) {
+                        const targetActor = rollConfig.target;
+                        const tok = targetActor.token || (canvas.tokens?.placeables ? canvas.tokens.placeables.find(t => t.actor?.id === targetActor.id) : null);
+                        if (tok) targetIds = [tok.id];
+                        else if (targetActor.id) targetIds = [targetActor.id];
+                    }
+
+                    const isFall = !!(
+                        rollConfig?.context?.fall ||
+                        rollConfig?.options?.context?.fall ||
+                        rollConfig?.data?.flags?.dnd5e?.context?.fall ||
+                        rollConfig?.isFallDamage ||
+                        rollConfig?.options?.isFallDamage
+                    );
+
+                    const requestedDamageParts = rolls.map(r => ({
+                        formula: r.formula || r._formula || (Array.isArray(r.parts) ? r.parts.join(" + ") : (typeof r.parts === "string" ? r.parts : "1d6")),
+                        type: r.options?.type || (isFall ? "bludgeoning" : ""),
+                        availableTypes: r.options?.availableTypes || [],
+                        weaponDamage: false
+                    }));
+
+                    globalThis.notDiceOpenDamageDialog({
+                        uuid: null,
+                        itemName: isFall ? "Daño por Caída" : (rollConfig?.flavor || "Daño"),
+                        targetIds: targetIds,
+                        targetUserId: notDiceFirstActiveGmId(),
+                        senderName: game.user?.name || "Jugador",
+                        requestedDamageParts: requestedDamageParts,
+                        isCleaveAttack: false,
+                        isNickAttack: false,
+                        masteryAlreadyUsed: false
+                    });
+                    return [];
                 } else {
                     ui.notifications?.warn("Not Dice | No se pudo abrir el diálogo de daño personalizado.");
                     return [];
@@ -4951,10 +5001,19 @@ Hooks.on("preDeleteItem", (item, options, userId) => {
     const originalCallAll = Hooks.callAll;
     Hooks.callAll = function (hook, ...args) {
         if (hook === "dnd5e.rollDamageV2" || hook === "dnd5e.rollDamage") {
+            const dummyActivity = {
+                actor: { hits: {} },
+                hits: {},
+                description: {},
+                target: {},
+                relativeID: "dummy"
+            };
             if (args.length < 2 || !args[1] || typeof args[1] !== "object") {
-                args[1] = { subject: null };
-            } else if (!("subject" in args[1])) {
-                args[1].subject = null;
+                args[1] = { subject: dummyActivity };
+            } else if (!args[1].subject) {
+                args[1].subject = dummyActivity;
+            } else if (typeof args[1].subject === "object" && !args[1].subject.actor) {
+                args[1].subject.actor = { hits: {} };
             }
         }
         return originalCallAll.apply(this, [hook, ...args]);
