@@ -4056,15 +4056,21 @@ Hooks.once("ready", () => {
         };
 
         DamageRoll.buildConfigure = async function (config, dialog, message) {
-            (globalThis.notDiceLogger || console).debug("Damage buildConfigure intercepted", config);
+            (globalThis.notDiceLogger || console).debug("Damage buildConfigure intercepted", config, dialog, message);
+            const subject = dialog?.subject || config?.subject || (Array.isArray(config) ? null : config?.subject);
+            const item = subject?.item || (subject?.documentName === "Item" ? subject : null) || dialog?.item || null;
+
             const isFallDamage = !!(
-                config?.context?.fall ||
-                config?.options?.context?.fall ||
-                config?.data?.flags?.dnd5e?.context?.fall ||
+                dialog?.isFallDamage ||
+                dialog?.options?.isFallDamage ||
+                dialog?.context?.fall ||
+                dialog?.options?.context?.fall ||
+                dialog?.data?.flags?.dnd5e?.context?.fall ||
                 config?.isFallDamage ||
-                config?.options?.isFallDamage
+                (Array.isArray(config) && config.some(c => c?.options?.isFallDamage || c?.options?.context?.fall))
             );
-            if (!config?.options?.notDiceBypass && !isFallDamage) {
+
+            if (!config?.options?.notDiceBypass && !dialog?.options?.notDiceBypass && !isFallDamage && item) {
                 dialog = foundry.utils.mergeObject(dialog ?? {}, { configure: false });
                 if (message) message.create = false;
             }
@@ -4072,15 +4078,19 @@ Hooks.once("ready", () => {
         };
 
         DamageRoll.buildEvaluate = async function (rolls, rollConfig, messageConfig) {
+            const subject = rollConfig?.subject;
+            const item = subject?.item || (subject?.documentName === "Item" ? subject : null) || rollConfig?.item || null;
+
             const isFallDamage = !!(
                 rollConfig?.context?.fall ||
                 rollConfig?.options?.context?.fall ||
                 rollConfig?.data?.flags?.dnd5e?.context?.fall ||
                 rollConfig?.isFallDamage ||
-                rollConfig?.options?.isFallDamage
+                rollConfig?.options?.isFallDamage ||
+                (Array.isArray(rolls) && rolls.some(r => r?.options?.isFallDamage || r?.options?.context?.fall))
             );
 
-            if (rollConfig?.options?.notDiceBypass || isFallDamage) {
+            if (rollConfig?.options?.notDiceBypass || isFallDamage || !item) {
                 return originalDamageBuildEvaluate.call(this, rolls, rollConfig, messageConfig);
             }
 
