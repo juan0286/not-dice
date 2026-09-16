@@ -4057,7 +4057,14 @@ Hooks.once("ready", () => {
 
         DamageRoll.buildConfigure = async function (config, dialog, message) {
             (globalThis.notDiceLogger || console).debug("Damage buildConfigure intercepted", config);
-            if (!config?.options?.notDiceBypass) {
+            const isFallDamage = !!(
+                config?.context?.fall ||
+                config?.options?.context?.fall ||
+                config?.data?.flags?.dnd5e?.context?.fall ||
+                config?.isFallDamage ||
+                config?.options?.isFallDamage
+            );
+            if (!config?.options?.notDiceBypass && !isFallDamage) {
                 dialog = foundry.utils.mergeObject(dialog ?? {}, { configure: false });
                 if (message) message.create = false;
             }
@@ -4065,7 +4072,15 @@ Hooks.once("ready", () => {
         };
 
         DamageRoll.buildEvaluate = async function (rolls, rollConfig, messageConfig) {
-            if (rollConfig?.options?.notDiceBypass) {
+            const isFallDamage = !!(
+                rollConfig?.context?.fall ||
+                rollConfig?.options?.context?.fall ||
+                rollConfig?.data?.flags?.dnd5e?.context?.fall ||
+                rollConfig?.isFallDamage ||
+                rollConfig?.options?.isFallDamage
+            );
+
+            if (rollConfig?.options?.notDiceBypass || isFallDamage) {
                 return originalDamageBuildEvaluate.call(this, rolls, rollConfig, messageConfig);
             }
 
@@ -4177,43 +4192,9 @@ Hooks.once("ready", () => {
                         masteryAlreadyUsed: masteryAlreadyUsed
                     });
                     return [];
-                } else if (!item && typeof globalThis.notDiceOpenDamageDialog === "function") {
-                    // Daño sin ítem (ej. caída, daño ambiental, trampa, etc.)
-                    let targetIds = Array.from(game.user.targets ?? []).map(t => t.id);
-                    if (targetIds.length === 0 && rollConfig?.target) {
-                        const targetActor = rollConfig.target;
-                        const tok = targetActor.token || (canvas.tokens?.placeables ? canvas.tokens.placeables.find(t => t.actor?.id === targetActor.id) : null);
-                        if (tok) targetIds = [tok.id];
-                        else if (targetActor.id) targetIds = [targetActor.id];
-                    }
-
-                    const isFall = !!(
-                        rollConfig?.context?.fall ||
-                        rollConfig?.options?.context?.fall ||
-                        rollConfig?.data?.flags?.dnd5e?.context?.fall ||
-                        rollConfig?.isFallDamage ||
-                        rollConfig?.options?.isFallDamage
-                    );
-
-                    const requestedDamageParts = rolls.map(r => ({
-                        formula: r.formula || r._formula || (Array.isArray(r.parts) ? r.parts.join(" + ") : (typeof r.parts === "string" ? r.parts : "1d6")),
-                        type: r.options?.type || (isFall ? "bludgeoning" : ""),
-                        availableTypes: r.options?.availableTypes || [],
-                        weaponDamage: false
-                    }));
-
-                    globalThis.notDiceOpenDamageDialog({
-                        uuid: null,
-                        itemName: isFall ? "Daño por Caída" : (rollConfig?.flavor || "Daño"),
-                        targetIds: targetIds,
-                        targetUserId: notDiceFirstActiveGmId(),
-                        senderName: game.user?.name || "Jugador",
-                        requestedDamageParts: requestedDamageParts,
-                        isCleaveAttack: false,
-                        isNickAttack: false,
-                        masteryAlreadyUsed: false
-                    });
-                    return [];
+                } else if (!item) {
+                    // Tirada sin ítem (daño ambiental, caídas, macros nativas del sistema, etc.) -> evaluación nativa
+                    return originalDamageBuildEvaluate.call(this, rolls, rollConfig, messageConfig);
                 } else {
                     ui.notifications?.warn("Not Dice | No se pudo abrir el diálogo de daño personalizado.");
                     return [];
