@@ -88,10 +88,12 @@ async function translateAndUpdate(htmlDesc, targetId) {
         return;
     }
 
+    // Colocamos el texto original enriquecido de inmediato para que el usuario nunca vea la caja vacía o un spinner infinito
+    el.innerHTML = htmlDesc;
+
     // Limpiamos etiquetas HTML para extraer el texto puro y no romper la API
     let plainText = htmlDesc.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
-    if (!plainText || plainText === "Sin descripción.") {
-        el.innerHTML = "Sin descripción.";
+    if (!plainText || plainText === "Sin descripción." || plainText.length < 5) {
         return;
     }
 
@@ -119,16 +121,16 @@ async function translateAndUpdate(htmlDesc, targetId) {
             }
         } catch (error) {
             (globalThis.notDiceLogger || console).error("Error en la API de MyMemory:", error);
-            if (i === 0) finalTranslation = "<p><em>Error de red al intentar traducir.</em></p>";
             break;
         }
     }
 
-    if (chunks.length > 2) {
-        finalTranslation += `<p style="color: #888; font-style: italic;">[...] Traducción truncada para proteger el límite de la API gratuita.</p>`;
+    if (finalTranslation) {
+        if (chunks.length > 2) {
+            finalTranslation += `<p style="color: #888; font-style: italic;">[...] Traducción truncada para proteger el límite de la API gratuita.</p>`;
+        }
+        el.innerHTML = finalTranslation;
     }
-
-    el.innerHTML = finalTranslation;
 }
 
 globalThis.notDiceTranslateAndUpdate = translateAndUpdate;
@@ -170,122 +172,182 @@ async function handleAreaCreation(document, userId, tipoLog) {
     };
 
     try {
-        let originDoc = await fromUuid(originUuid);
-        if (!originDoc && document.flags?.dnd5e?.item) {
-            originDoc = await fromUuid(document.flags.dnd5e.item);
+        let actualItem = null;
+        let itemActor = null;
+        let activeActivity = null;
+        let isActivity = false;
+
+        // 1. Intentar resolver originUuid
+        let originDoc = null;
+        if (originUuid) {
+            try {
+                originDoc = (await fromUuid(originUuid)) || (typeof fromUuidSync === "function" ? fromUuidSync(originUuid, { strict: false }) : null);
+            } catch (e) {}
         }
 
-        if (originDoc) {
-            let actualItem = null;
-            let itemActor = null;
-            let isActivity = false;
+        // 2. Intentar resolver document.flags?.dnd5e?.item
+        const flagItemRef = document.flags?.dnd5e?.item;
+        let itemDoc = null;
+        if (flagItemRef && flagItemRef !== originUuid) {
+            try {
+                itemDoc = (await fromUuid(flagItemRef)) || (typeof fromUuidSync === "function" ? fromUuidSync(flagItemRef, { strict: false }) : null);
+            } catch (e) {}
+        }
 
-            // En dnd5e v6+, originUuid puede ser:
-            // 1. Una Activity: `Actor.xxx.Item.yyy.Activity.zzz` (tiene .item)
-            // 2. Un Item: `Actor.xxx.Item.yyy` (tiene .actor, o documentName === "Item")
-            // 3. Un Actor: `Actor.xxx` (cuando se crea plantilla directamente o el origin apunta al actor)
-            if (originDoc.item) {
+        // 3. Inspeccionar originDoc e itemDoc
+        const inspectDoc = (doc) => {
+            if (!doc) return;
+            if (doc.item) {
+                // Es una Activity (PseudoDocument de D&D5e v4+)
                 isActivity = true;
-                actualItem = originDoc.item;
-                itemActor = actualItem.actor || originDoc.actor;
-            } else if (originDoc.documentName === "Item" || originDoc.type !== "character" && originDoc.type !== "npc") {
-                actualItem = originDoc;
-                itemActor = actualItem.actor;
-            } else if (originDoc.documentName === "Actor" || originDoc.type === "character" || originDoc.type === "npc") {
-                itemActor = originDoc;
-                // Si el origin es el Actor, buscar si el template trae el item o la actividad en sus flags
-                const itemRef = document.flags?.dnd5e?.item || document.flags?.dnd5e?.activityUuid;
-                if (itemRef) {
-                    const resolved = await fromUuid(itemRef);
-                    if (resolved?.item) {
+                activeActivity = doc;
+                actualItem = doc.item;
+                itemActor = actualItem?.actor || doc.actor || itemActor;
+            } else if (doc.documentName === "Item" || (doc.type && doc.type !== "character" && doc.type !== "npc")) {
+                // Es un Item
+                actualItem = doc;
+                itemActor = doc.actor || itemActor;
+            } else if (doc.documentName === "Actor" || doc.type === "character" || doc.type === "npc") {
+                // Es un Actor
+                itemActor = doc;
+            }
+        };
+
+        inspectDoc(originDoc);
+        if (!actualItem && itemDoc) inspectDoc(itemDoc);
+
+        // 4. Si aún no tenemos itemActor, intentar obtenerlo de userId o canvas
+        if (!itemActor && userId) {
+            const user = game.users.get(userId);
+            itemActor = user?.character || canvas.tokens.controlled[0]?.actor || null;
+        }
+
+        // 5. Si tenemos itemActor pero aún no tenemos actualItem:
+        if (itemActor && !actualItem) {
+            // a) Si flagItemRef era un ID directo (no un UUID con puntos)
+            if (flagItemRef && itemActor.items?.has(flagItemRef)) {
+                actualItem = itemActor.items.get(flagItemRef);
+            }
+
+            // b) Si hay flag de activity ID o UUID
+            const actRef = document.flags?.dnd5e?.activity || document.flags?.dnd5e?.activityId || document.flags?.dnd5e?.activityUuid;
+            if (!actualItem && actRef) {
+                for (const it of itemActor.items) {
+                    const foundAct = it.system?.activities?.get?.(actRef) || (it.system?.activities?.has?.(actRef) ? it.system.activities.get(actRef) : null);
+                    if (foundAct) {
+                        actualItem = it;
+                        activeActivity = foundAct;
                         isActivity = true;
-                        actualItem = resolved.item;
-                        originDoc = resolved;
-                    } else if (resolved) {
-                        actualItem = resolved;
-                        originDoc = resolved;
+                        break;
                     }
                 }
+            }
+
+            // c) Si hay dimensiones de plantilla y spellLevel, buscar el spell coincidente
+            const targetSize = Number(document.flags?.dnd5e?.dimensions?.size ?? document.distance);
+            const spellLevel = document.flags?.dnd5e?.spellLevel;
+
+            if (!actualItem && itemActor.items) {
+                const candidateSpells = itemActor.items.filter(it => it.type === "spell");
                 
-                // Si aún no tenemos el item, buscar por activity id en flags
-                if (!actualItem) {
-                    const actId = document.flags?.dnd5e?.activity || document.flags?.dnd5e?.activityId;
-                    if (actId && itemActor.items) {
-                        for (const it of itemActor.items) {
-                            if (it.system?.activities?.has?.(actId) || it.system?.activities?.get?.(actId)) {
-                                actualItem = it;
-                                isActivity = true;
-                                originDoc = it.system.activities.get(actId);
-                                break;
-                            }
-                        }
-                    }
+                // Priorizar hechizos que coincidan con spellLevel y tamaño de plantilla
+                let matched = candidateSpells.find(it => {
+                    const lvlMatches = spellLevel === undefined || it.system?.level === spellLevel;
+                    const tmpl = it.system?.target?.template;
+                    const tmplMatches = tmpl && Number(tmpl.size) === targetSize;
+                    return lvlMatches && tmplMatches;
+                });
+
+                // Si no, buscar cualquier hechizo con actividades que coincidan en tamaño
+                if (!matched) {
+                    matched = candidateSpells.find(it => {
+                        const acts = it.system?.activities ? Array.from(it.system.activities.values()) : [];
+                        return acts.some(a => {
+                            const s = a.target?.template?.size || it.system?.target?.template?.size;
+                            return Number(s) === targetSize;
+                        });
+                    });
                 }
 
-                // Si aún no encontramos el item, buscar el último hechizo o item con plantilla de área
-                if (!actualItem && itemActor.items) {
-                    actualItem = itemActor.items.find(it => {
-                        if (it.system?.activities) {
-                            return it.system.activities.contents?.some(a => a.target?.template?.type || a.type === "save");
-                        }
-                        return false;
-                    }) || null;
+                // Si no, buscar cualquier hechizo con plantilla o actividad de salvación
+                if (!matched) {
+                    matched = candidateSpells.find(it => {
+                        const tmpl = it.system?.target?.template?.type;
+                        const acts = it.system?.activities ? Array.from(it.system.activities.values()) : [];
+                        return tmpl || acts.some(a => a.type === "save" || a.target?.template?.type);
+                    });
+                }
+
+                // Si no hay hechizos, buscar en otros items con plantilla o salvación
+                if (!matched) {
+                    matched = itemActor.items.find(it => {
+                        const acts = it.system?.activities ? Array.from(it.system.activities.values()) : [];
+                        return acts.some(a => a.target?.template?.type || a.type === "save");
+                    });
+                }
+
+                if (matched) {
+                    actualItem = matched;
                 }
             }
+        }
 
-            if (!actualItem) {
-                // Fallback si no logramos encontrar un Item específico
-                actualItem = originDoc;
-                itemActor = itemActor || actualItem.actor || null;
+        // 6. Seguridad estricta: actualItem NUNCA puede ser un Actor
+        if (actualItem && (actualItem.documentName === "Actor" || actualItem.type === "character" || actualItem.type === "npc")) {
+            actualItem = null;
+        }
+
+        // 7. Configurar spellData
+        if (actualItem) {
+            spellData.name = actualItem.name;
+            spellData.caster = itemActor?.name || actualItem.actor?.name || "Desconocido";
+            // Spell icon: SOLO el icono del hechizo/item o de la actividad. ¡NUNCA el avatar del actor!
+            spellData.img = actualItem.img || activeActivity?.img || "icons/magic/light/explosion-star-glow-blue-yellow.webp";
+            // Asegurar que originUuid apunte a la Actividad o al Ítem
+            spellData.originUuid = activeActivity?.uuid || actualItem.uuid || originUuid;
+
+            // Nivel del hechizo / tipo
+            if (actualItem.type === "spell") {
+                const spellLvl = document.flags?.dnd5e?.spellLevel ?? actualItem.system?.level;
+                spellData.level = spellLvl === 0 ? "Truco" : (spellLvl !== undefined ? `Nivel ${spellLvl}` : "Hechizo");
+            } else {
+                spellData.level = actualItem.type === "feat" ? "Rasgo / Dote" : "Habilidad / Objeto";
             }
 
-            spellData.name = (actualItem.documentName === "Item" ? actualItem.name : null) 
-                || (isActivity ? originDoc.name : null) 
-                || (actualItem.name && actualItem.name !== itemActor?.name ? actualItem.name : null)
-                || (document.name !== "MeasuredTemplate" ? document.name : null)
-                || spellData.name;
-            spellData.caster = itemActor?.name || (actualItem.actor ? actualItem.actor.name : "Desconocido");
-            spellData.img = actualItem.img || (itemActor ? itemActor.img : spellData.img);
-
-            // 1. Descripción enriquecida
+            // Descripción enriquecida
             if (globalThis.notDiceEnrichDescription) {
                 spellData.description = await globalThis.notDiceEnrichDescription(actualItem);
             } else {
                 spellData.description = actualItem.system?.description?.value || actualItem.system?.description?.chat || "<p>Sin descripción.</p>";
             }
-
             if (!spellData.description || spellData.description === "<p>Sin descripción.</p>") {
                 const fallbackDesc = actualItem.system?.description?.value || actualItem.system?.description?.chat;
                 if (fallbackDesc) spellData.description = fallbackDesc;
             }
 
-            // 2. Nivel del hechizo / tipo
-            if (actualItem.type === "spell") {
-                const spellLvl = document.flags?.dnd5e?.spellLevel ?? actualItem.system?.level;
-                spellData.level = spellLvl === 0 ? "Truco" : (spellLvl !== undefined ? `Nivel ${spellLvl}` : "Hechizo");
-            } else {
-                spellData.level = "Habilidad / Objeto";
-            }
-
-            // 3. Actividad correspondiente
-            let activeActivity = null;
-            if (isActivity) {
-                activeActivity = originDoc;
-            } else if (actualItem.system?.activities) {
+            // Seleccionar actividad relevante si no fue asignada aún
+            if (!activeActivity && actualItem.system?.activities) {
                 const actId = document.flags?.dnd5e?.activity || document.flags?.dnd5e?.activityId;
-                if (actId) activeActivity = actualItem.system.activities.get(actId);
+                if (actId) activeActivity = actualItem.system.activities.get?.(actId) || null;
                 if (!activeActivity) {
-                    activeActivity = actualItem.system.activities.contents?.find(a => a.type === "save")
-                        || actualItem.system.activities.contents?.find(a => a.target?.template?.type || a.target?.type)
+                    activeActivity = actualItem.system.activities.getByType?.("save")?.[0]
+                        || actualItem.system.activities.find?.(a => a.type === "save")
+                        || actualItem.system.activities.find?.(a => a.target?.template?.type || a.target?.type)
+                        || actualItem.system.activities.getByType?.("damage")?.[0]
+                        || actualItem.system.activities.first?.()
                         || actualItem.system.activities.contents?.[0]
                         || null;
                 }
             }
 
-            // 4. Salvación y CD
-            let saveActivity = (activeActivity?.save || activeActivity?.type === "save")
-                ? activeActivity
-                : actualItem.system?.activities?.contents?.find(a => a.type === "save" || a.save);
+            // Salvación y CD
+            let saveActivity = null;
+            if (activeActivity && (activeActivity.save || activeActivity.type === "save")) {
+                saveActivity = activeActivity;
+            } else if (actualItem.system?.activities) {
+                saveActivity = actualItem.system.activities.getByType?.("save")?.[0]
+                    || actualItem.system.activities.find?.(a => a.type === "save" || a.save);
+            }
 
             if (saveActivity?.save) {
                 const abilitySet = saveActivity.save.ability;
@@ -332,106 +394,101 @@ async function handleAreaCreation(document, userId, tipoLog) {
                 spellData.saveDC = actualItem.system?.save?.dc || itemActor?.system?.attributes?.spelldc || "";
             }
 
-            // 5. Extracción de Daño
+            // Extracción de Daño
             spellData.damageLabels = [];
-            let hasParts = false;
+            spellData.hasDamage = false;
 
+            const activitiesToCheck = [];
+            if (activeActivity) activitiesToCheck.push(activeActivity);
             if (actualItem.system?.activities) {
                 for (const act of actualItem.system.activities.values()) {
-                    const parts = act.damage?.parts || act.system?.damage?.parts;
-                    if (parts && parts.length > 0) {
-                        spellData.hasDamage = true;
-                        hasParts = true;
-                        for (const p of parts) {
-                            let formula = "";
-                            let type = "";
-                            if (Array.isArray(p)) {
-                                formula = p[0] || "";
-                                type = p[1] || "";
-                            } else if (p) {
-                                if (p.custom?.enabled && p.custom.formula) {
-                                    formula = p.custom.formula;
-                                } else if (p.formula) {
-                                    formula = p.formula;
-                                } else if (p.number && p.denomination) {
-                                    formula = `${p.number}d${p.denomination}${p.bonus ? ` + ${p.bonus}` : ''}`;
-                                } else if (p.bonus) {
-                                    formula = String(p.bonus);
-                                }
+                    if (!activitiesToCheck.includes(act)) activitiesToCheck.push(act);
+                }
+            }
 
-                                if (p.types instanceof Set) {
-                                    type = Array.from(p.types)[0] || "";
-                                } else if (Array.isArray(p.types)) {
-                                    type = p.types[0] || "";
-                                } else if (typeof p.types === "string") {
-                                    type = p.types;
-                                } else if (p.type) {
-                                    type = p.type;
-                                }
+            for (const act of activitiesToCheck) {
+                const parts = act.damage?.parts || act.healing?.parts;
+                if (parts && parts.length > 0) {
+                    for (const p of parts) {
+                        let formula = "";
+                        let type = "";
+                        if (Array.isArray(p)) {
+                            formula = p[0] || "";
+                            type = p[1] || "";
+                        } else if (p) {
+                            if (p.custom?.enabled && p.custom.formula) {
+                                formula = p.custom.formula;
+                            } else if (p.formula) {
+                                formula = p.formula;
+                            } else if (p.number && p.denomination) {
+                                formula = `${p.number}d${p.denomination}${p.bonus ? ` + ${p.bonus}` : ''}`;
+                            } else if (p.bonus) {
+                                formula = String(p.bonus);
                             }
-                            if (formula) {
-                                spellData.damageLabels.push({
-                                    formula: formula.trim(),
-                                    type: (type || "").trim().toLowerCase()
-                                });
+
+                            if (p.types instanceof Set) {
+                                type = Array.from(p.types)[0] || "";
+                            } else if (Array.isArray(p.types)) {
+                                type = p.types[0] || "";
+                            } else if (typeof p.types === "string") {
+                                type = p.types;
+                            } else if (p.type) {
+                                type = p.type;
+                            }
+                        }
+                        if (formula) {
+                            const trimmedFormula = formula.trim();
+                            const trimmedType = (type || "").trim().toLowerCase();
+                            if (!spellData.damageLabels.some(d => d.formula === trimmedFormula && d.type === trimmedType)) {
+                                spellData.damageLabels.push({ formula: trimmedFormula, type: trimmedType });
                             }
                         }
                     }
                 }
             }
 
-            if (!hasParts && actualItem.system?.damage?.parts && actualItem.system.damage.parts.length > 0) {
+            if (spellData.damageLabels.length > 0) {
                 spellData.hasDamage = true;
-                hasParts = true;
+            } else if (actualItem.system?.damage?.parts?.length) {
                 for (const p of actualItem.system.damage.parts) {
                     if (Array.isArray(p) && p[0]) {
                         spellData.damageLabels.push({ formula: p[0].trim(), type: (p[1] || "").trim().toLowerCase() });
                     }
                 }
-            }
-
-            if (!hasParts && actualItem.labels?.damage) {
+                if (spellData.damageLabels.length > 0) spellData.hasDamage = true;
+            } else if (actualItem.labels?.damage) {
                 spellData.hasDamage = true;
                 spellData.damageLabels.push({ formula: actualItem.labels.damage, type: "" });
             }
 
-            // 6. Extracción de Efectos Activos
+            // Extracción de Efectos Activos
             spellData.effects = [];
             const addedEffectIds = new Set();
 
-            if (activeActivity?.effects && activeActivity.effects.length > 0) {
-                for (const applied of activeActivity.effects) {
+            const collectFromAct = async (act) => {
+                if (!act?.effects?.length) return;
+                for (const applied of act.effects) {
                     const effId = applied._id || applied.id;
-                    const eff = applied.effect || actualItem.effects?.get(effId) || itemActor?.effects?.get(effId);
+                    let eff = applied.effect || actualItem.effects?.get?.(effId) || itemActor?.effects?.get?.(effId);
+                    if (!eff && applied.uuid) {
+                        try { eff = (await fromUuid(applied.uuid)) || (typeof fromUuidSync === "function" ? fromUuidSync(applied.uuid, { strict: false }) : null); } catch (e) {}
+                    }
                     if (eff && !addedEffectIds.has(eff.id)) {
                         addedEffectIds.add(eff.id);
                         spellData.effects.push({
                             id: eff.id,
                             name: eff.name,
                             img: eff.img || eff.icon || actualItem.img,
-                            data: eff.toObject()
+                            data: typeof eff.toObject === "function" ? eff.toObject() : eff
                         });
                     }
                 }
-            }
+            };
 
+            if (activeActivity) await collectFromAct(activeActivity);
             if (actualItem.system?.activities) {
                 for (const act of actualItem.system.activities.values()) {
-                    if (act.effects && act.effects.length > 0) {
-                        for (const applied of act.effects) {
-                            const effId = applied._id || applied.id;
-                            const eff = applied.effect || actualItem.effects?.get(effId) || itemActor?.effects?.get(effId);
-                            if (eff && !addedEffectIds.has(eff.id)) {
-                                addedEffectIds.add(eff.id);
-                                spellData.effects.push({
-                                    id: eff.id,
-                                    name: eff.name,
-                                    img: eff.img || eff.icon || actualItem.img,
-                                    data: eff.toObject()
-                                });
-                            }
-                        }
-                    }
+                    await collectFromAct(act);
                 }
             }
 
@@ -444,12 +501,30 @@ async function handleAreaCreation(document, userId, tipoLog) {
                             id: eff.id,
                             name: eff.name,
                             img: eff.img || eff.icon || actualItem.img,
-                            data: eff.toObject()
+                            data: typeof eff.toObject === "function" ? eff.toObject() : eff
                         });
                     }
                 });
             }
+        } else {
+            // Fallback general si no se localizó ningún item
+            spellData.name = document.name !== "MeasuredTemplate" ? document.name : "Área de Efecto";
+            spellData.caster = itemActor?.name || "Desconocido";
+            spellData.img = "icons/magic/light/explosion-star-glow-blue-yellow.webp";
+            spellData.description = "<p>Área de efecto colocada en el terreno.</p>";
         }
+
+        (globalThis.notDiceLogger || console).log("Not Dice | handleAreaCreation procesado:", {
+            name: spellData.name,
+            caster: spellData.caster,
+            img: spellData.img,
+            level: spellData.level,
+            hasDamage: spellData.hasDamage,
+            damageLabels: spellData.damageLabels,
+            saveDC: spellData.saveDC,
+            saveAbility: spellData.saveAbility,
+            effectsCount: spellData.effects.length
+        });
     } catch (error) {
         (globalThis.notDiceLogger || console).error("Fallo al procesar el ítem:", error);
     }
@@ -814,14 +889,26 @@ ${epicBtnHtml}
             rollDamageBtn.addEventListener('click', async (e) => {
                 e.preventDefault();
                 try {
-                    const item = await fromUuid(spellData.originUuid);
+                    let item = null;
+                    try {
+                        item = (await fromUuid(spellData.originUuid)) || (typeof fromUuidSync === "function" ? fromUuidSync(spellData.originUuid, { strict: false }) : null);
+                    } catch (err) {}
+
                     const isActivity = !!item?.item;
                     const actualItem = isActivity ? item.item : item;
-                    if (!actualItem) return ui.notifications.warn("Not Dice | No se pudo encontrar el objeto origen.");
+                    if (!actualItem || actualItem.documentName === "Actor") return ui.notifications.warn("Not Dice | No se pudo encontrar el objeto origen.");
 
-                    const dmgAct = isActivity && typeof item.rollDamage === "function"
-                        ? item
-                        : (actualItem.system.activities?.contents?.find(a => a.type === "damage" || a.type === "attack" || a.type === "save" || typeof a.rollDamage === "function") || null);
+                    let dmgAct = null;
+                    if (isActivity && typeof item.rollDamage === "function") {
+                        dmgAct = item;
+                    } else if (actualItem.system?.activities) {
+                        dmgAct = actualItem.system.activities.getByType?.("damage")?.[0]
+                            || actualItem.system.activities.getByType?.("save")?.[0]
+                            || actualItem.system.activities.getByType?.("attack")?.[0]
+                            || actualItem.system.activities.find?.(a => typeof a.rollDamage === "function")
+                            || actualItem.system.activities.contents?.find?.(a => a.type === "damage" || a.type === "attack" || a.type === "save" || typeof a.rollDamage === "function")
+                            || null;
+                    }
 
                     const targetMultipliers = {};
                     const targetIds = [];
