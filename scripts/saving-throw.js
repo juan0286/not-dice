@@ -174,14 +174,78 @@ async function handleAreaCreation(document, userId, tipoLog) {
         if (!originDoc && document.flags?.dnd5e?.item) {
             originDoc = await fromUuid(document.flags.dnd5e.item);
         }
-        if (originDoc) {
-            const isActivity = !!originDoc.item;
-            const actualItem = isActivity ? originDoc.item : originDoc;
-            const itemActor = actualItem.actor || (isActivity ? originDoc.actor : null);
 
-            spellData.name = actualItem.name || spellData.name;
-            spellData.caster = itemActor?.name || "Desconocido";
-            spellData.img = actualItem.img || spellData.img;
+        if (originDoc) {
+            let actualItem = null;
+            let itemActor = null;
+            let isActivity = false;
+
+            // En dnd5e v6+, originUuid puede ser:
+            // 1. Una Activity: `Actor.xxx.Item.yyy.Activity.zzz` (tiene .item)
+            // 2. Un Item: `Actor.xxx.Item.yyy` (tiene .actor, o documentName === "Item")
+            // 3. Un Actor: `Actor.xxx` (cuando se crea plantilla directamente o el origin apunta al actor)
+            if (originDoc.item) {
+                isActivity = true;
+                actualItem = originDoc.item;
+                itemActor = actualItem.actor || originDoc.actor;
+            } else if (originDoc.documentName === "Item" || originDoc.type !== "character" && originDoc.type !== "npc") {
+                actualItem = originDoc;
+                itemActor = actualItem.actor;
+            } else if (originDoc.documentName === "Actor" || originDoc.type === "character" || originDoc.type === "npc") {
+                itemActor = originDoc;
+                // Si el origin es el Actor, buscar si el template trae el item o la actividad en sus flags
+                const itemRef = document.flags?.dnd5e?.item || document.flags?.dnd5e?.activityUuid;
+                if (itemRef) {
+                    const resolved = await fromUuid(itemRef);
+                    if (resolved?.item) {
+                        isActivity = true;
+                        actualItem = resolved.item;
+                        originDoc = resolved;
+                    } else if (resolved) {
+                        actualItem = resolved;
+                        originDoc = resolved;
+                    }
+                }
+                
+                // Si aún no tenemos el item, buscar por activity id en flags
+                if (!actualItem) {
+                    const actId = document.flags?.dnd5e?.activity || document.flags?.dnd5e?.activityId;
+                    if (actId && itemActor.items) {
+                        for (const it of itemActor.items) {
+                            if (it.system?.activities?.has?.(actId) || it.system?.activities?.get?.(actId)) {
+                                actualItem = it;
+                                isActivity = true;
+                                originDoc = it.system.activities.get(actId);
+                                break;
+                            }
+                        }
+                    }
+                }
+
+                // Si aún no encontramos el item, buscar el último hechizo o item con plantilla de área
+                if (!actualItem && itemActor.items) {
+                    actualItem = itemActor.items.find(it => {
+                        if (it.system?.activities) {
+                            return it.system.activities.contents?.some(a => a.target?.template?.type || a.type === "save");
+                        }
+                        return false;
+                    }) || null;
+                }
+            }
+
+            if (!actualItem) {
+                // Fallback si no logramos encontrar un Item específico
+                actualItem = originDoc;
+                itemActor = itemActor || actualItem.actor || null;
+            }
+
+            spellData.name = (actualItem.documentName === "Item" ? actualItem.name : null) 
+                || (isActivity ? originDoc.name : null) 
+                || (actualItem.name && actualItem.name !== itemActor?.name ? actualItem.name : null)
+                || (document.name !== "MeasuredTemplate" ? document.name : null)
+                || spellData.name;
+            spellData.caster = itemActor?.name || (actualItem.actor ? actualItem.actor.name : "Desconocido");
+            spellData.img = actualItem.img || (itemActor ? itemActor.img : spellData.img);
 
             // 1. Descripción enriquecida
             if (globalThis.notDiceEnrichDescription) {
