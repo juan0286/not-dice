@@ -67,25 +67,27 @@ export function getDamageIncreasingEffects(actor) {
                 }
                 
                 if (originItem) {
+                    const actualOriginItem = originItem?.item || originItem;
                     let hasDamage = false;
                     
                     // a) Revisamos Actividades (D&D5e v4)
-                    const activities = originItem.system?.activities?.contents || [];
+                    const activities = actualOriginItem.system?.activities?.contents || [];
                     for (const act of activities) {
-                        if (act.type === "damage" || act.type === "attack" || act.type === "save") {
+                        if (act.type === "damage" || act.type === "attack" || act.type === "save" || act.damage?.parts?.length > 0) {
                             const parts = act.damage?.parts || [];
                             if (parts.length > 0) {
                                 hasDamage = true;
                                 parts.forEach(p => {
                                     if (p.custom && p.custom.formula) addedFormulas.push(p.custom.formula);
-                                    else if (p.number && p.denomination) addedFormulas.push(`${p.number}d${p.denomination}`);
+                                    else if (p.formula) addedFormulas.push(p.formula);
+                                    else if (p.number && p.denomination) addedFormulas.push(`${p.number}d${p.denomination}${p.bonus ? '+' + p.bonus : ''}`);
                                 });
                             }
                         }
                     }
                     
                     // b) Revisamos sistema tradicional (D&D5e v3 o anterior)
-                    const damageParts = originItem.system?.damage?.parts || [];
+                    const damageParts = actualOriginItem.system?.damage?.parts || [];
                     if (damageParts.length > 0) {
                         hasDamage = true;
                         damageParts.forEach(p => {
@@ -94,7 +96,7 @@ export function getDamageIncreasingEffects(actor) {
                     }
                     
                     // c) Revisar si la descripción menciona daño adicional
-                    const description = (originItem.system?.description?.value || "").toLowerCase();
+                    const description = (actualOriginItem.system?.description?.value || actualOriginItem.system?.description?.chat || "").toLowerCase();
                     const extraDamagePhrases = ["daño adicional", "extra damage", "additional damage", "daño extra"];
                     if (extraDamagePhrases.some(phrase => description.includes(phrase))) {
                          hasDamage = true;

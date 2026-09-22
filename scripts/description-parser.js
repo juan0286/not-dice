@@ -6,30 +6,41 @@
 // ============================================================
 
 export async function enrichItemDescription(item) {
-    if (!item || !item.system || !item.system.description) {
+    if (!item) {
+        return "<p>Sin descripción.</p>";
+    }
+
+    const actualItem = item?.item || item;
+    const systemDesc = actualItem?.system?.description;
+    if (!systemDesc && typeof actualItem?.description !== "string") {
         return "<p>Sin descripción.</p>";
     }
     
-    const rawDescription = item.system.description.value || "";
-    if (!rawDescription) {
+    const rawDescription = (typeof systemDesc === "string" 
+        ? systemDesc 
+        : (systemDesc?.value || systemDesc?.chat || (typeof actualItem?.description === "string" ? actualItem.description : ""))) || "";
+        
+    if (!rawDescription || !rawDescription.trim()) {
         return "<p>Sin descripción.</p>";
     }
     
     try {
         // Obtenemos los datos dinámicos (stats, DC, etc) del item y el actor
-        const rollData = typeof item.getRollData === "function" ? item.getRollData() : (item.actor ? item.actor.getRollData() : {});
+        const rollData = typeof actualItem.getRollData === "function" 
+            ? actualItem.getRollData() 
+            : (actualItem.actor?.getRollData ? actualItem.actor.getRollData() : {});
         
-        // En Foundry V11/V12 y D&D5e v3.1+, TextEditor.enrichHTML maneja 
+        // En Foundry y D&D5e v3+/v4, TextEditor.enrichHTML maneja 
         // las etiquetas [[lookup]], [[/damage]], etc., siempre y cuando le pasemos
         // el documento 'relativeTo' para que el sistema encuentre las 'activities'.
         const enriched = await TextEditor.enrichHTML(rawDescription, {
             async: true,
             rollData: rollData,
             secrets: false,
-            relativeTo: item // CRÍTICO: Esto permite que D&D5e encuentre "activity=8P7hmd3Nron4RAlv"
+            relativeTo: actualItem
         });
         
-        return enriched;
+        return enriched || rawDescription;
     } catch (error) {
         (globalThis.notDiceLogger || console).error("Error interpretando etiquetas dinámicas de la descripción:", error);
         return rawDescription; // Fallback a la versión sin procesar si hay error

@@ -83,15 +83,20 @@ async function translateAndUpdate(htmlDesc, targetId) {
     const el = document.getElementById(targetId);
     if (!el) return;
 
+    if (!htmlDesc || typeof htmlDesc !== "string" || htmlDesc.trim() === "" || htmlDesc === "<p>Sin descripción.</p>") {
+        el.innerHTML = "Sin descripción.";
+        return;
+    }
+
     // Limpiamos etiquetas HTML para extraer el texto puro y no romper la API
     let plainText = htmlDesc.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
-    if (!plainText) {
+    if (!plainText || plainText === "Sin descripción.") {
         el.innerHTML = "Sin descripción.";
         return;
     }
 
     // Obtenemos el email de las configuraciones
-    const email = game.settings.get("not-dice", "myMemoryEmail").trim();
+    const email = game.settings.get("not-dice", "myMemoryEmail")?.trim() || "";
     const emailParam = email ? `&de=${encodeURIComponent(email)}` : "";
 
     // Dividimos el texto en trozos de ~450 caracteres.
@@ -142,7 +147,10 @@ async function handleAreaCreation(document, userId, tipoLog) {
     if (!game.users.activeGM?.isSelf) return; // Solo el GM activo debe procesar y ver este diálogo
     if (!game.settings.get("not-dice", "enableTemplateIntercept")) return;
 
-    const originUuid = document.flags?.dnd5e?.origin;
+    const originUuid = document.flags?.dnd5e?.origin 
+        || document.flags?.dnd5e?.item 
+        || document.flags?.dnd5e?.activityUuid
+        || document.flags?.["not-dice"]?.origin;
     if (!originUuid) return;
 
     let spellData = {
@@ -162,77 +170,153 @@ async function handleAreaCreation(document, userId, tipoLog) {
     };
 
     try {
-        const item = await fromUuid(originUuid);
-        if (item) {
-            const actualItem = item.item || item;
+        let originDoc = await fromUuid(originUuid);
+        if (!originDoc && document.flags?.dnd5e?.item) {
+            originDoc = await fromUuid(document.flags.dnd5e.item);
+        }
+        if (originDoc) {
+            const isActivity = !!originDoc.item;
+            const actualItem = isActivity ? originDoc.item : originDoc;
+            const itemActor = actualItem.actor || (isActivity ? originDoc.actor : null);
+
             spellData.name = actualItem.name || spellData.name;
-            spellData.caster = actualItem.actor?.name || "Desconocido";
+            spellData.caster = itemActor?.name || "Desconocido";
             spellData.img = actualItem.img || spellData.img;
 
+            // 1. Descripción enriquecida
             if (globalThis.notDiceEnrichDescription) {
                 spellData.description = await globalThis.notDiceEnrichDescription(actualItem);
             } else {
-                spellData.description = actualItem.system?.description?.value || "<p>Sin descripción.</p>";
+                spellData.description = actualItem.system?.description?.value || actualItem.system?.description?.chat || "<p>Sin descripción.</p>";
             }
 
+            if (!spellData.description || spellData.description === "<p>Sin descripción.</p>") {
+                const fallbackDesc = actualItem.system?.description?.value || actualItem.system?.description?.chat;
+                if (fallbackDesc) spellData.description = fallbackDesc;
+            }
+
+            // 2. Nivel del hechizo / tipo
             if (actualItem.type === "spell") {
-                spellData.level = actualItem.system?.level === 0 ? "Truco" : `Nivel ${actualItem.system?.level}`;
+                const spellLvl = document.flags?.dnd5e?.spellLevel ?? actualItem.system?.level;
+                spellData.level = spellLvl === 0 ? "Truco" : (spellLvl !== undefined ? `Nivel ${spellLvl}` : "Hechizo");
             } else {
                 spellData.level = "Habilidad / Objeto";
             }
 
-            let saveActivity = null;
+            // 3. Actividad correspondiente
+            let activeActivity = null;
+            if (isActivity) {
+                activeActivity = originDoc;
+            } else if (actualItem.system?.activities) {
+                const actId = document.flags?.dnd5e?.activity || document.flags?.dnd5e?.activityId;
+                if (actId) activeActivity = actualItem.system.activities.get(actId);
+                if (!activeActivity) {
+                    activeActivity = actualItem.system.activities.contents?.find(a => a.type === "save")
+                        || actualItem.system.activities.contents?.find(a => a.target?.template?.type || a.target?.type)
+                        || actualItem.system.activities.contents?.[0]
+                        || null;
+                }
+            }
 
-            if (actualItem.system?.activities) {
-                saveActivity = actualItem.system.activities.contents?.find(a => a.type === "save")
-                    || actualItem.system.activities.getByType?.("save")?.[0]
-                    || (item.type === "save" ? item : null);
+            // 4. Salvación y CD
+            let saveActivity = (activeActivity?.save || activeActivity?.type === "save")
+                ? activeActivity
+                : actualItem.system?.activities?.contents?.find(a => a.type === "save" || a.save);
 
-                if (saveActivity) {
-                    const abilitySet = saveActivity.save?.ability;
-                    const ability = abilitySet ? (abilitySet instanceof Set ? Array.from(abilitySet)[0] : (Array.isArray(abilitySet) ? abilitySet[0] : abilitySet)) : null;
-                    if (ability && typeof ability === 'string') {
-                        spellData.saveAbilityKey = ability;
-                        spellData.saveAbility = CONFIG.DND5E?.abilities?.[ability]?.label || ability.toUpperCase();
-                    }
+            if (saveActivity?.save) {
+                const abilitySet = saveActivity.save.ability;
+                let ability = null;
+                if (abilitySet instanceof Set) {
+                    ability = Array.from(abilitySet)[0];
+                } else if (Array.isArray(abilitySet)) {
+                    ability = abilitySet[0];
+                } else if (typeof abilitySet === "string") {
+                    ability = abilitySet;
+                } else if (typeof saveActivity.ability === "string") {
+                    ability = saveActivity.ability;
+                }
 
-                    if (saveActivity.save?.dc?.value) {
-                        spellData.saveDC = saveActivity.save.dc.value;
-                    } else if (actualItem.actor && actualItem.actor.system?.attributes?.spelldc) {
-                        spellData.saveDC = actualItem.actor.system.attributes.spelldc;
+                if (ability) {
+                    spellData.saveAbilityKey = ability.toLowerCase();
+                    spellData.saveAbility = CONFIG.DND5E?.abilities?.[spellData.saveAbilityKey]?.label || ability.toUpperCase();
+                }
+
+                // Cálculo de CD
+                if (saveActivity.save?.dc?.value) {
+                    spellData.saveDC = saveActivity.save.dc.value;
+                } else if (saveActivity.labels?.save) {
+                    const match = String(saveActivity.labels.save).match(/\d+/);
+                    if (match) spellData.saveDC = match[0];
+                }
+                
+                if (!spellData.saveDC && itemActor) {
+                    if (itemActor.system?.attributes?.spelldc) {
+                        spellData.saveDC = itemActor.system.attributes.spelldc;
+                    } else if (ability && itemActor.system?.abilities?.[ability]?.dc) {
+                        spellData.saveDC = itemActor.system.abilities[ability].dc;
+                    } else {
+                        const prof = itemActor.system?.attributes?.prof || 2;
+                        const spellAbility = itemActor.system?.attributes?.spellcasting || "int";
+                        const mod = itemActor.system?.abilities?.[spellAbility]?.mod || 0;
+                        spellData.saveDC = 8 + prof + mod;
                     }
                 }
             } else if (actualItem.system?.save?.ability) {
                 const ability = actualItem.system.save.ability;
-                spellData.saveAbilityKey = ability;
-                spellData.saveAbility = CONFIG.DND5E?.abilities?.[ability]?.label || ability.toUpperCase();
-                spellData.saveDC = actualItem.system?.save?.dc || "";
+                spellData.saveAbilityKey = ability.toLowerCase();
+                spellData.saveAbility = CONFIG.DND5E?.abilities?.[spellData.saveAbilityKey]?.label || ability.toUpperCase();
+                spellData.saveDC = actualItem.system?.save?.dc || itemActor?.system?.attributes?.spelldc || "";
             }
 
-            // --- EXTRACCIÓN DE DAÑO ---
+            // 5. Extracción de Daño
             spellData.damageLabels = [];
             let hasParts = false;
 
             if (actualItem.system?.activities) {
                 for (const act of actualItem.system.activities.values()) {
-                    if (act.damage && act.damage.parts && act.damage.parts.length > 0) {
+                    const parts = act.damage?.parts || act.system?.damage?.parts;
+                    if (parts && parts.length > 0) {
                         spellData.hasDamage = true;
                         hasParts = true;
-                        for (const p of act.damage.parts) {
+                        for (const p of parts) {
                             let formula = "";
                             let type = "";
                             if (Array.isArray(p)) {
                                 formula = p[0] || "";
                                 type = p[1] || "";
-                            } else {
-                                formula = p.formula || (p.number && p.denomination ? `${p.number}d${p.denomination}${p.bonus ? '+' + p.bonus : ''}` : p.custom?.formula) || "";
-                                type = p.types && p.types.size > 0 ? Array.from(p.types)[0] : (Array.isArray(p.types) ? p.types[0] : "");
+                            } else if (p) {
+                                if (p.custom?.enabled && p.custom.formula) {
+                                    formula = p.custom.formula;
+                                } else if (p.formula) {
+                                    formula = p.formula;
+                                } else if (p.number && p.denomination) {
+                                    formula = `${p.number}d${p.denomination}${p.bonus ? ` + ${p.bonus}` : ''}`;
+                                } else if (p.bonus) {
+                                    formula = String(p.bonus);
+                                }
+
+                                if (p.types instanceof Set) {
+                                    type = Array.from(p.types)[0] || "";
+                                } else if (Array.isArray(p.types)) {
+                                    type = p.types[0] || "";
+                                } else if (typeof p.types === "string") {
+                                    type = p.types;
+                                } else if (p.type) {
+                                    type = p.type;
+                                }
                             }
-                            if (formula) spellData.damageLabels.push({ formula: formula.trim(), type: type.trim().toLowerCase() });
+                            if (formula) {
+                                spellData.damageLabels.push({
+                                    formula: formula.trim(),
+                                    type: (type || "").trim().toLowerCase()
+                                });
+                            }
                         }
                     }
                 }
-            } else if (actualItem.system?.damage?.parts && actualItem.system.damage.parts.length > 0) {
+            }
+
+            if (!hasParts && actualItem.system?.damage?.parts && actualItem.system.damage.parts.length > 0) {
                 spellData.hasDamage = true;
                 hasParts = true;
                 for (const p of actualItem.system.damage.parts) {
@@ -247,24 +331,58 @@ async function handleAreaCreation(document, userId, tipoLog) {
                 spellData.damageLabels.push({ formula: actualItem.labels.damage, type: "" });
             }
 
-            // --- EXTRACCIÓN DE EFECTOS ---
-            if (actualItem.effects && actualItem.effects.size > 0) {
-                let validEffectIds = null;
-                // Si la actividad especifica qué efectos aplica, filtramos por ellos
-                if (saveActivity && saveActivity.effects && saveActivity.effects.length > 0) {
-                    validEffectIds = saveActivity.effects.map(e => e._id);
+            // 6. Extracción de Efectos Activos
+            spellData.effects = [];
+            const addedEffectIds = new Set();
+
+            if (activeActivity?.effects && activeActivity.effects.length > 0) {
+                for (const applied of activeActivity.effects) {
+                    const effId = applied._id || applied.id;
+                    const eff = applied.effect || actualItem.effects?.get(effId) || itemActor?.effects?.get(effId);
+                    if (eff && !addedEffectIds.has(eff.id)) {
+                        addedEffectIds.add(eff.id);
+                        spellData.effects.push({
+                            id: eff.id,
+                            name: eff.name,
+                            img: eff.img || eff.icon || actualItem.img,
+                            data: eff.toObject()
+                        });
+                    }
                 }
+            }
 
+            if (actualItem.system?.activities) {
+                for (const act of actualItem.system.activities.values()) {
+                    if (act.effects && act.effects.length > 0) {
+                        for (const applied of act.effects) {
+                            const effId = applied._id || applied.id;
+                            const eff = applied.effect || actualItem.effects?.get(effId) || itemActor?.effects?.get(effId);
+                            if (eff && !addedEffectIds.has(eff.id)) {
+                                addedEffectIds.add(eff.id);
+                                spellData.effects.push({
+                                    id: eff.id,
+                                    name: eff.name,
+                                    img: eff.img || eff.icon || actualItem.img,
+                                    data: eff.toObject()
+                                });
+                            }
+                        }
+                    }
+                }
+            }
+
+            if (actualItem.effects && actualItem.effects.size > 0) {
                 actualItem.effects.forEach(eff => {
-                    if (eff.transfer) return; // Ignoramos efectos pasivos del lanzador
-                    if (validEffectIds && !validEffectIds.includes(eff.id)) return;
-
-                    spellData.effects.push({
-                        id: eff.id,
-                        name: eff.name,
-                        img: eff.icon || eff.img,
-                        data: eff.toObject() // Objeto de datos puro para inyectar después
-                    });
+                    if (eff.transfer) return;
+                    if (!addedEffectIds.has(eff.id)) {
+                        addedEffectIds.add(eff.id);
+                        spellData.effects.push({
+                            id: eff.id,
+                            name: eff.name,
+                            img: eff.img || eff.icon || actualItem.img,
+                            data: eff.toObject()
+                        });
+                    }
                 });
             }
         }
@@ -611,12 +729,14 @@ ${epicBtnHtml}
 
                 let appliedCount = 0;
                 for (const t of validFailedTokens) {
+                    const targetActor = t.actor || t.document?.actor;
+                    if (!targetActor) continue;
                     for (const eff of effects) {
                         const effectData = foundry.utils.duplicate(eff.data);
                         delete effectData._id; // Nos aseguramos de que Foundry genere un ID nuevo
                         effectData.origin = spellData.originUuid;
 
-                        await t.actor.createEmbeddedDocuments("ActiveEffect", [effectData]);
+                        await targetActor.createEmbeddedDocuments("ActiveEffect", [effectData]);
                     }
                     appliedCount++;
                 }
@@ -631,10 +751,13 @@ ${epicBtnHtml}
                 e.preventDefault();
                 try {
                     const item = await fromUuid(spellData.originUuid);
-                    const actualItem = item?.item || item;
+                    const isActivity = !!item?.item;
+                    const actualItem = isActivity ? item.item : item;
                     if (!actualItem) return ui.notifications.warn("Not Dice | No se pudo encontrar el objeto origen.");
 
-                    const dmgAct = actualItem.system.activities?.contents?.find(a => a.type === "damage" || a.type === "attack" || a.type === "save");
+                    const dmgAct = isActivity && typeof item.rollDamage === "function"
+                        ? item
+                        : (actualItem.system.activities?.contents?.find(a => a.type === "damage" || a.type === "attack" || a.type === "save" || typeof a.rollDamage === "function") || null);
 
                     const targetMultipliers = {};
                     const targetIds = [];
