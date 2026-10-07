@@ -2120,40 +2120,30 @@ Hooks.once("ready", () => {
             let attackRollMessageId = null;
 
             const getActorEffects = globalThis.notDiceGetActorEffects;
+            const attackerActor = item?.actor || actor;
+            const attackerName = attackerActor?.name || "";
+            const attackerToken = canvas?.tokens?.controlled?.find(t => t.actor?.id === attackerActor?.id)
+                || canvas?.tokens?.placeables?.find(t => t.actor?.id === attackerActor?.id)
+                || (attackerActor?.token ? attackerActor.token.object : null)
+                || null;
+            const primaryTargetToken = targets[0] || null;
+            const primaryTargetActor = primaryTargetToken?.actor || null;
 
-            const attackerName = item?.actor?.name || "";
-            const attackerEffects = getActorEffects(item?.actor || actor);
-            const hasSapEffect = attackerEffects.some(e => {
-                const eName = (e.name || e.label || "").toLowerCase();
-                return eName.includes("sap") || eName.includes("debilitar") || eName.includes("minar");
-            });
+            const attackAdvantageEval = (typeof globalThis.notDiceEvaluateAttackRollMode === "function")
+                ? globalThis.notDiceEvaluateAttackRollMode({
+                    attackerToken,
+                    attackerActor,
+                    targetToken: primaryTargetToken,
+                    targetActor: primaryTargetActor,
+                    item,
+                    activity: rollConfig.subject?.type === "attack" ? rollConfig.subject : null
+                })
+                : { mode: "normal", advantages: [], disadvantages: [], isCancelled: false };
 
-            const hasVexAdvantage = targets.some(t => {
-                const targetActor = t.actor || t;
-                const targetEffects = getActorEffects(targetActor);
-                return targetEffects.some(e => {
-                    const eName = (e.name || e.label || "").toLowerCase();
-                    return (eName.includes("vex") || eName.includes("molestar")) &&
-                        eName.includes(`(${attackerName.toLowerCase()})`);
-                });
-            });
-
-            const hasGuidingBoltAdvantage = targets.some(t => {
-                const targetActor = t.actor || t;
-                const targetEffects = getActorEffects(targetActor);
-                return targetEffects.some(e => {
-                    const eName = (e.name || e.label || "").toLowerCase();
-                    return eName.includes("saeta guía") || eName.includes("saeta guia") || eName.includes("guiding bolt");
-                });
-            });
-
-            (globalThis.notDiceLogger || console).debug("Debug Vex/Sap:", {
-                attackerName,
-                targets: targets.map(t => t.name),
-                attackerEffects: attackerEffects.map(e => e.name || e.label),
-                hasSapEffect,
-                hasVexAdvantage,
-                hasGuidingBoltAdvantage
+            (globalThis.notDiceLogger || console).debug("Debug Attack Advantage/Disadvantage:", {
+                attackerName: attackerActor?.name,
+                targetName: primaryTargetActor?.name,
+                eval: attackAdvantageEval
             });
 
             const getAttackRollVisualState = (selectedD20, total) => {
@@ -2192,25 +2182,32 @@ Hooks.once("ready", () => {
                 }
 
                 let notices = [];
-                if (hasVexAdvantage) {
-                    notices.push(`<div style="font-size:0.78em; color:#4caf50; font-weight:bold; margin-top:2px; display:flex; align-items:center; justify-content:center; gap:4px;"><i class="fas fa-exclamation-triangle"></i> Debe tener Ventaja por Molestar (Vex)</div>`);
-                }
-                if (hasGuidingBoltAdvantage) {
-                    notices.push(`<div style="font-size:0.78em; color:#ffb300; font-weight:bold; margin-top:2px; display:flex; align-items:center; justify-content:center; gap:4px;"><i class="fas fa-exclamation-triangle"></i> Debe tener Ventaja por Saeta Guía</div>`);
-                }
-                if (hasSapEffect) {
-                    notices.push(`<div style="font-size:0.78em; color:#ff5252; font-weight:bold; margin-top:2px; display:flex; align-items:center; justify-content:center; gap:4px;"><i class="fas fa-exclamation-triangle"></i> Debe tener Desventaja por Debilitar (Sap)</div>`);
+                if (attackAdvantageEval.isCancelled) {
+                    notices.push(`<div style="font-size:0.78em; color:#ffb300; font-weight:bold; margin-top:2px; display:flex; align-items:center; justify-content:center; gap:4px;"><i class="fas fa-balance-scale"></i> Ventaja y Desventaja se cancelan (${attackAdvantageEval.advantages.join(", ")} vs ${attackAdvantageEval.disadvantages.join(", ")})</div>`);
+                } else {
+                    if (attackAdvantageEval.advantages.length > 0) {
+                        notices.push(`<div style="font-size:0.78em; color:#4caf50; font-weight:bold; margin-top:2px; display:flex; align-items:center; justify-content:center; gap:4px;"><i class="fas fa-arrow-up"></i> Ventaja: ${attackAdvantageEval.advantages.join(", ")}</div>`);
+                    }
+                    if (attackAdvantageEval.disadvantages.length > 0) {
+                        notices.push(`<div style="font-size:0.78em; color:#ff5252; font-weight:bold; margin-top:2px; display:flex; align-items:center; justify-content:center; gap:4px;"><i class="fas fa-arrow-down"></i> Desventaja: ${attackAdvantageEval.disadvantages.join(", ")}</div>`);
+                    }
                 }
                 const noticeHtml = notices.join("");
 
-                const showAdvHighlight = hasVexAdvantage || hasGuidingBoltAdvantage;
-                const advBtnStyle = showAdvHighlight
-                    ? "width:34px; height:34px; border:2px solid #4caf50; border-radius:6px; background:rgba(19,115,51,0.25); color:#4caf50; cursor:pointer; flex-shrink:0; box-shadow: 0 0 8px rgba(76,175,80,0.5); transform: scale(1.05);"
-                    : "width:34px; height:34px; border:1px solid rgba(19,115,51,0.4); border-radius:6px; background:rgba(19,115,51,0.1); color:#4caf50; cursor:pointer; flex-shrink:0;";
+                const isAdvActive = state.mode === "advantage";
+                const isDisadvActive = state.mode === "disadvantage";
 
-                const disadvBtnStyle = hasSapEffect
-                    ? "width:34px; height:34px; border:2px solid #ff5252; border-radius:6px; background:rgba(197,34,31,0.25); color:#ff5252; cursor:pointer; flex-shrink:0; box-shadow: 0 0 8px rgba(255,82,82,0.5); transform: scale(1.05);"
-                    : "width:34px; height:34px; border:1px solid rgba(197,34,31,0.4); border-radius:6px; background:rgba(197,34,31,0.1); color:#ff5252; cursor:pointer; flex-shrink:0;";
+                const advBtnStyle = isAdvActive
+                    ? "width:34px; height:34px; border:2px solid #4caf50; border-radius:6px; background:rgba(19,115,51,0.35); color:#4caf50; cursor:pointer; flex-shrink:0; box-shadow: 0 0 8px rgba(76,175,80,0.6); transform: scale(1.08);"
+                    : (attackAdvantageEval.mode === "advantage"
+                        ? "width:34px; height:34px; border:2px solid #4caf50; border-radius:6px; background:rgba(19,115,51,0.2); color:#4caf50; cursor:pointer; flex-shrink:0;"
+                        : "width:34px; height:34px; border:1px solid rgba(19,115,51,0.4); border-radius:6px; background:rgba(19,115,51,0.1); color:#4caf50; cursor:pointer; flex-shrink:0;");
+
+                const disadvBtnStyle = isDisadvActive
+                    ? "width:34px; height:34px; border:2px solid #ff5252; border-radius:6px; background:rgba(197,34,31,0.35); color:#ff5252; cursor:pointer; flex-shrink:0; box-shadow: 0 0 8px rgba(255,82,82,0.6); transform: scale(1.08);"
+                    : (attackAdvantageEval.mode === "disadvantage"
+                        ? "width:34px; height:34px; border:2px solid #ff5252; border-radius:6px; background:rgba(197,34,31,0.2); color:#ff5252; cursor:pointer; flex-shrink:0;"
+                        : "width:34px; height:34px; border:1px solid rgba(197,34,31,0.4); border-radius:6px; background:rgba(197,34,31,0.1); color:#ff5252; cursor:pointer; flex-shrink:0;");
 
                 const contentHtml = `<div style="display:flex; flex-direction:column; gap:4px; align-items:stretch; justify-content:center; width:100%;">
                     <div style="display:flex; align-items:center; justify-content:center; gap:8px;">
@@ -2271,16 +2268,14 @@ Hooks.once("ready", () => {
                         headerBadges.push(`<span style="display:inline-block; font-size:0.75em; background:rgba(106,27,154,0.15); color:#ba68c8; padding:3px 8px; border-radius:12px; border:1px solid rgba(106,27,154,0.3); font-weight:bold;"><i class="fas fa-crown"></i> Maestría: ${activeMastery.label}</span>`);
                     }
 
-                    if (hasSapEffect) {
-                        headerBadges.push(`<span style="display:inline-block; font-size:0.75em; background:rgba(197,34,31,0.15); color:#ff5252; padding:3px 8px; border-radius:12px; border:1px solid rgba(197,34,31,0.3); font-weight:bold;"><i class="fas fa-arrow-down"></i> Desventaja (Debilitado)</span>`);
-                    }
-
-                    if (hasVexAdvantage) {
-                        headerBadges.push(`<span style="display:inline-block; font-size:0.75em; background:rgba(19,115,51,0.15); color:#4caf50; padding:3px 8px; border-radius:12px; border:1px solid rgba(19,115,51,0.3); font-weight:bold;"><i class="fas fa-arrow-up"></i> Ventaja (Molestar)</span>`);
-                    }
-
-                    if (hasGuidingBoltAdvantage) {
-                        headerBadges.push(`<span style="display:inline-block; font-size:0.75em; background:rgba(176,96,0,0.15); color:#ffb300; padding:3px 8px; border-radius:12px; border:1px solid rgba(176,96,0,0.3); font-weight:bold;"><i class="fas fa-star"></i> Ventaja (Saeta Guía)</span>`);
+                    if (attackAdvantageEval.isCancelled) {
+                        headerBadges.push(`<span style="display:inline-block; font-size:0.75em; background:rgba(255,193,7,0.15); color:#ffb300; padding:3px 8px; border-radius:12px; border:1px solid rgba(255,193,7,0.3); font-weight:bold;" title="Ventaja y Desventaja se cancelan (${attackAdvantageEval.advantages.join(', ')} vs ${attackAdvantageEval.disadvantages.join(', ')})"><i class="fas fa-balance-scale"></i> Ventaja/Desv. Canceladas</span>`);
+                    } else if (attackAdvantageEval.mode === "advantage") {
+                        const advTitle = attackAdvantageEval.advantages.join(", ");
+                        headerBadges.push(`<span style="display:inline-block; font-size:0.75em; background:rgba(19,115,51,0.25); color:#4caf50; padding:3px 8px; border-radius:12px; border:1px solid rgba(76,175,80,0.5); font-weight:bold;" title="${advTitle}"><i class="fas fa-arrow-up"></i> Sugiere Ventaja</span>`);
+                    } else if (attackAdvantageEval.mode === "disadvantage") {
+                        const disadvTitle = attackAdvantageEval.disadvantages.join(", ");
+                        headerBadges.push(`<span style="display:inline-block; font-size:0.75em; background:rgba(197,34,31,0.25); color:#ff5252; padding:3px 8px; border-radius:12px; border:1px solid rgba(255,82,82,0.5); font-weight:bold;" title="${disadvTitle}"><i class="fas fa-arrow-down"></i> Sugiere Desventaja</span>`);
                     }
 
                     headerLabel = "Ataque";
@@ -2313,8 +2308,8 @@ Hooks.once("ready", () => {
                     false;
                 if (isAttackAct && game.settings.get("not-dice", "enableSimultaneousRoll") && isAutoTriggered) {
                     try {
-                        let d20Term = "1d20";
-                        let rollMode = "normal";
+                        const d20Term = "1d20";
+                        const rollMode = "normal";
 
                         let formula = `${d20Term}`;
                         let parts = [];
@@ -2350,13 +2345,8 @@ Hooks.once("ready", () => {
                         const activeDie = r.terms?.[0];
                         const dieResults = activeDie?.results ?? [];
                         const originalD20 = dieResults[0]?.result ?? 0;
-                        const extraD20 = dieResults[1]?.result ?? null;
-
-                        const selectedD20 = rollMode === "advantage"
-                            ? Math.max(originalD20, extraD20 ?? originalD20)
-                            : rollMode === "disadvantage"
-                                ? Math.min(originalD20, extraD20 ?? originalD20)
-                                : originalD20;
+                        const extraD20 = null;
+                        const selectedD20 = originalD20;
 
                         if (selectedD20 === 20) {
                             isAttackCrit = true;
@@ -2366,10 +2356,10 @@ Hooks.once("ready", () => {
                         }
 
                         attackRollState = {
-                            mode: rollMode,
+                            mode: "normal",
                             originalD20: originalD20,
-                            extraD20: extraD20,
-                            bonus: r.total - (activeDie?.total ?? originalD20)
+                            extraD20: null,
+                            bonus: r.total - originalD20
                         };
 
                         const display = buildAttackRollDisplay(attackRollState);
@@ -2380,10 +2370,23 @@ Hooks.once("ready", () => {
                     }
                 }
 
+                // Estilo visual de la caja de diálogo de ataque: verde para ventaja, rojo para desventaja
+                let attackBoxBg = "rgba(127,127,127,0.1)";
+                let attackBoxBorder = "var(--color-border-light-2, #ddd)";
+                if (isAttackAct) {
+                    if (attackAdvantageEval.mode === "advantage") {
+                        attackBoxBg = "rgba(19, 115, 51, 0.2)";
+                        attackBoxBorder = "rgba(76, 175, 80, 0.5)";
+                    } else if (attackAdvantageEval.mode === "disadvantage") {
+                        attackBoxBg = "rgba(197, 34, 31, 0.2)";
+                        attackBoxBorder = "rgba(255, 82, 82, 0.5)";
+                    }
+                }
+
                 const attackerImg = item?.actor?.img || "icons/svg/mystery-man.svg";
                 const attackDescId = `hover-desc-${Math.random().toString(36).substring(2, 9)}`;
                 attackHtml = `
-                <div style="display:flex; align-items:center; justify-content:space-between; gap:12px; margin-bottom:12px; padding:10px; border:1px solid var(--color-border-light-2, #ddd); border-radius:6px; background:rgba(127,127,127,0.1); box-shadow: 0 1px 3px rgba(0,0,0,0.1);">
+                <div class="not-dice-attack-header-box" style="display:flex; align-items:center; justify-content:space-between; gap:12px; margin-bottom:12px; padding:10px; border:1px solid ${attackBoxBorder}; border-radius:6px; background:${attackBoxBg}; box-shadow: 0 1px 3px rgba(0,0,0,0.1);">
                     <!-- Left: Attacker -->
                     <div style="display:flex; flex-direction:column; align-items:center; gap:4px; width:64px; flex-shrink:0; border-right:1px solid var(--color-border-light-2, #ccc); padding-right:12px;">
                         <img src="${attackerImg}" style="width:48px; height:48px; border:1px solid var(--color-border-light-2, #aaa); border-radius:50%; object-fit:cover; box-shadow:0 1px 2px rgba(0,0,0,0.2);">
@@ -2607,8 +2610,20 @@ Hooks.once("ready", () => {
                 `;
             }
 
+            let dialogWrapperBg = "transparent";
+            let dialogWrapperBorder = "transparent";
+            if (isAttackAct) {
+                if (attackAdvantageEval.mode === "advantage") {
+                    dialogWrapperBg = "rgba(19, 115, 51, 0.08)";
+                    dialogWrapperBorder = "rgba(76, 175, 80, 0.4)";
+                } else if (attackAdvantageEval.mode === "disadvantage") {
+                    dialogWrapperBg = "rgba(197, 34, 31, 0.08)";
+                    dialogWrapperBorder = "rgba(255, 82, 82, 0.4)";
+                }
+            }
+
             const dialogContent = `
-                <div style="font-family:inherit; padding:4px 2px;">
+                <div class="not-dice-dialog-content-wrapper" style="font-family:inherit; padding:6px 4px; border-radius:8px; border:1px solid ${dialogWrapperBorder}; background:${dialogWrapperBg}; transition: background 0.3s ease, border-color 0.3s ease;">
                     ${attackHtml}
                     ${targetHtml}
                     <div style="display:flex; justify-content:space-between; align-items:center; border-bottom: 1px solid var(--color-border-light-2, #ccc); padding-bottom: 6px; margin-bottom: 10px; margin-top: 16px;">
@@ -3279,6 +3294,49 @@ Hooks.once("ready", () => {
 
                 const attackRollBoxNode = root.querySelector(".not-dice-attack-roll-box");
 
+                // Aplica el color temático (verde para ventaja, rojo para desventaja, neutro si normal) a TODA la ventana de diálogo
+                const applyFullDialogTheme = (mode) => {
+                    const winEl = root.closest?.(".window-app, .application, .dialog") || root;
+                    const winContent = winEl.querySelector?.(".window-content") || root;
+                    const wrapperEl = root.querySelector?.(".not-dice-dialog-content-wrapper");
+
+                    let bg = "";
+                    let border = "";
+                    let glow = "";
+                    if (mode === "advantage") {
+                        bg = "rgba(19, 115, 51, 0.18)";
+                        border = "rgba(76, 175, 80, 0.55)";
+                        glow = "0 0 16px rgba(76, 175, 80, 0.35)";
+                    } else if (mode === "disadvantage") {
+                        bg = "rgba(197, 34, 31, 0.18)";
+                        border = "rgba(255, 82, 82, 0.55)";
+                        glow = "0 0 16px rgba(255, 82, 82, 0.35)";
+                    }
+
+                    if (winContent) {
+                        winContent.style.backgroundColor = bg || "";
+                        winContent.style.transition = "background-color 0.3s ease, border-color 0.3s ease";
+                    }
+                    if (winEl && winEl !== winContent) {
+                        if (border) {
+                            winEl.style.borderColor = border;
+                            winEl.style.boxShadow = glow;
+                        } else {
+                            winEl.style.borderColor = "";
+                            winEl.style.boxShadow = "";
+                        }
+                    }
+                    if (wrapperEl) {
+                        wrapperEl.style.backgroundColor = bg ? "rgba(255, 255, 255, 0.03)" : "transparent";
+                        wrapperEl.style.borderColor = border || "transparent";
+                    }
+                };
+
+                // Inicializar el tema de toda la ventana al renderizar
+                if (isAttackAct) {
+                    applyFullDialogTheme(attackAdvantageEval.mode);
+                }
+
                 const setAttackButtonsDisabled = (isDisabled) => {
                     const buttons = root.querySelectorAll(".not-dice-attack-disadvantage-btn, .not-dice-attack-advantage-btn");
                     buttons.forEach(btn => {
@@ -3293,40 +3351,63 @@ Hooks.once("ready", () => {
                     const display = buildAttackRollDisplay(attackRollState);
                     attackRollBoxNode.innerHTML = display.contentHtml;
                     attackRollBoxNode.setAttribute("style", display.boxStyle);
+
+                    const headerBox = root.querySelector(".not-dice-attack-header-box");
+                    if (headerBox) {
+                        if (attackRollState.mode === "advantage") {
+                            headerBox.style.background = "rgba(19, 115, 51, 0.2)";
+                            headerBox.style.borderColor = "rgba(76, 175, 80, 0.5)";
+                        } else if (attackRollState.mode === "disadvantage") {
+                            headerBox.style.background = "rgba(197, 34, 31, 0.2)";
+                            headerBox.style.borderColor = "rgba(255, 82, 82, 0.5)";
+                        } else {
+                            headerBox.style.background = attackBoxBg;
+                            headerBox.style.borderColor = attackBoxBorder;
+                        }
+                    }
+
+                    // Sincronizar el tema de toda la ventana del diálogo cuando el usuario cambia manualmente el modo
+                    applyFullDialogTheme(attackRollState.mode !== "normal" ? attackRollState.mode : attackAdvantageEval.mode);
                 };
 
                 const applyManualAttackMode = async (mode) => {
                     if (!attackRollState || !attackRollBoxNode) return;
                     setAttackButtonsDisabled(true);
                     try {
-                        const sign = attackRollState.bonus >= 0 ? "+" : "-";
-                        const bonusFormula = `1d20 ${sign} ${Math.abs(attackRollState.bonus)}`;
-                        const extraRoll = await new Roll(bonusFormula).evaluate();
-                        const extraD20 = extraRoll.total - attackRollState.bonus;
-                        const selectedD20 = mode === "advantage"
-                            ? Math.max(attackRollState.originalD20, extraD20)
-                            : Math.min(attackRollState.originalD20, extraD20);
+                        const targetMode = (attackRollState.mode === mode) ? "normal" : mode;
+                        let extraD20 = attackRollState.extraD20;
+                        if (targetMode !== "normal" && extraD20 == null) {
+                            const sign = attackRollState.bonus >= 0 ? "+" : "-";
+                            const bonusFormula = `1d20 ${sign} ${Math.abs(attackRollState.bonus)}`;
+                            const extraRoll = await new Roll(bonusFormula).evaluate();
+                            extraD20 = extraRoll.total - attackRollState.bonus;
+                            const actorSpeaker = ChatMessage.getSpeaker({ actor: item?.actor });
+                            const modeLabel = targetMode === "advantage" ? "Ventaja" : "Desventaja";
+                            const tempSelected = targetMode === "advantage"
+                                ? Math.max(attackRollState.originalD20, extraD20)
+                                : Math.min(attackRollState.originalD20, extraD20);
+                            const tempTotal = tempSelected + attackRollState.bonus;
+                            await extraRoll.toMessage({
+                                speaker: actorSpeaker,
+                                flavor: `<strong>Tirada de Ataque: ${item?.name || "Ataque"}</strong> (${modeLabel})<br>Original: ${attackRollState.originalD20} | Segundo dado: ${extraD20} | Elegido: <strong>${tempSelected}</strong> | Total: <strong>${tempTotal}</strong>`
+                            });
+                        }
+
+                        const selectedD20 = targetMode === "advantage"
+                            ? Math.max(attackRollState.originalD20, extraD20 ?? attackRollState.originalD20)
+                            : targetMode === "disadvantage"
+                                ? Math.min(attackRollState.originalD20, extraD20 ?? attackRollState.originalD20)
+                                : attackRollState.originalD20;
                         const total = selectedD20 + attackRollState.bonus;
                         const isCrit = selectedD20 === 20;
-                        if (isCrit) {
-                            isAttackCrit = true;
-                            for (const p of damageParts) {
-                                p.isCritical = true;
-                            }
-                        } else {
-                            isAttackCrit = false;
+                        isAttackCrit = isCrit;
+                        for (const p of damageParts) {
+                            p.isCritical = isCrit;
                         }
-                        const actorSpeaker = ChatMessage.getSpeaker({ actor: item?.actor });
-                        const modeLabel = mode === "advantage" ? "Ventaja" : "Desventaja";
-
-                        await extraRoll.toMessage({
-                            speaker: actorSpeaker,
-                            flavor: `<strong>Tirada de Ataque: ${item?.name || "Ataque"}</strong> (${modeLabel})<br>Original: ${attackRollState.originalD20} | Nuevo: ${extraD20} | Elegido: <strong>${selectedD20}</strong> | Total: <strong>${total}</strong>`
-                        });
 
                         attackRollState = {
                             ...attackRollState,
-                            mode,
+                            mode: targetMode,
                             extraD20
                         };
                         rerenderAttackRollState();

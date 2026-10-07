@@ -1,7 +1,7 @@
 {
   "id": "not-dice",
   "title": "Not Dice",
-  "version": "2.14.1",
+  "version": "2.14.2",
   "compatibility": {
     "minimum": "13",
     "verified": "14"
@@ -20,6 +20,7 @@
     "scripts/dice-colors.js",
     "scripts/masteries.js",
     "scripts/especiales.js",
+    "scripts/attack-advantage.js",
     "scripts/module.js",
     "scripts/saving-throw.js",
     "scripts/damage-effects.js",
