@@ -217,6 +217,26 @@ export const initHealingDialog = () => {
             }
         }
 
+        if (sourceRows.length > 0) {
+            const actualNameLower = (itemName || actualItem?.name || "").toLowerCase().trim();
+            const isFalseLife = actualNameLower === "false life" || actualNameLower === "falsa vida" || actualItem?.system?.identifier === "false-life";
+            if (isFalseLife) {
+                sourceRows = sourceRows.map(row => {
+                    let f = row.formula;
+                    const m = f.match(/(\d+)d4/i);
+                    if (m) {
+                        const numDice = parseInt(m[1]);
+                        const extra = numDice > 2 ? (numDice - 2) : 0;
+                        f = f.replace(/\b\d+d4\b/gi, "2d4");
+                        if (extra > 0 && !f.includes(`+ ${extra}`)) {
+                            f = `${f} + ${extra}`;
+                        }
+                    }
+                    return { ...row, formula: f };
+                });
+            }
+        }
+
         const firstRow = sourceRows[0];
         if (!firstRow) {
             ui.notifications?.warn("Not Dice | No se encontró una fórmula de curación válida.");

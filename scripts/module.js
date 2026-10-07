@@ -368,7 +368,15 @@ globalThis.notDiceCreateExtraDamagePopup = async (btnElement, item, actor, appen
                 }
 
                 const recalculateFormula = (baseFormula, chosenLevel) => {
-                    if (scalingMode !== "whole" || scalingNumber <= 0 || chosenLevel <= spellLevel) return baseFormula;
+                    if (chosenLevel <= spellLevel) return baseFormula;
+                    
+                    const spellNameLower = (name || "").toLowerCase().trim();
+                    if (spellNameLower === "false life" || spellNameLower === "falsa vida") {
+                        const extraHp = (chosenLevel - spellLevel) * 5;
+                        return `${baseFormula} + ${extraHp}`;
+                    }
+
+                    if (scalingMode !== "whole" || scalingNumber <= 0) return baseFormula;
                     const delta = (chosenLevel - spellLevel) * scalingNumber;
                     return baseFormula.replace(/(\d+)d(\d+)/i, (match, n, d) => {
                         return `${parseInt(n) + delta}d${d}`;
@@ -4074,7 +4082,47 @@ Hooks.once("ready", () => {
                 dialog = foundry.utils.mergeObject(dialog ?? {}, { configure: false });
                 if (message) message.create = false;
             }
-            return originalDamageBuildConfigure.call(this, config, dialog, message);
+
+            const itemNameLower = (item?.name || "").toLowerCase().trim();
+            const isFalseLife = itemNameLower === "false life" || itemNameLower === "falsa vida" || item?.system?.identifier === "false-life";
+            if (isFalseLife && config?.rolls && Array.isArray(config.rolls)) {
+                for (const r of config.rolls) {
+                    if (Array.isArray(r.parts)) {
+                        r.parts = r.parts.map(p => {
+                            if (typeof p !== "string") return p;
+                            const m = p.match(/(\d+)d4/i);
+                            if (m) {
+                                const numDice = parseInt(m[1]);
+                                const extra = numDice > 2 ? (numDice - 2) : 0;
+                                let res = p.replace(/\b\d+d4\b/gi, "2d4");
+                                if (extra > 0 && !res.includes(`+ ${extra}`)) res = `${res} + ${extra}`;
+                                return res;
+                            }
+                            return p;
+                        });
+                    }
+                }
+            }
+
+            let rolls = await originalDamageBuildConfigure.call(this, config, dialog, message);
+
+            if (isFalseLife && Array.isArray(rolls)) {
+                rolls = rolls.map(r => {
+                    let formula = r.formula;
+                    const m = formula.match(/(\d+)d4/i);
+                    if (m) {
+                        const numDice = parseInt(m[1]);
+                        const extra = numDice > 2 ? (numDice - 2) : 0;
+                        formula = formula.replace(/\b\d+d4\b/gi, "2d4");
+                        if (extra > 0 && !formula.includes(`+ ${extra}`)) {
+                            formula = `${formula} + ${extra}`;
+                        }
+                    }
+                    return new DamageRoll(formula, r.data, r.options);
+                });
+            }
+
+            return rolls;
         };
 
         DamageRoll.buildEvaluate = async function (rolls, rollConfig, messageConfig) {
@@ -4092,6 +4140,24 @@ Hooks.once("ready", () => {
 
             if (rollConfig?.options?.notDiceBypass || isFallDamage || !item) {
                 return originalDamageBuildEvaluate.call(this, rolls, rollConfig, messageConfig);
+            }
+
+            const itemNameLower = (item?.name || "").toLowerCase().trim();
+            const isFalseLife = itemNameLower === "false life" || itemNameLower === "falsa vida" || item?.system?.identifier === "false-life";
+            if (isFalseLife && Array.isArray(rolls)) {
+                rolls = rolls.map(r => {
+                    let formula = r.formula;
+                    const m = formula.match(/(\d+)d4/i);
+                    if (m) {
+                        const numDice = parseInt(m[1]);
+                        const extra = numDice > 2 ? (numDice - 2) : 0;
+                        formula = formula.replace(/\b\d+d4\b/gi, "2d4");
+                        if (extra > 0 && !formula.includes(`+ ${extra}`)) {
+                            formula = `${formula} + ${extra}`;
+                        }
+                    }
+                    return new DamageRoll(formula, r.data, r.options);
+                });
             }
 
             const hasMultipliers = rollConfig?.notDiceMultipliers || rollConfig?.options?.notDiceMultipliers || rollConfig?.event?.notDiceMultipliers;
