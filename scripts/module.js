@@ -6,6 +6,95 @@
 // ============================================================
 
 // Helpers --------------------------------------------------------------
+/**
+ * Recupera la última posición guardada de la ventana de diálogo de ataque.
+ * Valida contra el viewport actual para asegurar que la ventana sea siempre visible.
+ * @returns {{ top: number, left: number } | null}
+ */
+const notDiceGetSavedAttackDialogPosition = () => {
+    let pos = null;
+    try {
+        const raw = localStorage.getItem("not-dice.attackDialogPosition");
+        if (raw) pos = JSON.parse(raw);
+    } catch (e) {
+        // ignore
+    }
+    if (!pos && globalThis._notDiceSavedAttackDialogPosition) {
+        pos = globalThis._notDiceSavedAttackDialogPosition;
+    }
+    if (!pos || typeof pos !== "object") return null;
+
+    const top = Number(pos.top);
+    const left = Number(pos.left);
+    if (!Number.isFinite(top) || !Number.isFinite(left)) return null;
+
+    const winWidth = window.innerWidth || document.documentElement?.clientWidth || 1920;
+    const winHeight = window.innerHeight || document.documentElement?.clientHeight || 1080;
+
+    // Asegurar que la ventana quede dentro del área visible
+    const clampedLeft = Math.max(10, Math.min(winWidth - 250, left));
+    const clampedTop = Math.max(10, Math.min(winHeight - 100, top));
+
+    return { top: Math.round(clampedTop), left: Math.round(clampedLeft) };
+};
+globalThis.notDiceGetSavedAttackDialogPosition = notDiceGetSavedAttackDialogPosition;
+
+/**
+ * Guarda la posición actual de la ventana de diálogo de ataque en memoria y localStorage.
+ * @param {Application|ApplicationV2|HTMLElement} app - Instancia de la aplicación o elemento del DOM.
+ */
+const notDiceSaveAttackDialogPosition = (app) => {
+    if (!app) return;
+    try {
+        let el = null;
+        if (app instanceof HTMLElement) {
+            el = app;
+        } else if (app.element instanceof HTMLElement) {
+            el = app.element;
+        } else if (app.element?.[0] instanceof HTMLElement) {
+            el = app.element[0];
+        }
+
+        let top = null;
+        let left = null;
+
+        if (el && typeof el.getBoundingClientRect === "function") {
+            const rect = el.getBoundingClientRect();
+            if (rect && (rect.width > 0 || rect.height > 0)) {
+                top = rect.top;
+                left = rect.left;
+            }
+        }
+
+        if (!Number.isFinite(top) && Number.isFinite(app.position?.top)) {
+            top = app.position.top;
+        }
+        if (!Number.isFinite(left) && Number.isFinite(app.position?.left)) {
+            left = app.position.left;
+        }
+
+        if (!Number.isFinite(top) || !Number.isFinite(left)) return;
+
+        const winWidth = window.innerWidth || document.documentElement?.clientWidth || 1920;
+        const winHeight = window.innerHeight || document.documentElement?.clientHeight || 1080;
+
+        const clampedLeft = Math.max(10, Math.min(winWidth - 250, left));
+        const clampedTop = Math.max(10, Math.min(winHeight - 100, top));
+
+        const pos = { top: Math.round(clampedTop), left: Math.round(clampedLeft) };
+        globalThis._notDiceSavedAttackDialogPosition = pos;
+
+        try {
+            localStorage.setItem("not-dice.attackDialogPosition", JSON.stringify(pos));
+        } catch (e) {
+            // LocalStorage puede estar restringido
+        }
+    } catch (err) {
+        console.warn("Not Dice | Error guardando posición de ventana de ataque:", err);
+    }
+};
+globalThis.notDiceSaveAttackDialogPosition = notDiceSaveAttackDialogPosition;
+
 globalThis.notDiceGetActorEffects = (act) => {
     if (!act) return [];
     let effs = [];
@@ -1014,16 +1103,36 @@ globalThis.notDiceOpenDamageDialog = async ({
     const openDialog = () => new Promise(resolve => {
         const dialogTitle = `Tirada de Daño - ${itemName || actualItem?.name || "Daño"}`;
         const DialogV2 = foundry?.applications?.api?.DialogV2;
+        const savedPos = notDiceGetSavedAttackDialogPosition();
+        let cleanedUp = false;
+        let positionListener = null;
+
+        const cleanupPositionListener = () => {
+            if (cleanedUp) return;
+            cleanedUp = true;
+            if (positionListener) {
+                window.removeEventListener("pointerup", positionListener);
+                positionListener = null;
+            }
+        };
+
         if (DialogV2) {
+            const posConfig = { width: 520 };
+            if (savedPos) {
+                posConfig.top = savedPos.top;
+                posConfig.left = savedPos.left;
+            }
             const app = new DialogV2({
                 window: { title: dialogTitle },
                 content: buildContent(),
-                position: { width: 520 },
+                position: posConfig,
                 buttons: [
                     { action: "send", icon: "fa-solid fa-dice-d20", label: "Daño Base", default: true },
                     { action: "critical", icon: "fa-solid fa-skull", label: "Daño Crítico" }
                 ],
                 submit: async (result) => {
+                    notDiceSaveAttackDialogPosition(app);
+                    cleanupPositionListener();
                     if (result === "send") {
                         isCritical = false;
                         const sent = await sendDamageToGM(app.element);
@@ -1038,10 +1147,20 @@ globalThis.notDiceOpenDamageDialog = async ({
                     }
                     resolve(false);
                 },
-                close: () => resolve(false)
+                close: () => {
+                    notDiceSaveAttackDialogPosition(app);
+                    cleanupPositionListener();
+                    resolve(false);
+                }
             });
 
+            positionListener = () => notDiceSaveAttackDialogPosition(app);
+            window.addEventListener("pointerup", positionListener);
+
             app.render(true).then(() => {
+                if (savedPos && typeof app.setPosition === "function") {
+                    try { app.setPosition(savedPos); } catch (e) {}
+                }
                 const root = app.element;
                 const bindEvents = () => {
                     root.addEventListener("click", async (ev) => {
@@ -1099,13 +1218,21 @@ globalThis.notDiceOpenDamageDialog = async ({
             return;
         }
 
-        const legacyDialog = new Dialog({
+        const legacyOptions = { width: 520 };
+        if (savedPos) {
+            legacyOptions.top = savedPos.top;
+            legacyOptions.left = savedPos.left;
+        }
+        let legacyDialog = null;
+        legacyDialog = new Dialog({
             title: dialogTitle,
             content: buildContent(),
             buttons: {
                 send: {
                     label: "Daño Base",
                     callback: async html => {
+                        notDiceSaveAttackDialogPosition(legacyDialog);
+                        cleanupPositionListener();
                         isCritical = false;
                         resolve(await sendDamageToGM(html[0] || html));
                     }
@@ -1113,6 +1240,8 @@ globalThis.notDiceOpenDamageDialog = async ({
                 critical: {
                     label: "Daño Crítico",
                     callback: async html => {
+                        notDiceSaveAttackDialogPosition(legacyDialog);
+                        cleanupPositionListener();
                         isCritical = true;
                         resolve(await sendDamageToGM(html[0] || html));
                     }
@@ -1120,6 +1249,9 @@ globalThis.notDiceOpenDamageDialog = async ({
             },
             default: "send",
             render: html => {
+                if (savedPos && legacyDialog && typeof legacyDialog.setPosition === "function") {
+                    try { legacyDialog.setPosition(savedPos); } catch (e) {}
+                }
                 const root = html[0] || html;
                 root.addEventListener("click", async (ev) => {
                     const addExtraBtn = ev.target.closest(".not-dice-player-add-gm-damage-btn");
@@ -1168,8 +1300,16 @@ globalThis.notDiceOpenDamageDialog = async ({
                     }
                 });
                 renderRows(root);
+            },
+            close: () => {
+                notDiceSaveAttackDialogPosition(legacyDialog);
+                cleanupPositionListener();
+                resolve(false);
             }
-        }, { width: 520 });
+        }, legacyOptions);
+
+        positionListener = () => notDiceSaveAttackDialogPosition(legacyDialog);
+        window.addEventListener("pointerup", positionListener);
 
         legacyDialog.render(true);
         resolve(true);
@@ -4463,16 +4603,36 @@ Hooks.once("ready", () => {
 
             const result = await new Promise(resolve => {
                 const DialogV2 = foundry?.applications?.api?.DialogV2;
+                const savedPos = notDiceGetSavedAttackDialogPosition();
+                let cleanedUp = false;
+                let positionListener = null;
+
+                const cleanupPositionListener = () => {
+                    if (cleanedUp) return;
+                    cleanedUp = true;
+                    if (positionListener) {
+                        window.removeEventListener("pointerup", positionListener);
+                        positionListener = null;
+                    }
+                };
+
                 if (DialogV2) {
+                    const posConfig = { width: 440 };
+                    if (savedPos) {
+                        posConfig.top = savedPos.top;
+                        posConfig.left = savedPos.left;
+                    }
                     const app = new DialogV2({
                         window: { title: `Resolución: ${item.name} (v${notDiceVersion})` },
                         content: dialogContent,
-                        position: { width: 440 },
+                        position: posConfig,
                         buttons: [
                             { action: "damage", icon: damageButtonIcon, label: damageButtonLabel, default: true },
                             { action: "ok", icon: "fa-solid fa-xmark", label: "Falla" }
                         ],
                         submit: async (res) => {
+                            notDiceSaveAttackDialogPosition(app);
+                            cleanupPositionListener();
                             const container = app.element;
                             if (res === "damage") await applyAndResolve(container, true);
                             else if (res === "ok") await applyAndResolve(container, false);
@@ -4480,13 +4640,30 @@ Hooks.once("ready", () => {
                             resolve(rolls);
                         },
                         close: () => {
+                            notDiceSaveAttackDialogPosition(app);
+                            cleanupPositionListener();
                             unregisterChatAttackModeHandler();
                             resolve(rolls);
                         }
                     });
-                    app.render(true).then(() => onRenderComplete(app.element));
+
+                    positionListener = () => notDiceSaveAttackDialogPosition(app);
+                    window.addEventListener("pointerup", positionListener);
+
+                    app.render(true).then(() => {
+                        if (savedPos && typeof app.setPosition === "function") {
+                            try { app.setPosition(savedPos); } catch (e) {}
+                        }
+                        onRenderComplete(app.element);
+                    });
                 } else {
-                    new Dialog({
+                    const dialogOptions = { width: 440 };
+                    if (savedPos) {
+                        dialogOptions.top = savedPos.top;
+                        dialogOptions.left = savedPos.left;
+                    }
+                    let legacyApp = null;
+                    legacyApp = new Dialog({
                         title: `Resolución: ${item.name} (v${notDiceVersion})`,
                         content: dialogContent,
                         buttons: {
@@ -4494,6 +4671,8 @@ Hooks.once("ready", () => {
                                 label: damageButtonLabel,
                                 icon: damageButtonIconLegacy,
                                 callback: async html => {
+                                    notDiceSaveAttackDialogPosition(legacyApp);
+                                    cleanupPositionListener();
                                     await applyAndResolve(html, true);
                                     unregisterChatAttackModeHandler();
                                     resolve(rolls);
@@ -4503,6 +4682,8 @@ Hooks.once("ready", () => {
                                 label: "Falla",
                                 icon: "<i class='fa-solid fa-xmark'></i>",
                                 callback: async html => {
+                                    notDiceSaveAttackDialogPosition(legacyApp);
+                                    cleanupPositionListener();
                                     await applyAndResolve(html, false);
                                     unregisterChatAttackModeHandler();
                                     resolve(rolls);
@@ -4510,12 +4691,24 @@ Hooks.once("ready", () => {
                             }
                         },
                         default: "damage",
-                        render: (html) => onRenderComplete(html),
+                        render: (html) => {
+                            if (savedPos && legacyApp && typeof legacyApp.setPosition === "function") {
+                                try { legacyApp.setPosition(savedPos); } catch (e) {}
+                            }
+                            onRenderComplete(html);
+                        },
                         close: () => {
+                            notDiceSaveAttackDialogPosition(legacyApp);
+                            cleanupPositionListener();
                             unregisterChatAttackModeHandler();
                             resolve(rolls);
                         }
-                    }, { width: 440 }).render(true);
+                    }, dialogOptions);
+
+                    positionListener = () => notDiceSaveAttackDialogPosition(legacyApp);
+                    window.addEventListener("pointerup", positionListener);
+
+                    legacyApp.render(true);
                 }
             });
 
