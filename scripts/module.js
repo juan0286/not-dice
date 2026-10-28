@@ -61,6 +61,133 @@ const notDiceIsAttack = (subject) => {
     return subject && (subject.type === "attack" || subject.constructor?.name === "AttackActivity");
 };
 
+/**
+ * Extrae los efectos activos y estados (statuses/conditions) configurados en una actividad de ataque o en su ítem.
+ * @param {Activity} activity - La actividad de ataque (AttackActivity).
+ * @param {Item} item - El ítem de origen (arma, rasgo, etc.).
+ * @returns {Array<{id: string, name: string, img: string, statuses: string[], data: object}>}
+ */
+const notDiceGetActivityEffects = (activity, item) => {
+    const results = [];
+    const addedIds = new Set();
+    const actualItem = item || activity?.item || (activity?.documentName === "Item" ? activity : null);
+
+    if (!activity && !actualItem) return results;
+
+    const processEffect = (eff) => {
+        if (!eff) return;
+        const id = eff.id || eff._id;
+        if (id && addedIds.has(id)) return;
+        if (id) addedIds.add(id);
+
+        let statuses = [];
+        if (eff.statuses instanceof Set) {
+            statuses = Array.from(eff.statuses);
+        } else if (Array.isArray(eff.statuses)) {
+            statuses = Array.from(eff.statuses);
+        }
+
+        // Rider statuses en system de dnd5e
+        const riderStatuses = eff.system?.rider?.statuses;
+        if (Array.isArray(riderStatuses)) {
+            for (const s of riderStatuses) {
+                if (s && !statuses.includes(s)) statuses.push(s);
+            }
+        }
+
+        // Si no tiene statuses explícitos, verificar si el nombre coincide con alguna condición conocida
+        const statusMap = globalThis.notDiceConstants?.statusES || {};
+        if (statuses.length === 0) {
+            const effNameLower = (eff.name || eff.label || "").toLowerCase();
+            for (const [key, label] of Object.entries(statusMap)) {
+                if (effNameLower.includes(key.toLowerCase()) || effNameLower.includes(label.toLowerCase())) {
+                    statuses.push(key);
+                    break;
+                }
+            }
+        }
+
+        const effData = typeof eff.toObject === "function" ? eff.toObject() : foundry.utils.duplicate(eff);
+        results.push({
+            id: id || foundry.utils.randomID(),
+            name: eff.name || eff.label || "Efecto",
+            img: eff.img || eff.icon || actualItem?.img || "icons/svg/aura.svg",
+            statuses: statuses,
+            data: effData
+        });
+    };
+
+    // 1. Efectos asociados a la actividad de ataque (activity.effects)
+    const actEffects = activity?.effects;
+    if (actEffects) {
+        const effectsList = Array.isArray(actEffects)
+            ? actEffects
+            : (typeof actEffects.values === "function" ? Array.from(actEffects.values()) : Array.from(actEffects));
+
+        for (const applied of effectsList) {
+            const effId = applied._id || applied.id;
+            let eff = applied.effect;
+            if (!eff && actualItem?.effects) {
+                eff = actualItem.effects.get?.(effId) || actualItem.effects.find?.(e => (e.id === effId || e._id === effId));
+            }
+            if (!eff && actualItem?.actor?.effects) {
+                eff = actualItem.actor.effects.get?.(effId);
+            }
+            if (!eff && applied.uuid && typeof fromUuidSync === "function") {
+                try { eff = fromUuidSync(applied.uuid, { strict: false }); } catch (_) {}
+            }
+            if (eff) {
+                processEffect(eff);
+            }
+        }
+    }
+
+    // 2. Efectos no transferibles del ítem (que no sean auras/pasivas de transferencia)
+    if (actualItem?.effects) {
+        const itemEffectsList = Array.isArray(actualItem.effects)
+            ? actualItem.effects
+            : (actualItem.effects.contents || (typeof actualItem.effects.values === "function" ? Array.from(actualItem.effects.values()) : []));
+
+        for (const eff of itemEffectsList) {
+            if (!eff.transfer) {
+                processEffect(eff);
+            }
+        }
+    }
+
+    // 3. Fallback: detectar condiciones en la descripción si no se encontró ningún ActiveEffect
+    if (results.length === 0) {
+        const descText = (actualItem?.system?.description?.value || activity?.description?.value || "").toLowerCase();
+        if (descText) {
+            const statusMap = globalThis.notDiceConstants?.statusES || {};
+            for (const [key, label] of Object.entries(statusMap)) {
+                const regex = new RegExp(`(?:&reference\\[${key}|\b${key}\b|\b${label.toLowerCase()}\b)`, "i");
+                if (regex.test(descText)) {
+                    const statusObj = CONFIG.statusEffects?.find?.(s => s.id === key);
+                    const effName = label;
+                    results.push({
+                        id: `synth-${key}`,
+                        name: effName,
+                        img: statusObj?.img || statusObj?.icon || actualItem?.img || "icons/svg/aura.svg",
+                        statuses: [key],
+                        data: {
+                            name: effName,
+                            img: statusObj?.img || statusObj?.icon || actualItem?.img || "icons/svg/aura.svg",
+                            statuses: [key],
+                            duration: {}
+                        }
+                    });
+                    break;
+                }
+            }
+        }
+    }
+
+    return results;
+};
+globalThis.notDiceGetActivityEffects = notDiceGetActivityEffects;
+
+
 const notDiceFirstActiveGmId = () => {
     return game.users.find(u => u.isGM && u.active)?.id || null;
 };
@@ -247,6 +374,17 @@ const notDiceExtractDamageRows = (actualItem) => {
 
     if (!rows.length && actualItem?.labels?.damage) {
         pushPart(actualItem.labels.damage, "", []);
+    }
+
+    if (!rows.length) {
+        const hasActivities = actualItem?.system?.activities && (
+            (typeof actualItem.system.activities.size === "number" && actualItem.system.activities.size > 0) ||
+            (typeof actualItem.system.activities.values === "function" && Array.from(actualItem.system.activities.values()).length > 0)
+        );
+        const hasBaseDamage = !!(actualItem?.system?.damage?.base?.number && actualItem?.system?.damage?.base?.denomination);
+        if (hasActivities && !hasBaseDamage) {
+            return [];
+        }
     }
 
     return rows.length > 0 ? rows : [{ formula: "1d8", type: "", availableTypes: [] }];
@@ -1289,16 +1427,35 @@ const notDiceHandleAttackSocket = async (data) => {
         const activity = data.activityId ? item?.system?.activities?.get(data.activityId) : item?.system?.activities?.find(a => a.type === "damage" || a.type === "attack");
         if (!item || !activity) return ui.notifications?.warn("Not Dice | No se pudo recuperar la actividad del ataque.");
 
-        await activity.rollDamage({
-            event: notDiceMockEvent({ targetIds: data.targetIds, senderUserId: data.senderUserId }),
-            options: {
-                notDiceAutoTriggered: data.notDiceAutoTriggered !== false,
-                isCleaveAttack: data.isCleaveAttack,
-                notDiceVersatile: data.notDiceVersatile
-            },
-            isNickAttack: data.isNickAttack
-        });
-        ui.notifications?.info(`Not Dice | Resolviendo daño enviado por ${data.senderName || "jugador"}.`);
+        const actDamageParts = activity?.damage?.parts || [];
+        const baseTypes = item?.system?.damage?.base?.types || [];
+        const hasDamageFormula = actDamageParts.length > 0 || (baseTypes.length > 0 && !!item?.system?.damage?.base?.number);
+
+        if (hasDamageFormula && typeof activity.rollDamage === "function") {
+            await activity.rollDamage({
+                event: notDiceMockEvent({ targetIds: data.targetIds, senderUserId: data.senderUserId }),
+                options: {
+                    notDiceAutoTriggered: data.notDiceAutoTriggered !== false,
+                    isCleaveAttack: data.isCleaveAttack,
+                    notDiceVersatile: data.notDiceVersatile
+                },
+                isNickAttack: data.isNickAttack
+            });
+            ui.notifications?.info(`Not Dice | Resolviendo daño enviado por ${data.senderName || "jugador"}.`);
+        } else if (typeof globalThis.notDiceEvaluateDamageRoll === "function") {
+            (globalThis.notDiceLogger || console).debug("Ataque enviado por jugador sin daño directo. Abriendo resolución en GM.");
+            await globalThis.notDiceEvaluateDamageRoll([], {
+                subject: activity,
+                options: {
+                    notDiceAutoTriggered: data.notDiceAutoTriggered !== false,
+                    isCleaveAttack: data.isCleaveAttack,
+                    notDiceVersatile: data.notDiceVersatile
+                },
+                isNickAttack: data.isNickAttack,
+                event: notDiceMockEvent({ targetIds: data.targetIds, senderUserId: data.senderUserId })
+            }, {});
+            ui.notifications?.info(`Not Dice | Resolviendo ataque y efectos enviados por ${data.senderName || "jugador"}.`);
+        }
     } catch (err) {
         (globalThis.notDiceLogger || console).error("Error inyectando popup directo", err);
     }
@@ -1312,6 +1469,8 @@ Hooks.once("ready", () => {
         game.socket.on("module.not-dice", notDiceHandleAttackSocket);
     }
     (globalThis.notDiceLogger || console).info("Module Ready");
+
+    let notDiceEvaluateDamageRoll;
 
     // --- D20Roll (Attack) Patching ---
     const D20Roll = CONFIG.Dice.D20Roll;
@@ -1765,21 +1924,43 @@ Hooks.once("ready", () => {
                     // Solo el GM debe disparar el daño automático y mostrar popup.
                     if (game.user.isGM) {
                         setTimeout(() => {
-                            if (rollConfig.subject && rollConfig.subject.rollDamage) {
-                                (globalThis.notDiceLogger || console).debug("Triggering Auto-Damage Roll (GM)");
+                            if (rollConfig.subject) {
+                                const activity = rollConfig.subject;
+                                const actItem = activity?.item || (activity?.documentName === "Item" ? activity : null);
+                                const actDamageParts = activity?.damage?.parts || [];
+                                const baseTypes = actItem?.system?.damage?.base?.types || [];
+                                const hasDamageFormula = actDamageParts.length > 0 || (baseTypes.length > 0 && !!actItem?.system?.damage?.base?.number);
                                 const isCleave = rollConfig.isCleaveAttack || rollConfig.options?.isCleaveAttack || rollConfig.event?.isCleaveAttack || false;
-                                rollConfig.subject.rollDamage({
-                                    event: rollConfig.event,
-                                    options: {
-                                        notDiceAutoTriggered: true,
+
+                                if (hasDamageFormula && typeof activity.rollDamage === "function") {
+                                    (globalThis.notDiceLogger || console).debug("Triggering Auto-Damage Roll (GM)");
+                                    activity.rollDamage({
+                                        event: rollConfig.event,
+                                        options: {
+                                            notDiceAutoTriggered: true,
+                                            isCleaveAttack: isCleave,
+                                            notDiceVersatile: versatileChoice,
+                                            consume: false
+                                        },
+                                        isNickAttack: rollConfig.isNickAttack || rollConfig.options?.isNickAttack || rollConfig.event?.isNickAttack || false,
                                         isCleaveAttack: isCleave,
-                                        notDiceVersatile: versatileChoice,
                                         consume: false
-                                    },
-                                    isNickAttack: rollConfig.isNickAttack || rollConfig.options?.isNickAttack || rollConfig.event?.isNickAttack || false,
-                                    isCleaveAttack: isCleave,
-                                    consume: false
-                                });
+                                    });
+                                } else if (typeof notDiceEvaluateDamageRoll === "function") {
+                                    (globalThis.notDiceLogger || console).debug("Ataque sin daño directo (solo efectos o sin fórmula). Abriendo resolución directamente.");
+                                    notDiceEvaluateDamageRoll([], {
+                                        subject: activity,
+                                        options: {
+                                            notDiceAutoTriggered: true,
+                                            isCleaveAttack: isCleave,
+                                            notDiceVersatile: versatileChoice,
+                                            consume: false
+                                        },
+                                        isNickAttack: rollConfig.isNickAttack || rollConfig.options?.isNickAttack || rollConfig.event?.isNickAttack || false,
+                                        isCleaveAttack: isCleave,
+                                        event: rollConfig.event
+                                    }, {});
+                                }
                             }
                         }, 250);
                     }
@@ -1805,7 +1986,7 @@ Hooks.once("ready", () => {
          * @param {object} messageConfig - Configuración del mensaje de chat final.
          * @returns {Promise<DamageRoll[]>} Las tiradas modificadas y evaluadas de forma final.
          */
-        const notDiceEvaluateDamageRoll = async (rolls, rollConfig, messageConfig) => {
+        notDiceEvaluateDamageRoll = async (rolls, rollConfig, messageConfig) => {
             (globalThis.notDiceLogger || console).debug("Damage buildEvaluate intercepted", rolls);
             if (rollConfig) {
                 rollConfig.consume = false;
@@ -1915,7 +2096,10 @@ Hooks.once("ready", () => {
                 rolls.push(hexRoll);
             }
 
-            const item = rollConfig.subject?.item || rollConfig.subject;
+            const subject = rollConfig.subject;
+            const item = subject?.item || (subject?.documentName === "Item" ? subject : null) || rollConfig.item || null;
+            const activity = (subject && subject !== item) ? subject : (item?.system?.activities?.find(a => a.type === "attack" || a.type === "damage") || null);
+            const attackEffects = typeof notDiceGetActivityEffects === "function" ? notDiceGetActivityEffects(activity, item) : [];
 
             // --- Habilidades Especiales (Maestro en Armas Pesadas, etc.) ---
             if (globalThis.notDiceEspeciales) {
@@ -2278,6 +2462,13 @@ Hooks.once("ready", () => {
                         headerBadges.push(`<span style="display:inline-block; font-size:0.75em; background:rgba(197,34,31,0.25); color:#ff5252; padding:3px 8px; border-radius:12px; border:1px solid rgba(255,82,82,0.5); font-weight:bold;" title="${disadvTitle}"><i class="fas fa-arrow-down"></i> Sugiere Desventaja</span>`);
                     }
 
+                    if (attackEffects.length > 0) {
+                        for (const eff of attackEffects) {
+                            const statusLabel = eff.statuses.map(s => globalThis.notDiceConstants?.statusES?.[s] || s).join(", ");
+                            headerBadges.push(`<span style="display:inline-block; font-size:0.75em; background:rgba(233,30,99,0.15); color:#e91e63; padding:3px 8px; border-radius:12px; border:1px solid rgba(233,30,99,0.3); font-weight:bold;"><i class="fas fa-bolt"></i> Estado: ${statusLabel || eff.name}</span>`);
+                        }
+                    }
+
                     headerLabel = "Ataque";
                     headerValue = toHit;
                 } else {
@@ -2622,10 +2813,119 @@ Hooks.once("ready", () => {
                 }
             }
 
+            const getHitTargetIds = () => {
+                if (!attackRollState || targets.length === 0) return [];
+
+                const selectedD20 = attackRollState.mode === "advantage"
+                    ? Math.max(attackRollState.originalD20, attackRollState.extraD20 ?? attackRollState.originalD20)
+                    : attackRollState.mode === "disadvantage"
+                        ? Math.min(attackRollState.originalD20, attackRollState.extraD20 ?? attackRollState.originalD20)
+                        : attackRollState.originalD20;
+                const total = selectedD20 + attackRollState.bonus;
+
+                const hitIds = [];
+                for (const target of targets) {
+                    const rawTargetAC = target.actor?.system?.attributes?.ac?.value;
+                    const targetAC = typeof rawTargetAC === "number" ? rawTargetAC : (Number(rawTargetAC) || null);
+
+                    if (selectedD20 === 1) continue;
+                    if (selectedD20 === 20) {
+                        hitIds.push(target.id);
+                        continue;
+                    }
+
+                    if (typeof targetAC === "number" && total >= targetAC) {
+                        hitIds.push(target.id);
+                    }
+                }
+
+                return hitIds;
+            };
+
+            let attackEffectsHtml = "";
+            if (attackEffects.length > 0) {
+                const initialHitIds = getHitTargetIds();
+                const isInitialHit = targets.length === 0 || initialHitIds.length > 0;
+
+                const effectCards = attackEffects.map(eff => {
+                    const statusLabels = eff.statuses.map(s => globalThis.notDiceConstants?.statusES?.[s] || s).join(", ");
+                    const statusBadge = statusLabels
+                        ? `<span style="font-size:0.75em; background:rgba(233,30,99,0.15); color:#e91e63; padding:2px 6px; border-radius:6px; border:1px solid rgba(233,30,99,0.3); font-weight:bold;"><i class="fas fa-link"></i> ${statusLabels}</span>`
+                        : "";
+
+                    const targetHasEffect = (tok) => {
+                        const act = tok?.actor;
+                        if (!act) return false;
+                        const effs = typeof globalThis.notDiceGetActorEffects === "function" ? globalThis.notDiceGetActorEffects(act) : Array.from(act.effects || []);
+                        return effs.some(e => {
+                            if (e.name === eff.name) return true;
+                            if (eff.statuses?.length > 0) {
+                                const eStatuses = e.statuses instanceof Set ? Array.from(e.statuses) : (Array.isArray(e.statuses) ? e.statuses : []);
+                                if (eff.statuses.some(s => eStatuses.includes(s))) return true;
+                                if (act.statuses instanceof Set && eff.statuses.some(s => act.statuses.has(s))) return true;
+                            }
+                            return false;
+                        });
+                    };
+
+                    const targetsWithStatus = targets.filter(t => targetHasEffect(t));
+                    const alreadyActiveNotice = targetsWithStatus.length > 0
+                        ? `<span style="font-size:0.75em; color:#ffb300; font-weight:bold; margin-left:6px;"><i class="fas fa-exclamation-triangle"></i> (Activo en: ${targetsWithStatus.map(t => t.name).join(", ")})</span>`
+                        : "";
+
+                    const shouldBeChecked = isInitialHit && targetsWithStatus.length < targets.length;
+
+                    return `
+                        <div class="not-dice-attack-effect-card" data-effect-id="${eff.id}" style="display:flex; align-items:center; justify-content:space-between; gap:10px; padding:8px 10px; border-radius:6px; border:1px solid ${shouldBeChecked ? 'rgba(233,30,99,0.45)' : 'var(--color-border-light-2, #ccc)'}; background:${shouldBeChecked ? 'rgba(233,30,99,0.08)' : 'rgba(127,127,127,0.06)'}; margin-bottom:6px; transition: all 0.2s ease;">
+                            <div style="display:flex; align-items:center; gap:10px; flex:1; min-width:0;">
+                                <input type="checkbox" class="not-dice-effect-checkbox" id="effect-cb-${eff.id}" data-effect-id="${eff.id}" ${shouldBeChecked ? 'checked' : ''} style="margin:0; width:16px; height:16px; cursor:pointer; flex-shrink:0;">
+                                <img src="${eff.img}" style="width:32px; height:32px; border-radius:5px; object-fit:cover; border:1px solid var(--color-border-light-2, #aaa); flex-shrink:0;">
+                                <div style="display:flex; flex-direction:column; gap:2px; min-width:0; flex:1;">
+                                    <label for="effect-cb-${eff.id}" style="margin:0; cursor:pointer; font-weight:bold; font-size:0.95em; color:inherit; line-height:1.2; display:flex; align-items:center; gap:6px; flex-wrap:wrap;">
+                                        <span>${eff.name}</span>
+                                        ${statusBadge}
+                                    </label>
+                                    <div style="font-size:0.75em; opacity:0.8; line-height:1.2;">
+                                        Aplicar al acertar a: <strong>${targets.map(t => t.name).join(", ") || "Objetivo"}</strong>
+                                        ${alreadyActiveNotice}
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    `;
+                }).join("");
+
+                const hitBadgeText = isInitialHit
+                    ? `<i class="fas fa-check-circle" style="color:#4caf50;"></i> Acertado: Se aplicará al confirmar`
+                    : `<i class="fas fa-times-circle" style="color:#ff5252;"></i> Fallado: Desactivado`;
+
+                const hitBadgeStyle = isInitialHit
+                    ? `background:rgba(19,115,51,0.15); color:#4caf50; border:1px solid rgba(19,115,51,0.3);`
+                    : `background:rgba(197,34,31,0.15); color:#ff5252; border:1px solid rgba(197,34,31,0.3);`;
+
+                attackEffectsHtml = `
+                    <div class="not-dice-attack-effects-section" style="margin-top:12px; margin-bottom:12px;">
+                        <div style="display:flex; justify-content:space-between; align-items:center; border-bottom: 1px solid var(--color-border-light-2, #ccc); padding-bottom: 4px; margin-bottom: 8px;">
+                            <h3 style="margin:0; font-size:1.05em; color:inherit; opacity:0.9; display:flex; align-items:center; gap:6px;">
+                                <i class="fas fa-bolt" style="color:#e91e63;"></i> Estado / Efecto de Ataque (${attackEffects.length})
+                            </h3>
+                            <span class="not-dice-effects-hit-badge" style="font-size:0.75em; font-weight:bold; padding:2px 8px; border-radius:10px; ${hitBadgeStyle}">
+                                ${hitBadgeText}
+                            </span>
+                        </div>
+                        <div style="display:flex; flex-direction:column; gap:4px;">
+                            ${effectCards}
+                        </div>
+                    </div>
+                `;
+            }
+
             const dialogContent = `
                 <div class="not-dice-dialog-content-wrapper" style="font-family:inherit; padding:6px 4px; border-radius:8px; border:1px solid ${dialogWrapperBorder}; background:${dialogWrapperBg}; transition: background 0.3s ease, border-color 0.3s ease;">
                     ${attackHtml}
                     ${targetHtml}
+                    ${attackEffectsHtml}
+                    ${damageParts.length > 0 ? `
                     <div style="display:flex; justify-content:space-between; align-items:center; border-bottom: 1px solid var(--color-border-light-2, #ccc); padding-bottom: 6px; margin-bottom: 10px; margin-top: 16px;">
                         <h3 style="margin:0; font-size:1.15em; color:inherit; opacity:0.9;">Desglose de Daño</h3>
                         <div style="position:relative;">
@@ -2640,6 +2940,11 @@ Hooks.once("ready", () => {
                         <button type="button" id="not-dice-btn-roll-all-crit" style="flex:1; height:36px; padding:0 8px; border:1px solid #d32f2f; border-radius:4px; background:rgba(197,34,31,0.1); color:#ff5252; cursor:pointer; display:flex; align-items:center; justify-content:center; gap:6px; font-weight:bold; font-size:0.9em; box-sizing:border-box;" title="Tirar Todo Crítico"><i class="fas fa-dice-d20" style="font-size:1.2em;"></i>Tirar Todo Crítico</button>
                     </div>
                     ${requestDamageBtnHtml}
+                    ` : `
+                    <div style="text-align:center; padding:12px 10px; font-style:italic; opacity:0.85; font-size:0.9em; border: 1px dashed var(--color-border-light-2, #ccc); border-radius:6px; margin: 12px 0 6px 0; background: rgba(127,127,127,0.05);">
+                        <i class="fas fa-hand-holding-magic" style="margin-right:4px;"></i> Este ataque no inflige daño directo. Aplica los efectos seleccionados al acertar.
+                    </div>
+                    `}
                 </div>
             `;
 
@@ -2725,6 +3030,63 @@ Hooks.once("ready", () => {
 
                     const targetsLocal = resolveTargets();
                     const damageSummaryLines = [];
+
+                    // Aplicar Efectos Activos de la actividad de ataque seleccionados
+                    const checkedEffectElements = root.querySelectorAll(".not-dice-effect-checkbox:checked");
+                    const appliedEffectNames = [];
+                    if (checkedEffectElements.length > 0 && attackEffects.length > 0) {
+                        for (const cb of checkedEffectElements) {
+                            const effId = cb.dataset.effectId;
+                            const eff = attackEffects.find(e => e.id === effId);
+                            if (!eff) continue;
+
+                            appliedEffectNames.push(eff.name);
+
+                            for (const t of targetsLocal) {
+                                const targetActor = t.actor || (t.document ? t.document.actor : null);
+                                if (!targetActor) continue;
+
+                                const effectData = foundry.utils.duplicate(eff.data);
+                                delete effectData._id;
+                                effectData.origin = item?.uuid || rollConfig?.subject?.uuid || null;
+                                effectData.disabled = false;
+
+                                if (eff.statuses?.length && (!effectData.statuses || effectData.statuses.length === 0)) {
+                                    effectData.statuses = [...eff.statuses];
+                                }
+
+                                try {
+                                    await targetActor.createEmbeddedDocuments("ActiveEffect", [effectData]);
+                                    ui.notifications.info(`Not Dice | Estado aplicado: ${eff.name} en ${t.name}`);
+
+                                    const statusNames = eff.statuses.map(s => globalThis.notDiceConstants?.statusES?.[s] || s).join(", ");
+                                    const effectBadge = statusNames ? `${eff.name} (${statusNames})` : eff.name;
+                                    damageSummaryLines.push(`
+                                        <div style="display:flex; align-items:center; justify-content:space-between; padding:4px 8px; margin-bottom:4px; border:1px solid rgba(233,30,99,0.35); border-radius:6px; background:rgba(233,30,99,0.1); font-size:0.84em;">
+                                            <span style="font-weight:700; color:#e91e63;"><i class="fas fa-bolt"></i> ${t.name}</span>
+                                            <span style="color:inherit; font-weight:bold;">${effectBadge} aplicado</span>
+                                        </div>
+                                    `);
+                                } catch (err) {
+                                    (globalThis.notDiceLogger || console).error("Error aplicando efecto de ataque al objetivo", err);
+                                }
+                            }
+                        }
+                    }
+
+                    if (damageParts.length === 0 && appliedEffectNames.length > 0) {
+                        const actorSpeaker = ChatMessage.getSpeaker({ actor: item?.actor });
+                        const targetNames = targetsLocal.map(t => t.name).join(", ");
+                        ChatMessage.create({
+                            speaker: actorSpeaker,
+                            content: `
+                                <div style="font-family:inherit; padding:8px 10px; border:1px solid rgba(233,30,99,0.35); border-radius:6px; background:rgba(233,30,99,0.08); text-align:center;">
+                                    <h4 style="margin:0 0 6px 0; color:#e91e63;"><i class="fas fa-bolt"></i> ${item?.name || "Ataque"}: Efecto Aplicado</h4>
+                                    <p style="margin:0; font-size:0.92em;"><strong>${targetNames}</strong> recibe el estado: <strong>${appliedEffectNames.join(", ")}</strong>.</p>
+                                </div>
+                            `
+                        });
+                    }
 
                     const applyMasteryChecked = root.querySelector("#mastery-cb")?.checked ?? false;
                     if (applyMasteryChecked && activeMastery) {
@@ -2969,7 +3331,9 @@ Hooks.once("ready", () => {
                             }
                             const groupedFinalValues = Array.from(groupedValuesMap.values());
 
-                            await t.actor.applyDamage(groupedFinalValues, { ignore: true });
+                            if (groupedFinalValues.length > 0) {
+                                await t.actor.applyDamage(groupedFinalValues, { ignore: true });
+                            }
 
                             const hpAfter = Number(t.actor.system?.attributes?.hp?.value ?? 0);
                             const totalApplied = groupedFinalValues.reduce((acc, entry) => acc + (Number(entry?.value) || 0), 0);
@@ -3013,8 +3377,9 @@ Hooks.once("ready", () => {
                     }
 
                     // --- Mensaje resumen público: barra de daño total ---
-                    try {
-                        const grandTotal = totalValues.reduce((acc, tv) => acc + (Number(tv.value) || 0), 0);
+                    if (damageParts.length > 0) {
+                        try {
+                            const grandTotal = totalValues.reduce((acc, tv) => acc + (Number(tv.value) || 0), 0);
                         // Calcular max y min combinados de todas las fórmulas de daño
                         let combinedMax = 0;
                         let combinedMin = 0;
@@ -3089,12 +3454,13 @@ Hooks.once("ready", () => {
                             await ChatMessage.create({
                                 style: CONST.CHAT_MESSAGE_STYLES.OTHER,
                                 speaker: actorSpeaker,
-                                flags: { "not-dice": { hideHeader: true, damageSummaryBar: true } },
-                                content: barContent
-                            });
+                                    flags: { "not-dice": { hideHeader: true, damageSummaryBar: true } },
+                                    content: barContent
+                                });
+                            }
+                        } catch (barErr) {
+                            (globalThis.notDiceLogger || console).error("Error creating total damage bar", barErr);
                         }
-                    } catch (barErr) {
-                        (globalThis.notDiceLogger || console).error("Error creating total damage bar", barErr);
                     }
 
                     // Topple Dialog moved to runToppleSave in masteries.js
@@ -3178,35 +3544,6 @@ Hooks.once("ready", () => {
 
                 if (targetIds.length === 0) return null;
                 return { targetIds, targetMultipliers };
-            };
-
-            const getHitTargetIds = () => {
-                if (!attackRollState || targets.length === 0) return [];
-
-                const selectedD20 = attackRollState.mode === "advantage"
-                    ? Math.max(attackRollState.originalD20, attackRollState.extraD20 ?? attackRollState.originalD20)
-                    : attackRollState.mode === "disadvantage"
-                        ? Math.min(attackRollState.originalD20, attackRollState.extraD20 ?? attackRollState.originalD20)
-                        : attackRollState.originalD20;
-                const total = selectedD20 + attackRollState.bonus;
-
-                const hitIds = [];
-                for (const target of targets) {
-                    const rawTargetAC = target.actor?.system?.attributes?.ac?.value;
-                    const targetAC = typeof rawTargetAC === "number" ? rawTargetAC : (Number(rawTargetAC) || null);
-
-                    if (selectedD20 === 1) continue;
-                    if (selectedD20 === 20) {
-                        hitIds.push(target.id);
-                        continue;
-                    }
-
-                    if (typeof targetAC === "number" && total >= targetAC) {
-                        hitIds.push(target.id);
-                    }
-                }
-
-                return hitIds;
             };
 
             const sendDamageRequestToPlayer = async (root, forcedTargetIds = null) => {
@@ -3366,6 +3703,30 @@ Hooks.once("ready", () => {
                         }
                     }
 
+                    // Sincronizar checkboxes de efectos de ataque con el resultado de impacto/fallo
+                    const currentHitTargetIds = getHitTargetIds();
+                    const isNowHit = targets.length === 0 || currentHitTargetIds.length > 0;
+                    const hitBadge = root.querySelector(".not-dice-effects-hit-badge");
+                    if (hitBadge) {
+                        hitBadge.innerHTML = isNowHit
+                            ? `<i class="fas fa-check-circle" style="color:#4caf50;"></i> Acertado: Se aplicará al confirmar`
+                            : `<i class="fas fa-times-circle" style="color:#ff5252;"></i> Fallado: Desactivado`;
+                        hitBadge.style.background = isNowHit ? "rgba(19,115,51,0.15)" : "rgba(197,34,31,0.15)";
+                        hitBadge.style.color = isNowHit ? "#4caf50" : "#ff5252";
+                        hitBadge.style.borderColor = isNowHit ? "rgba(19,115,51,0.3)" : "rgba(197,34,31,0.3)";
+                    }
+
+                    root.querySelectorAll(".not-dice-effect-checkbox").forEach(cb => {
+                        if (cb.dataset.userModified !== "true") {
+                            cb.checked = isNowHit;
+                            const card = cb.closest(".not-dice-attack-effect-card");
+                            if (card) {
+                                card.style.borderColor = isNowHit ? "rgba(233,30,99,0.45)" : "var(--color-border-light-2, #ccc)";
+                                card.style.background = isNowHit ? "rgba(233,30,99,0.08)" : "rgba(127,127,127,0.06)";
+                            }
+                        }
+                    });
+
                     // Sincronizar el tema de toda la ventana del diálogo cuando el usuario cambia manualmente el modo
                     applyFullDialogTheme(attackRollState.mode !== "normal" ? attackRollState.mode : attackAdvantageEval.mode);
                 };
@@ -3451,6 +3812,23 @@ Hooks.once("ready", () => {
                     });
                     registerChatAttackModeHandler();
                 }
+
+                // Listeners manuales para los checkboxes de efectos de ataque
+                root.querySelectorAll(".not-dice-effect-checkbox").forEach(cb => {
+                    cb.addEventListener("change", () => {
+                        cb.dataset.userModified = "true";
+                        const card = cb.closest(".not-dice-attack-effect-card");
+                        if (card) {
+                            if (cb.checked) {
+                                card.style.borderColor = "rgba(233,30,99,0.45)";
+                                card.style.background = "rgba(233,30,99,0.08)";
+                            } else {
+                                card.style.borderColor = "var(--color-border-light-2, #ccc)";
+                                card.style.background = "rgba(127,127,127,0.06)";
+                            }
+                        }
+                    });
+                });
 
                 // --- HOVER PARA LA DESCRIPCION DEL ATAQUE ---
                 const attackImgHover = root.querySelector(".not-dice-attack-img-hover");
@@ -4071,10 +4449,17 @@ Hooks.once("ready", () => {
             // --- Detectar si todos los tipos son curación ---
             const healingTypes = new Set(["healing", "temphp"]);
             const isHealingOnly = damageParts.length > 0 && damageParts.every(p => healingTypes.has(p.type));
+            const hasAttackEffects = attackEffects.length > 0;
 
-            const damageButtonLabel = isHealingOnly ? "Aplicar Curación" : "Aplicar Daño";
-            const damageButtonIcon = isHealingOnly ? "fa-solid fa-heart" : "fa-solid fa-skull";
-            const damageButtonIconLegacy = isHealingOnly ? "<i class='fas fa-heart'></i>" : "<i class='fas fa-skull'></i>";
+            const damageButtonLabel = isHealingOnly
+                ? "Aplicar Curación"
+                : (damageParts.length === 0 && hasAttackEffects ? "Aplicar Efecto" : "Aplicar Daño");
+            const damageButtonIcon = isHealingOnly
+                ? "fa-solid fa-heart"
+                : (damageParts.length === 0 && hasAttackEffects ? "fa-solid fa-bolt" : "fa-solid fa-skull");
+            const damageButtonIconLegacy = isHealingOnly
+                ? "<i class='fas fa-heart'></i>"
+                : (damageParts.length === 0 && hasAttackEffects ? "<i class='fas fa-bolt'></i>" : "<i class='fas fa-skull'></i>");
 
             const result = await new Promise(resolve => {
                 const DialogV2 = foundry?.applications?.api?.DialogV2;
