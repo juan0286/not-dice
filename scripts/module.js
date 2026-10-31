@@ -5009,7 +5009,73 @@ Hooks.once("ready", () => {
     });
 });
 
+const notDiceBindHealingChatCard = (message, rootEl) => {
+    if (!rootEl || !(rootEl instanceof HTMLElement)) return;
+
+    if (message.getFlag("not-dice", "gmOnlyHealingRequest") && !game.user?.isGM) {
+        rootEl.style.display = "none";
+        return;
+    }
+
+    const btn = rootEl.querySelector(".not-dice-gm-apply-healing-btn");
+    if (!btn) return;
+
+    const markApplied = () => {
+        btn.disabled = true;
+        btn.style.opacity = "0.65";
+        btn.style.cursor = "default";
+        btn.style.background = "rgba(34, 197, 94, 0.25)";
+        btn.style.color = "#16a34a";
+        btn.innerHTML = "<i class='fas fa-check'></i> <span>Curación Aplicada</span>";
+    };
+
+    if (message.getFlag("not-dice", "healingApplied")) {
+        markApplied();
+        return;
+    }
+
+    if (btn.dataset.notDiceBound === "1") return;
+    btn.dataset.notDiceBound = "1";
+
+    btn.addEventListener("click", async (ev) => {
+        ev.preventDefault();
+        if (btn.disabled) return;
+        if (!game.user?.isGM) {
+            ui.notifications?.warn("Not Dice | Solo el GM puede aplicar la curación.");
+            return;
+        }
+
+        const reqData = message.getFlag("not-dice", "healingRequestData");
+        if (!reqData) {
+            ui.notifications?.warn("Not Dice | No se encontraron los datos de curación en el mensaje.");
+            return;
+        }
+
+        btn.disabled = true;
+        if (typeof globalThis.notDiceExecuteHealingApplication === "function") {
+            const ok = await globalThis.notDiceExecuteHealingApplication({
+                targets: reqData.targets || [],
+                total: reqData.total || 0,
+                isTempHp: !!reqData.isTempHp
+            });
+            if (ok) {
+                markApplied();
+                try {
+                    await message.setFlag("not-dice", "healingApplied", true);
+                } catch (e) {
+                    // ignore
+                }
+            } else {
+                btn.disabled = false;
+            }
+        } else {
+            btn.disabled = false;
+        }
+    });
+};
+
 Hooks.on("renderChatMessageHTML", (message, html) => {
+    notDiceBindHealingChatCard(message, html instanceof HTMLElement ? html : html?.[0]);
     if (message.getFlag("not-dice", "hideHeader")) {
         const header = html.querySelector(".message-header");
         if (header) header.style.display = "none";
@@ -5105,6 +5171,8 @@ Hooks.on("renderChatMessage", (message, html, data) => {
     }
 
     if (!rootEl || !$html) return;
+
+    notDiceBindHealingChatCard(message, rootEl);
 
     if (message.getFlag("not-dice", "attackRoll") && $html.find(".not-dice-chat-attack-mode").length === 0) {
         const btnHtml = `

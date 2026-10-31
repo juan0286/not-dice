@@ -245,7 +245,12 @@ export const initHealingDialog = () => {
 
         const isTempHp = firstRow.type === "temphp";
         const titleText = isTempHp ? "Puntos de Vida Temporales" : "Curación";
-        const buttonText = isTempHp ? "Aplicar PV Temporales" : "Aplicar Curación";
+        const isGM = !!game.user?.isGM;
+        const buttonText = isGM
+            ? (isTempHp ? "Aplicar PV Temporales" : "Aplicar Curación")
+            : "Enviar Curación";
+        const buttonIcon = isGM ? "fa-solid fa-heart" : "fa-solid fa-paper-plane";
+        const buttonIconLegacy = isGM ? '<i class="fas fa-heart"></i>' : '<i class="fas fa-paper-plane"></i>';
 
         // Determinar si la fórmula incluye tirada de dados o es un valor fijo/determinista
         let initialValue = 0;
@@ -370,12 +375,12 @@ export const initHealingDialog = () => {
                 </div>
 
                 <div style="margin-top:2px;">
-                    <label style="font-size:0.88em; font-weight:bold; display:block; margin-bottom:4px; opacity:0.9;">Resultado a Aplicar:</label>
+                    <label style="font-size:0.88em; font-weight:bold; display:block; margin-bottom:4px; opacity:0.9;">Resultado a ${isGM ? "Aplicar" : "Enviar"}:</label>
                     <input type="number" id="not-dice-heal-result" value="${initialValue}" style="width:120px; text-align:center; font-size:1.5em; font-weight:900; color:#22c55e; background:rgba(0,0,0,0.12); border:2px solid rgba(34,197,94,0.4); border-radius:6px; padding:6px; margin:0 auto; display:block; box-shadow:inset 0 0 8px rgba(34,197,94,0.15); transition: all 0.3s ease;">
                 </div>
 
                 <div style="font-size:0.82em; opacity:0.75; margin-top:2px;">
-                    <i>${itemName || actualItem.name}</i> (por ${senderName})
+                    <i>${itemName || actualItem?.name || "Curación"}</i> (por ${senderName})
                 </div>
 
                 <style>
@@ -394,104 +399,127 @@ export const initHealingDialog = () => {
         const applyHealing = async (htmlOrElement) => {
             const inputVal = typeof htmlOrElement.find === "function" 
                 ? htmlOrElement.find("#not-dice-heal-result").val()
-                : htmlOrElement.querySelector("#not-dice-heal-result").value;
+                : htmlOrElement.querySelector("#not-dice-heal-result")?.value;
                 
-            const total = parseInt(inputVal) || 0;
+            let total = parseInt(inputVal) || 0;
+
+            if (total <= 0 && hasDice) {
+                try {
+                    const autoRoll = await new Roll(firstRow.formula, rollData).evaluate({ async: true });
+                    await autoRoll.toMessage({
+                        speaker: ChatMessage.getSpeaker({ actor: actor }),
+                        flavor: `<b>${titleText}</b> - ${itemName || actualItem?.name || "Curación"}`,
+                    });
+                    total = Math.max(0, autoRoll.total ?? 0);
+                } catch (err) {
+                    (globalThis.notDiceLogger || console).error("Error auto-tirando dados de curación:", err);
+                }
+            }
 
             if (total <= 0) {
-                ui.notifications?.info("Not Dice | No se aplicó curación (valor 0).");
+                ui.notifications?.info(`Not Dice | No se ${game.user?.isGM ? "aplicó" : "envió"} curación (valor 0).`);
                 return false;
             }
 
-            try {
-                let summaryLines = [];
-                let targetsToSocket = [];
-                const palette = isTempHp 
-                    ? { fg: "#0ea5e9", accent: "#38bdf8", bg: "rgba(14,165,233,0.12)", border: "rgba(14,165,233,0.35)", suffix: "pvt" }
-                    : { fg: "#166534", accent: "#16a34a", bg: "rgba(22,101,52,0.12)", border: "rgba(22,101,52,0.35)", suffix: "pv" };
+            // Si es un jugador (no GM), enviamos un mensaje privado al GM con el botón "Aplicar Curación"
+            if (!game.user?.isGM) {
+                try {
+                    let casterToken = null;
+                    if (actor) {
+                        const activeTokens = typeof actor.getActiveTokens === "function" ? actor.getActiveTokens() : [];
+                        casterToken = activeTokens[0] || canvas.tokens?.placeables?.find(t => t.actor?.id === actor.id) || null;
+                    }
+                    if (!casterToken && game.user.character) {
+                        const charTokens = typeof game.user.character.getActiveTokens === "function" ? game.user.character.getActiveTokens() : [];
+                        casterToken = charTokens[0] || null;
+                    }
+                    const casterName = casterToken?.name || actor?.name || game.user.character?.name || senderName || game.user.name || "Jugador";
 
-                if (targets.length > 0) {
-                    for (let t of targets) {
-                        if (t.actor) {
-                            const isOwner = t.actor.isOwner;
-                            const hpBefore = Number(t.actor.system?.attributes?.hp?.value ?? 0);
-                            const tempBefore = Number(t.actor.system?.attributes?.hp?.temp ?? 0);
-                            const hpMax = Number(t.actor.system?.attributes?.hp?.max ?? 0);
-                            let beforeVal = isTempHp ? tempBefore : hpBefore;
-                            let afterVal = beforeVal;
-                            let amountApplied = total;
+                    const targetDataList = targets.length > 0
+                        ? targets.map(t => ({
+                            tokenId: t.id || "",
+                            actorId: t.actor?.id || "",
+                            name: t.name || t.actor?.name || "Objetivo"
+                        }))
+                        : (actor ? [{
+                            tokenId: casterToken?.id || "",
+                            actorId: actor.id || "",
+                            name: casterName
+                        }] : []);
 
-                            if (isTempHp) {
-                                if (total > tempBefore) {
-                                    if (isOwner) await t.actor.update({ "system.attributes.hp.temp": total });
-                                    afterVal = total;
-                                    amountApplied = total - tempBefore; // Diferencia aplicada
-                                    ui.notifications.info(`Not Dice | ${t.name} obtuvo ${total} PV Temporales.`);
-                                } else {
-                                    amountApplied = 0;
+                    const targetNames = targetDataList.length > 0
+                        ? targetDataList.map(t => t.name).join(", ")
+                        : "Sin objetivo seleccionado";
+
+                    const sourceItemName = itemName || actualItem?.name || "Curación";
+                    const sourceItemImg = actualItem?.img || "icons/svg/regen.svg";
+                    const gmWhisper = game.users.filter(u => u.isGM).map(u => u.id);
+                    const healTypeLabel = isTempHp ? "PV Temporales" : "PV";
+                    const badgeColor = isTempHp ? "#0ea5e9" : "#16a34a";
+                    const badgeBg = isTempHp ? "rgba(14, 165, 233, 0.12)" : "rgba(34, 197, 94, 0.12)";
+                    const badgeBorder = isTempHp ? "rgba(14, 165, 233, 0.35)" : "rgba(34, 197, 94, 0.35)";
+
+                    const gmChatContent = `
+                        <div class="not-dice-gm-healing-request-card" style="font-family:inherit; padding:8px 10px; border:1px solid ${badgeBorder}; border-radius:8px; background:${badgeBg}; display:flex; flex-direction:column; gap:8px;">
+                            <div style="display:flex; align-items:center; justify-content:space-between; border-bottom:1px solid ${badgeBorder}; padding-bottom:6px;">
+                                <span style="font-weight:800; font-size:0.95em; color:${badgeColor}; display:flex; align-items:center; gap:6px;">
+                                    <i class="fas fa-hand-holding-medical"></i>
+                                    <span>Solicitud de ${titleText}</span>
+                                </span>
+                                <span style="font-weight:900; font-size:1.15em; color:${badgeColor}; background:rgba(0,0,0,0.15); padding:2px 8px; border-radius:6px; border:1px solid ${badgeBorder};">
+                                    +${total} ${healTypeLabel}
+                                </span>
+                            </div>
+                            <div style="font-size:0.88em; line-height:1.4; display:flex; flex-direction:column; gap:3px;">
+                                <div><strong>De:</strong> ${casterName}</div>
+                                <div><strong>Para:</strong> ${targetNames}</div>
+                                <div style="display:flex; align-items:center; gap:5px;">
+                                    <strong>Hechizo / Habilidad:</strong>
+                                    <img src="${sourceItemImg}" style="width:18px; height:18px; border-radius:3px; border:1px solid rgba(128,128,128,0.4); object-fit:cover; vertical-align:middle;" />
+                                    <span style="font-weight:700;">${sourceItemName}</span>
+                                </div>
+                            </div>
+                            <button type="button" class="not-dice-gm-apply-healing-btn" style="margin-top:2px; width:100%; padding:7px 10px; background:linear-gradient(135deg, #22c55e 0%, #15803d 100%); color:#ffffff; font-weight:800; font-size:0.95em; border:1px solid #4ade80; border-radius:6px; cursor:pointer; display:flex; align-items:center; justify-content:center; gap:6px; box-shadow:0 2px 8px rgba(34, 197, 94, 0.35);">
+                                <i class="fas fa-heart"></i>
+                                <span>Aplicar Curación</span>
+                            </button>
+                        </div>
+                    `;
+
+                    await ChatMessage.create({
+                        style: CONST.CHAT_MESSAGE_STYLES?.OTHER || 0,
+                        whisper: gmWhisper,
+                        speaker: ChatMessage.getSpeaker({ actor: actor }),
+                        flags: {
+                            "not-dice": {
+                                gmOnlyHealingRequest: true,
+                                healingApplied: false,
+                                healingRequestData: {
+                                    targets: targetDataList,
+                                    total,
+                                    isTempHp,
+                                    casterName,
+                                    targetNames,
+                                    itemName: sourceItemName
                                 }
-                            } else {
-                                afterVal = Math.min(hpMax, hpBefore + total);
-                                amountApplied = afterVal - hpBefore;
-                                
-                                if (isOwner) {
-                                    if (typeof t.actor.applyDamage === "function") {
-                                        await t.actor.applyDamage([{ value: total, type: "healing" }]);
-                                    } else {
-                                        await t.actor.update({ "system.attributes.hp.value": afterVal });
-                                    }
-                                }
-                                ui.notifications.info(`Not Dice | ${t.name} fue curado por ${total} puntos.`);
                             }
-                            
-                            if (!isOwner && amountApplied > 0) {
-                                targetsToSocket.push({ tokenId: t.id, actorId: t.actor.id });
-                            }
+                        },
+                        content: gmChatContent
+                    });
 
-                            if (amountApplied > 0) {
-                                summaryLines.push(`
-                                    <div style="display:flex; flex-direction:column; padding:6px 8px; margin-bottom:4px; border:1px solid ${palette.border}; border-radius:6px; background:${palette.bg}; font-size:0.84em; line-height:1.2;">
-                                        <div style="display:flex; align-items:center; justify-content:space-between; gap:8px;">
-                                            <span style="font-weight:700; color:${palette.fg}; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${t.name}</span>
-                                            <span style="color:inherit; opacity:0.9; white-space:nowrap;">${beforeVal} ${palette.suffix}</span>
-                                            <span style="color:${palette.accent}; font-weight:800; white-space:nowrap;">+ ${total} ${palette.suffix}</span>
-                                            <span style="color:inherit; opacity:0.9; white-space:nowrap;">${afterVal} ${palette.suffix}</span>
-                                        </div>
-                                    </div>
-                                `);
-                            }
-                        }
-                    }
-
-                    if (targetsToSocket.length > 0 && !game.user.isGM) {
-                        const gmId = game.users.find(u => u.isGM && u.active)?.id;
-                        if (gmId && game.socket) {
-                            game.socket.emit("module.not-dice", {
-                                type: "not-dice.apply-healing",
-                                targets: targetsToSocket,
-                                total: total,
-                                isTempHp: isTempHp
-                            });
-                        }
-                    }
-
-                    if (summaryLines.length > 0) {
-                        ChatMessage.create({
-                            style: CONST.CHAT_MESSAGE_STYLES?.OTHER || 0,
-                            speaker: { alias: " " },
-                            flags: { "not-dice": { hideHeader: true } },
-                            content: `<div style="font-size:0.88em; line-height:1.2; padding:2px 2px;">${summaryLines.join("")}</div>`
-                        });
-                    }
-
-                } else {
-                    ui.notifications.warn("Not Dice | No se encontró objetivo para aplicar la curación.");
+                    ui.notifications?.info("Not Dice | Curación enviada al GM para su aplicación.");
+                    return true;
+                } catch (err) {
+                    (globalThis.notDiceLogger || console).error("Error enviando solicitud de curación al GM:", err);
+                    return false;
                 }
-                return true;
-            } catch (err) {
-                (globalThis.notDiceLogger || console).error("Error aplicando curación:", err);
-                return false;
             }
+
+            return await globalThis.notDiceExecuteHealingApplication({
+                targets: targets.map(t => ({ tokenId: t.id, actorId: t.actor?.id, name: t.name })),
+                total,
+                isTempHp
+            });
         };
 
         const setupRollEvent = (element) => {
@@ -510,7 +538,7 @@ export const initHealingDialog = () => {
                         const roll = await new Roll(firstRow.formula, rollData).evaluate({ async: true });
                         await roll.toMessage({
                             speaker: ChatMessage.getSpeaker({ actor: actor }),
-                            flavor: `<b>${titleText}</b> - ${itemName || actualItem.name}`,
+                            flavor: `<b>${titleText}</b> - ${itemName || actualItem?.name || "Curación"}`,
                         });
                         if (input) {
                             input.value = roll.total;
@@ -540,7 +568,7 @@ export const initHealingDialog = () => {
                     content: content,
                     position: { width: 380 },
                     buttons: [
-                        { action: "apply", icon: "fa-solid fa-heart", label: buttonText, default: true },
+                        { action: "apply", icon: buttonIcon, label: buttonText, default: true },
                         { action: "cancel", icon: "fa-solid fa-xmark", label: "Cancelar" }
                     ],
                     submit: async (result) => {
@@ -564,7 +592,7 @@ export const initHealingDialog = () => {
                     },
                     buttons: {
                         apply: {
-                            icon: '<i class="fas fa-heart"></i>',
+                            icon: buttonIconLegacy,
                             label: buttonText,
                             callback: async (html) => {
                                 resolve(await applyHealing(html[0] || html));
@@ -580,6 +608,145 @@ export const initHealingDialog = () => {
                 }, { width: 380 }).render(true);
             }
         });
+    };
+
+    globalThis.notDiceExecuteHealingApplication = async ({
+        targets = [],
+        total = 0,
+        isTempHp = false
+    } = {}) => {
+        const numericTotal = parseInt(total) || 0;
+        if (numericTotal <= 0) {
+            ui.notifications?.info("Not Dice | No se aplicó curación (valor 0).");
+            return false;
+        }
+
+        try {
+            let summaryLines = [];
+            let targetsToSocket = [];
+            const palette = isTempHp
+                ? { fg: "#0ea5e9", accent: "#38bdf8", bg: "rgba(14,165,233,0.12)", border: "rgba(14,165,233,0.35)", suffix: "pvt" }
+                : { fg: "#166534", accent: "#16a34a", bg: "rgba(22,101,52,0.12)", border: "rgba(22,101,52,0.35)", suffix: "pv" };
+
+            let resolvedTargets = [];
+            if (Array.isArray(targets) && targets.length > 0) {
+                for (const t of targets) {
+                    const token = (t.tokenId && canvas.tokens?.get(t.tokenId))
+                        || (t.actorId && canvas.tokens?.placeables?.find(p => p.actor?.id === t.actorId))
+                        || null;
+                    const targetActor = token?.actor || (t.actorId ? game.actors?.get(t.actorId) : null) || t.actor || null;
+                    const targetName = token?.name || t.name || targetActor?.name || "Objetivo";
+                    if (targetActor) {
+                        resolvedTargets.push({
+                            tokenId: token?.id || t.tokenId || "",
+                            actorId: targetActor.id,
+                            actor: targetActor,
+                            name: targetName
+                        });
+                    }
+                }
+            }
+
+            if (resolvedTargets.length === 0 && game.user?.targets?.size > 0) {
+                for (const tok of Array.from(game.user.targets)) {
+                    if (tok.actor) {
+                        resolvedTargets.push({
+                            tokenId: tok.id,
+                            actorId: tok.actor.id,
+                            actor: tok.actor,
+                            name: tok.name || tok.actor.name
+                        });
+                    }
+                }
+            }
+
+            if (resolvedTargets.length === 0) {
+                ui.notifications?.warn("Not Dice | No se encontró objetivo para aplicar la curación.");
+                return false;
+            }
+
+            for (const t of resolvedTargets) {
+                const targetActor = t.actor;
+                if (!targetActor) continue;
+
+                const isOwner = targetActor.isOwner || game.user?.isGM;
+                const hpBefore = Number(targetActor.system?.attributes?.hp?.value ?? 0);
+                const tempBefore = Number(targetActor.system?.attributes?.hp?.temp ?? 0);
+                const hpMax = Number(targetActor.system?.attributes?.hp?.max ?? 0);
+                let beforeVal = isTempHp ? tempBefore : hpBefore;
+                let afterVal = beforeVal;
+                let amountApplied = numericTotal;
+
+                if (isTempHp) {
+                    if (numericTotal > tempBefore) {
+                        if (isOwner) await targetActor.update({ "system.attributes.hp.temp": numericTotal });
+                        afterVal = numericTotal;
+                        amountApplied = numericTotal - tempBefore;
+                        ui.notifications?.info(`Not Dice | ${t.name} obtuvo ${numericTotal} PV Temporales.`);
+                    } else {
+                        amountApplied = 0;
+                        ui.notifications?.info(`Not Dice | ${t.name} ya tiene ${tempBefore} PV Temporales (mayor o igual a ${numericTotal}).`);
+                    }
+                } else {
+                    afterVal = hpMax > 0 ? Math.min(hpMax, hpBefore + numericTotal) : (hpBefore + numericTotal);
+                    amountApplied = afterVal - hpBefore;
+
+                    if (isOwner) {
+                        if (typeof targetActor.applyDamage === "function") {
+                            await targetActor.applyDamage([{ value: numericTotal, type: "healing" }]);
+                        } else {
+                            await targetActor.update({ "system.attributes.hp.value": afterVal });
+                        }
+                    }
+                    ui.notifications?.info(`Not Dice | ${t.name} fue curado por ${numericTotal} puntos.`);
+                }
+
+                if (!isOwner && amountApplied > 0) {
+                    targetsToSocket.push({ tokenId: t.tokenId, actorId: t.actorId });
+                }
+
+                if (amountApplied > 0 || !isTempHp) {
+                    summaryLines.push(`
+                        <div style="display:flex; flex-direction:column; padding:6px 8px; margin-bottom:4px; border:1px solid ${palette.border}; border-radius:6px; background:${palette.bg}; font-size:0.84em; line-height:1.2;">
+                            <div style="display:flex; align-items:center; justify-content:space-between; gap:8px;">
+                                <span style="font-weight:700; color:${palette.fg}; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${t.name}</span>
+                                <span style="color:inherit; opacity:0.9; white-space:nowrap;">${beforeVal} ${palette.suffix}</span>
+                                <span style="color:${palette.accent}; font-weight:800; white-space:nowrap;">+ ${numericTotal} ${palette.suffix}</span>
+                                <span style="color:inherit; opacity:0.9; white-space:nowrap;">${afterVal} ${palette.suffix}</span>
+                            </div>
+                        </div>
+                    `);
+                }
+            }
+
+            if (targetsToSocket.length > 0 && !game.user?.isGM) {
+                const gmId = game.users.find(u => u.isGM && u.active)?.id;
+                if (gmId && game.socket) {
+                    game.socket.emit("module.not-dice", {
+                        type: "not-dice.apply-healing",
+                        targets: targetsToSocket,
+                        total: numericTotal,
+                        isTempHp: isTempHp
+                    });
+                }
+            }
+
+            if (summaryLines.length > 0) {
+                const gmWhisper = game.users.filter(u => u.isGM).map(u => u.id);
+                await ChatMessage.create({
+                    style: CONST.CHAT_MESSAGE_STYLES?.OTHER || 0,
+                    whisper: gmWhisper,
+                    speaker: { alias: " " },
+                    flags: { "not-dice": { hideHeader: true } },
+                    content: `<div style="font-size:0.88em; line-height:1.2; padding:2px 2px;">${summaryLines.join("")}</div>`
+                });
+            }
+
+            return true;
+        } catch (err) {
+            (globalThis.notDiceLogger || console).error("Error aplicando curación:", err);
+            return false;
+        }
     };
 };
 
