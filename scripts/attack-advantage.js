@@ -158,6 +158,14 @@ export function notDiceEvaluateAttackRollMode({
     const advantages = [];
     const disadvantages = [];
 
+    try {
+        if (typeof game !== "undefined" && game.settings?.settings?.has?.("not-dice.enableAdvantageSuggestions")) {
+            if (!game.settings.get("not-dice", "enableAdvantageSuggestions")) {
+                return { mode: "normal", advantages: [], disadvantages: [], isCancelled: false };
+            }
+        }
+    } catch (_) {}
+
     const attacker = attackerActor || attackerToken?.actor || null;
     const target = targetActor || targetToken?.actor || null;
 

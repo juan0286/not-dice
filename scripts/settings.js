@@ -90,6 +90,24 @@ Hooks.once("init", () => {
         default: true
     });
 
+    game.settings.register("not-dice", "enableAdvantageSuggestions", {
+        name: "Sugerencias de Ventaja y Desventaja",
+        hint: "Detecta estados y condiciones del atacante y del objetivo para sugerir automáticamente ventaja o desventaja en los ataques.",
+        scope: "client",
+        config: true,
+        type: Boolean,
+        default: true
+    });
+
+    game.settings.register("not-dice", "enableAttackEffects", {
+        name: "Efectos y Estados en Ataques",
+        hint: "Lee los efectos y estados configurados en la actividad de ataque y propone aplicarlos al objetivo al acertar.",
+        scope: "client",
+        config: true,
+        type: Boolean,
+        default: true
+    });
+
     game.settings.register("not-dice", "ignoreAttackDelayForGM", {
         name: "Ignorar delay para GM",
         hint: "Si está activo, el GM no tendrá tiempo de espera ni límite de cadencia para lanzar ataques consecutivos.",

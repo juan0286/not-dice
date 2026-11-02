@@ -1,5 +1,17 @@
 # Not Dice - Notas de la Versión
 
+## 🚀 Actualización v2.14.6
+
+Esta versión incorpora soporte para efectos y estados en actividades de ataque, persistencia de la posición en pantalla del diálogo de resolución, flujo de envío de curación del jugador al GM y nuevos ajustes de personalización.
+
+### ✨ Novedades Principales (v2.14.x)
+* **Efectos y Estados en Actividades de Ataque**: Lectura automática de los efectos activos y condiciones asociadas a un ataque (incluyendo ataques sin daño directo) para proponer su aplicación al objetivo cuando el ataque impacta. *(Configurable vía `enableAttackEffects`)*.
+* **Evaluación y Sugerencia de Ventaja / Desventaja**: Detección automática de condiciones del atacante y del objetivo según las reglas de D&D 5e, con indicadores visuales y coloreado temático del diálogo. *(Configurable vía `enableAdvantageSuggestions`)*.
+* **Memoria de Posición de la Caja de Ataque**: El diálogo de resolución de ataque/daño recuerda su ubicación exacta en pantalla (`top`, `left`) al moverse o cerrarse, reabriéndose en el mismo lugar en futuros ataques.
+* **Curación de Jugador enviada al GM**: Cuando un jugador utiliza el diálogo de curación, puede lanzar sus dados y pulsar **"Enviar Curación"**, lo que genera una tarjeta en el chat visible únicamente para el GM (indicando quién cura, a quién, mediante qué hechizo/habilidad y la cantidad) con el botón **"Aplicar Curación"**.
+
+---
+
 ## 🚀 Actualización v2.13.26 (29 de Agosto de 2026)
 
 Esta versión introduce importantes herramientas de diagnóstico remoto, protección contra errores comunes de apuntado en combate, compatibilidad ampliada con D&D 2024 / D&D5e v5.x y opciones de personalización para el GM.

@@ -157,6 +157,13 @@ const notDiceIsAttack = (subject) => {
  * @returns {Array<{id: string, name: string, img: string, statuses: string[], data: object}>}
  */
 const notDiceGetActivityEffects = (activity, item) => {
+    try {
+        if (typeof game !== "undefined" && game.settings?.settings?.has?.("not-dice.enableAttackEffects")) {
+            if (!game.settings.get("not-dice", "enableAttackEffects")) {
+                return [];
+            }
+        }
+    } catch (_) {}
     const results = [];
     const addedIds = new Set();
     const actualItem = item || activity?.item || (activity?.documentName === "Item" ? activity : null);
@@ -2239,7 +2246,8 @@ Hooks.once("ready", () => {
             const subject = rollConfig.subject;
             const item = subject?.item || (subject?.documentName === "Item" ? subject : null) || rollConfig.item || null;
             const activity = (subject && subject !== item) ? subject : (item?.system?.activities?.find(a => a.type === "attack" || a.type === "damage") || null);
-            const attackEffects = typeof notDiceGetActivityEffects === "function" ? notDiceGetActivityEffects(activity, item) : [];
+            const enableAttackEffects = (!game.settings?.settings?.has?.("not-dice.enableAttackEffects") || game.settings.get("not-dice", "enableAttackEffects"));
+            const attackEffects = (enableAttackEffects && typeof notDiceGetActivityEffects === "function") ? notDiceGetActivityEffects(activity, item) : [];
 
             // --- Habilidades Especiales (Maestro en Armas Pesadas, etc.) ---
             if (globalThis.notDiceEspeciales) {
@@ -2453,7 +2461,8 @@ Hooks.once("ready", () => {
             const primaryTargetToken = targets[0] || null;
             const primaryTargetActor = primaryTargetToken?.actor || null;
 
-            const attackAdvantageEval = (typeof globalThis.notDiceEvaluateAttackRollMode === "function")
+            const enableAdvantageSuggestions = (!game.settings?.settings?.has?.("not-dice.enableAdvantageSuggestions") || game.settings.get("not-dice", "enableAdvantageSuggestions"));
+            const attackAdvantageEval = (enableAdvantageSuggestions && typeof globalThis.notDiceEvaluateAttackRollMode === "function")
                 ? globalThis.notDiceEvaluateAttackRollMode({
                     attackerToken,
                     attackerActor,
