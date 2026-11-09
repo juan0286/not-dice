@@ -113,6 +113,13 @@ globalThis.notDiceGetActorEffects = (act) => {
 };
 
 const notDiceIsSlowEffect = (e) => {
+    if (!e || e.transfer === true) return false;
+    const flags = e.flags?.["not-dice"] || (typeof e.getFlag === "function" ? e.getFlag("not-dice") : null) || {};
+    if (flags.isSlowEffect) return true;
+    const name = (e.name || e.label || "").toLowerCase().trim();
+    return /^(?:maestr[ií]a:\s*)?(?:slow|ralentizar|ralentizaci[oó]n|frenar|freno|lentitud)\b/i.test(name);
+};
+const _unusedSlowOld = (e) => {
     if (!e) return false;
     const name = (e.name || e.label || "").toLowerCase();
     const flags = e.flags?.["not-dice"] || (typeof e.getFlag === "function" ? e.getFlag("not-dice") : null) || {};
@@ -127,6 +134,13 @@ const notDiceIsSlowEffect = (e) => {
 };
 
 const notDiceIsSapEffect = (e) => {
+    if (!e || e.transfer === true) return false;
+    const flags = e.flags?.["not-dice"] || (typeof e.getFlag === "function" ? e.getFlag("not-dice") : null) || {};
+    if (flags.isSapEffect) return true;
+    const name = (e.name || e.label || "").toLowerCase().trim();
+    return /^(?:maestr[ií]a:\s*)?(?:sap|debilitar|minar)\b/i.test(name);
+};
+const _unusedSapOld = (e) => {
     if (!e) return false;
     const name = (e.name || e.label || "").toLowerCase();
     const flags = e.flags?.["not-dice"] || (typeof e.getFlag === "function" ? e.getFlag("not-dice") : null) || {};
@@ -137,6 +151,13 @@ const notDiceIsSapEffect = (e) => {
 };
 
 const notDiceIsVexEffect = (e) => {
+    if (!e || e.transfer === true) return false;
+    const flags = e.flags?.["not-dice"] || (typeof e.getFlag === "function" ? e.getFlag("not-dice") : null) || {};
+    if (flags.isVexEffect) return true;
+    const name = (e.name || e.label || "").toLowerCase().trim();
+    return /^(?:maestr[ií]a:\s*)?(?:vex|molestar|irritar)\b/i.test(name);
+};
+const _unusedVexOld = (e) => {
     if (!e) return false;
     const name = (e.name || e.label || "").toLowerCase();
     const flags = e.flags?.["not-dice"] || (typeof e.getFlag === "function" ? e.getFlag("not-dice") : null) || {};
@@ -3104,7 +3125,7 @@ Hooks.once("ready", () => {
                 const sapEffects = getActorEffects(item.actor).filter(e => {
                     const eName = (e.name || e.label || "").toLowerCase();
                     const flags = e.flags?.["not-dice"] || e.getFlag?.("not-dice") || {};
-                    return eName.includes("sap") || eName.includes("debilitar") || eName.includes("minar") || !!flags.isSapEffect;
+                    return notDiceIsSapEffect(e);
                 });
                 if (sapEffects.length > 0) {
                     const idsToDelete = sapEffects.map(e => e.id);
@@ -3120,7 +3141,7 @@ Hooks.once("ready", () => {
                         const vexEffect = getActorEffects(t.actor).find(e => {
                             const eName = (e.name || e.label || "").toLowerCase();
                             const flags = e.flags?.["not-dice"] || e.getFlag?.("not-dice") || {};
-                            const isVex = eName.includes("vex") || eName.includes("molestar") || !!flags.isVexEffect;
+                            const isVex = notDiceIsVexEffect(e);
                             const isFromAttacker = eName.includes(`(${attackerName.toLowerCase()})`) || (flags.appliedActorId && flags.appliedActorId === item.actor.id);
                             return isVex && isFromAttacker;
                         });

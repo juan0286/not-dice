@@ -1,6 +1,6 @@
 # Not Dice - Notas de la Versión
 
-## 🚀 Actualización v2.14.6
+## 🚀 Actualización v2.14.7
 
 Esta versión incorpora soporte para efectos y estados en actividades de ataque, persistencia de la posición en pantalla del diálogo de resolución, flujo de envío de curación del jugador al GM y nuevos ajustes de personalización.
 

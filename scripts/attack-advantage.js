@@ -26,80 +26,83 @@ function notDiceGetApplicableActorEffects(act) {
     return effs.filter(Boolean);
 }
 
+function notDiceEscapeRegex(str) {
+    return String(str).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+function notDiceMatchesConditionName(effectName, terms) {
+    const cleanName = String(effectName || "").toLowerCase().trim();
+    if (!cleanName) return false;
+
+    for (const term of terms) {
+        if (cleanName === term) return true;
+        const escaped = notDiceEscapeRegex(term);
+        // Permite formatos como "Blinded (2 rounds)", "Estado: Cegado", "Condition: Prone"
+        const pattern = new RegExp(`^(?:(?:estado|condici[oó]n|condition|status|efecto|effect)\\s*[:\\-]\\s*)?${escaped}(?:\\s*\\([^)]*\\))?$`, "i");
+        if (pattern.test(cleanName)) return true;
+    }
+    return false;
+}
+
 /**
  * Comprueba si un Actor o Token tiene un estado o condición activa.
- * Revisa exhaustivamente:
- * 1. actor.statuses (Set nativo de Foundry v11/v12/v13)
- * 2. TokenDocument.statusEffects / token.statusEffects / icons
- * 3. ActiveEffects del Actor (statuses, label/name, img/icon, flags)
- * 4. Flags de actor (dnd5e, midi-qol, etc.)
+ * Revisa de forma estricta:
+ * 1. actor.statuses (Set nativo de Foundry v11/v12/v13/v14) por ID exacto
+ * 2. ActiveEffects no pasivos (e.transfer !== true) por e.statuses exacto o nombre exacto de condición
  * 
  * @param {Actor|Token} tokenOrActor - Token o Actor a inspeccionar.
- * @param {string} statusId - Identificador del estado (ej: "prone", "dodge", "poisoned").
- * @param {string[]} [alternateNames=[]] - Nombres alternativos o traducciones.
- * @returns {boolean} True si tiene el estado.
+ * @param {string} statusId - Identificador canónico del estado (ej: "prone", "dodge", "poisoned", "blinded").
+ * @param {string[]} [alternateNames=[]] - Nombres exactos alternativos o traducciones de la condición.
+ * @returns {boolean} True si tiene el estado activo.
  */
 export function notDiceHasCondition(tokenOrActor, statusId, alternateNames = []) {
     if (!tokenOrActor) return false;
     const actor = tokenOrActor.actor || tokenOrActor;
     if (!actor) return false;
 
-    const terms = [statusId, ...alternateNames].map(s => String(s).toLowerCase().trim()).filter(Boolean);
+    const canonicalId = String(statusId || "").toLowerCase().trim();
+    const terms = [canonicalId, ...alternateNames]
+        .map(s => String(s || "").toLowerCase().trim())
+        .filter(Boolean);
+    const termSet = new Set(terms);
 
-    // 1. actor.statuses (Set de Foundry v11/v12/v13)
+    // 1. actor.statuses (Set de IDs canónicos de Foundry v11/v12/v13/v14)
     if (actor.statuses) {
-        if (actor.statuses instanceof Set) {
-            for (const term of terms) {
-                if (actor.statuses.has(term)) return true;
-            }
-            for (const st of actor.statuses) {
-                const stLower = String(st).toLowerCase();
-                if (terms.some(t => stLower === t || stLower.includes(t) || t.includes(stLower))) return true;
-            }
-        } else if (Array.isArray(actor.statuses)) {
-            for (const st of actor.statuses) {
-                const stLower = String(st).toLowerCase();
-                if (terms.some(t => stLower === t || stLower.includes(t) || t.includes(stLower))) return true;
-            }
+        const statusIter = (actor.statuses instanceof Set || Array.isArray(actor.statuses))
+            ? actor.statuses
+            : [];
+        for (const st of statusIter) {
+            const stLower = String(st || "").toLowerCase().trim();
+            if (stLower && termSet.has(stLower)) return true;
         }
     }
 
-    // 2. TokenDocument / Token statusEffects
-    const tokenDoc = tokenOrActor.document || (tokenOrActor.schema ? tokenOrActor : null);
-    if (tokenDoc?.statusEffects) {
-        for (const s of tokenDoc.statusEffects) {
-            const sLower = String(s).toLowerCase();
-            if (terms.some(t => sLower === t || sLower.includes(t) || t.includes(sLower))) return true;
-        }
-    }
-
-    // 3. Flags de actor (inspección directa sin lanzar error por scope inactivo)
-    const actorFlags = actor.flags || {};
-    for (const term of terms) {
-        if (actorFlags.dnd5e?.[term] || actorFlags["midi-qol"]?.[term] || actorFlags["not-dice"]?.[term]) return true;
-    }
-
-    // 4. Active Effects del Actor
+    // 2. Active Effects del Actor (ignorando efectos pasivos de equipamiento/rasgos salvo que tengan el statusId canónico)
     const effects = notDiceGetApplicableActorEffects(actor);
     for (const e of effects) {
-        if (!e || e.disabled === true) continue;
+        if (!e || e.disabled === true || e.isSuppressed === true) continue;
 
-        // e.statuses (Set o Array de strings)
+        // 2a. e.statuses (Set o Array de IDs canónicos de estado en el efecto)
         if (e.statuses) {
-            const stColl = e.statuses instanceof Set ? Array.from(e.statuses) : (Array.isArray(e.statuses) ? e.statuses : [e.statuses]);
+            const stColl = e.statuses instanceof Set
+                ? Array.from(e.statuses)
+                : (Array.isArray(e.statuses) ? e.statuses : [e.statuses]);
             for (const st of stColl) {
-                const stLower = String(st).toLowerCase();
-                if (terms.some(t => stLower === t || stLower.includes(t) || t.includes(stLower))) return true;
+                const stLower = String(st || "").toLowerCase().trim();
+                if (stLower && termSet.has(stLower)) return true;
             }
         }
 
-        // e.name o e.label
-        const eName = (e.name || e.label || "").toLowerCase();
-        if (terms.some(t => eName.includes(t))) return true;
+        // 2b. Ignorar efectos pasivos transferidos de ítems/dotes/armaduras si no tenían el statusId en e.statuses
+        if (e.transfer === true) continue;
 
-        // e.img o e.icon
-        const iconPath = (e.img || e.icon || "").toLowerCase();
-        if (iconPath && terms.some(t => iconPath.includes(t))) return true;
+        // 2c. Flag explícito de statusId (compatibilidad core.statusId)
+        const flagStatusId = String(e.flags?.core?.statusId || "").toLowerCase().trim();
+        if (flagStatusId && termSet.has(flagStatusId)) return true;
+
+        // 2d. Nombre exacto de la condición en efectos temporales
+        const eName = (e.name || e.label || "").toLowerCase().trim();
+        if (notDiceMatchesConditionName(eName, terms)) return true;
     }
 
     return false;
@@ -190,7 +193,7 @@ export function notDiceEvaluateAttackRollMode({
         // 1. Objetivo Derribado (Prone)
         // Regla 5e: Da ventaja si el atacante está a ≤ 5 pies. Da desventaja si está a > 5 pies.
         const isTargetProne = notDiceHasCondition(targetToken || target, "prone", [
-            "derribado", "derribada", "tumbado", "tumbada", "caído", "caida", "caido", "caída", "falling"
+            "derribado", "derribada", "tumbado", "tumbada"
         ]);
         if (isTargetProne) {
             if (isWithin5Feet) {
@@ -201,34 +204,34 @@ export function notDiceEvaluateAttackRollMode({
         }
 
         // 2. Objetivo Aturdido (Stunned)
-        if (notDiceHasCondition(targetToken || target, "stunned", ["aturdido", "aturdida", "daze"])) {
+        if (notDiceHasCondition(targetToken || target, "stunned", ["aturdido", "aturdida"])) {
             advantages.push("Objetivo Aturdido (Stunned)");
         }
 
         // 3. Objetivo Restringido / Apresado (Restrained)
         if (notDiceHasCondition(targetToken || target, "restrained", [
-            "restringido", "restringida", "apresado", "apresada", "inmovilizado", "inmovilizada", "net"
+            "restringido", "restringida", "apresado", "apresada", "inmovilizado", "inmovilizada"
         ])) {
             advantages.push("Objetivo Apresado / Restringido (Restrained)");
         }
 
         // 4. Objetivo Paralizado (Paralyzed)
-        if (notDiceHasCondition(targetToken || target, "paralyzed", ["paralizado", "paralizada", "parálisis", "paralisis"])) {
+        if (notDiceHasCondition(targetToken || target, "paralyzed", ["paralizado", "paralizada"])) {
             advantages.push("Objetivo Paralizado (Paralyzed)");
         }
 
         // 5. Objetivo Inconsciente (Unconscious)
-        if (notDiceHasCondition(targetToken || target, "unconscious", ["inconsciente", "inconsciencia"])) {
+        if (notDiceHasCondition(targetToken || target, "unconscious", ["inconsciente"])) {
             advantages.push("Objetivo Inconsciente (Unconscious)");
         }
 
         // 6. Objetivo Petrificado (Petrified)
-        if (notDiceHasCondition(targetToken || target, "petrified", ["petrificado", "petrificada", "petrificación", "petrificacion", "statue"])) {
+        if (notDiceHasCondition(targetToken || target, "petrified", ["petrificado", "petrificada"])) {
             advantages.push("Objetivo Petrificado (Petrified)");
         }
 
         // 7. Objetivo Cegado (Blinded)
-        if (notDiceHasCondition(targetToken || target, "blinded", ["cegado", "cegada", "ciego", "ciega", "blind"])) {
+        if (notDiceHasCondition(targetToken || target, "blinded", ["cegado", "cegada"])) {
             advantages.push("Objetivo Cegado (Blinded)");
         }
 
@@ -241,9 +244,14 @@ export function notDiceEvaluateAttackRollMode({
         const attackerName = (attacker.name || "").toLowerCase();
         const targetEffects = notDiceGetApplicableActorEffects(target);
         const hasVex = targetEffects.some(e => {
-            if (!e || e.disabled === true) return false;
-            const eName = (e.name || e.label || "").toLowerCase();
-            return (eName.includes("vex") || eName.includes("molestar")) && (eName.includes(`(${attackerName})`) || !eName.includes("("));
+            if (!e || e.disabled === true || e.transfer === true) return false;
+            const flags = e.flags?.["not-dice"] || (typeof e.getFlag === "function" ? e.getFlag("not-dice") : null) || {};
+            const eName = (e.name || e.label || "").toLowerCase().trim();
+            const isVexEffect = !!flags.isVexEffect || /^(?:maestr[ií]a:\s*)?(?:molestar|vex)\b/i.test(eName);
+            if (!isVexEffect) return false;
+            return (flags.appliedActorId && flags.appliedActorId === attacker.id)
+                || eName.includes(`(${attackerName})`)
+                || !eName.includes("(");
         });
         if (hasVex) {
             advantages.push("Maestría Molestar (Vex)");
@@ -251,22 +259,17 @@ export function notDiceEvaluateAttackRollMode({
 
         // 10. Saeta Guía (Guiding Bolt)
         const hasGuidingBolt = targetEffects.some(e => {
-            if (!e || e.disabled === true) return false;
-            const eName = (e.name || e.label || "").toLowerCase();
-            return eName.includes("saeta guía") || eName.includes("saeta guia") || eName.includes("guiding bolt");
+            if (!e || e.disabled === true || e.transfer === true) return false;
+            const eName = (e.name || e.label || "").toLowerCase().trim();
+            return /^(?:saeta gu[ií]a|guiding bolt)\b/i.test(eName);
         });
         if (hasGuidingBolt) {
             advantages.push("Saeta Guía (Guiding Bolt)");
         }
 
-        // 5b. Objetivo Incapacitado (Incapacitated)
-        if (notDiceHasCondition(targetToken || target, "incapacitated", ["incapacitado", "incapacitada"])) {
-            advantages.push("Objetivo Incapacitado (Incapacitated)");
-        }
-
-        // 11. Objetivo Esquivando (Dodge / Esquiva / Shield)
+        // 11. Objetivo Esquivando (Dodge)
         const isTargetDodging = notDiceHasCondition(targetToken || target, "dodge", [
-            "esquivar", "esquiva", "esquivando", "esquiva total", "dodging", "defense", "defensa", "shield"
+            "dodging", "esquivar", "esquiva", "esquivando", "esquiva total"
         ]);
         if (isTargetDodging) {
             disadvantages.push("Objetivo Esquivando (Dodge)");
@@ -287,7 +290,7 @@ export function notDiceEvaluateAttackRollMode({
     }
 
     // 14. Ataque Temerario (Reckless Attack de Bárbaro)
-    if (notDiceHasCondition(attackerToken || attacker, "reckless", ["temerario", "ataque temerario", "reckless attack"])) {
+    if (notDiceHasCondition(attackerToken || attacker, "reckless", ["ataque temerario", "reckless attack"])) {
         advantages.push("Ataque Temerario (Reckless Attack)");
     }
 
@@ -295,36 +298,37 @@ export function notDiceEvaluateAttackRollMode({
     // ESTADOS DEL ATACANTE QUE LE DAN DESVENTAJA
     // -------------------------------------------------------------
     // 15. Atacante Envenenado (Poisoned)
-    if (notDiceHasCondition(attackerToken || attacker, "poisoned", ["envenenado", "envenenada", "veneno", "poison"])) {
+    if (notDiceHasCondition(attackerToken || attacker, "poisoned", ["envenenado", "envenenada"])) {
         disadvantages.push("Atacante Envenenado (Poisoned)");
     }
 
     // 16. Atacante Cegado (Blinded)
-    if (notDiceHasCondition(attackerToken || attacker, "blinded", ["cegado", "cegada", "ciego", "ciega", "blind"])) {
+    if (notDiceHasCondition(attackerToken || attacker, "blinded", ["cegado", "cegada"])) {
         disadvantages.push("Atacante Cegado (Blinded)");
     }
 
     // 17. Atacante Apresado / Restringido (Restrained)
-    if (notDiceHasCondition(attackerToken || attacker, "restrained", ["restringido", "restringida", "apresado", "apresada", "net"])) {
+    if (notDiceHasCondition(attackerToken || attacker, "restrained", ["restringido", "restringida", "apresado", "apresada", "inmovilizado", "inmovilizada"])) {
         disadvantages.push("Atacante Apresado / Restringido (Restrained)");
     }
 
     // 18. Atacante Derribado (Prone)
-    if (notDiceHasCondition(attackerToken || attacker, "prone", ["derribado", "derribada", "tumbado", "tumbada", "caído", "caida", "caido", "caída", "falling"])) {
+    if (notDiceHasCondition(attackerToken || attacker, "prone", ["derribado", "derribada", "tumbado", "tumbada"])) {
         disadvantages.push("Atacante Derribado (Prone)");
     }
 
     // 19. Atacante Asustado (Frightened)
-    if (notDiceHasCondition(attackerToken || attacker, "frightened", ["asustado", "asustada", "atemorizado", "atemorizada", "miedo", "terror"])) {
+    if (notDiceHasCondition(attackerToken || attacker, "frightened", ["asustado", "asustada", "atemorizado", "atemorizada"])) {
         disadvantages.push("Atacante Asustado (Frightened)");
     }
 
     // 20. Maestría Debilitar (Sap) sufrida por el atacante
     const attackerEffects = notDiceGetApplicableActorEffects(attacker);
     const hasSap = attackerEffects.some(e => {
-        if (!e || e.disabled === true) return false;
-        const eName = (e.name || e.label || "").toLowerCase();
-        return eName.includes("sap") || eName.includes("debilitar") || eName.includes("minar");
+        if (!e || e.disabled === true || e.transfer === true) return false;
+        const flags = e.flags?.["not-dice"] || (typeof e.getFlag === "function" ? e.getFlag("not-dice") : null) || {};
+        const eName = (e.name || e.label || "").toLowerCase().trim();
+        return !!flags.isSapEffect || /^(?:maestr[ií]a:\s*)?(?:debilitar|sap|minar)\b/i.test(eName);
     });
     if (hasSap) {
         disadvantages.push("Maestría Debilitar (Sap)");
